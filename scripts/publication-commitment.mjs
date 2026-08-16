@@ -6,7 +6,7 @@ const digest = async (bytes) => bytesToHex(new Uint8Array(
 ));
 
 export const sourceSha256 = async (bytes) =>
-  digest(new Uint8Array(bytes));
+  digest(bytes);
 
 export const createPayloadCommitmentFromSourceHash = async ({
   derivedHash = null,
@@ -33,9 +33,10 @@ export const createPayloadCommitmentFromSourceHash = async ({
   ])));
 };
 
-export const createPayloadCommitment = async ({ bytes, derivedBytes, ...metadata }) =>
-  createPayloadCommitmentFromSourceHash({
-    ...metadata,
-    derivedHash: derivedBytes === undefined ? null : await sourceSha256(derivedBytes),
-    sourceHash: await sourceSha256(bytes),
-  });
+export const createPayloadCommitment = async ({ bytes, derivedBytes, ...metadata }) => {
+  const [sourceHash, derivedHash] = await Promise.all([
+    sourceSha256(bytes),
+    derivedBytes === undefined ? Promise.resolve(null) : sourceSha256(derivedBytes),
+  ]);
+  return createPayloadCommitmentFromSourceHash({ ...metadata, derivedHash, sourceHash });
+};

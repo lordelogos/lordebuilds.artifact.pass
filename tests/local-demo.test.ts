@@ -17,6 +17,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { FilePublicationJournal } from "../packages/agent-bridge/src/state/publication-journal";
 import { publishArtifact } from "../packages/agent-bridge/src/tools/publish-artifact";
 import { readArtifact } from "../packages/agent-bridge/src/tools/read-artifact";
+import { sourceSha256 } from "../scripts/publication-commitment.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const applicationRoot = join(repositoryRoot, "apps/artifact-service");
@@ -160,9 +161,6 @@ const control = async <T>(path: string, body?: unknown): Promise<T> => {
   return response.json() as Promise<T>;
 };
 
-const sha256 = async (bytes: Uint8Array): Promise<string> =>
-  Buffer.from(await crypto.subtle.digest("SHA-256", bytes)).toString("hex");
-
 const textPdf = (text: string): Buffer => {
   const stream = `BT /F1 18 Tf 72 720 Td (${text}) Tj ET`;
   const objects = [
@@ -196,7 +194,7 @@ const expectExactRepresentations = async (artifact: PublishedArtifact): Promise<
   expect(manifest).toMatchObject({
     byte_size: artifact.bytes.byteLength,
     mime_type: artifact.mimeType,
-    sha256: await sha256(artifact.bytes),
+    sha256: await sourceSha256(artifact.bytes),
   });
 
   const raw = await fetch(`${artifact.shareUrl}/raw`);

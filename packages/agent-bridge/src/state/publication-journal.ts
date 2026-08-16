@@ -114,7 +114,7 @@ export class MemoryPublicationJournal implements PublicationJournal {
       share_token: opaqueToken(),
       updated_at: Date.now(),
     };
-    this.pending.set(payloadCommitment, entry);
+    remember(this.pending, payloadCommitment, entry);
     return {
       publisherId: this.publisher,
       attemptId: entry.attempt_id,

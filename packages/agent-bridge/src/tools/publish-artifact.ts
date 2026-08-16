@@ -17,6 +17,7 @@ import {
   MemoryPublicationJournal,
   type PublicationJournal,
 } from "../state/publication-journal";
+import { parseShareUrl } from "./read-artifact";
 
 interface FileStat {
   readonly dev: number | bigint;
@@ -119,25 +120,27 @@ const resolveApprovedPath = async (
   return resolvedCandidate;
 };
 
-const validateBytes = (bytes: Uint8Array, mimeType: SupportedMimeType): void => {
+const validateBytes = (bytes: Uint8Array, mimeType: SupportedMimeType): string | undefined => {
   if (bytes.byteLength === 0) throw new Error("Artifact source cannot be empty");
   if (bytes.byteLength > PROTOCOL_MAX_ARTIFACT_BYTES) throw new Error("Artifact exceeds the supported size");
   if (mimeType === "application/pdf") {
     if (new TextDecoder().decode(bytes.subarray(0, 5)) !== "%PDF-") {
       throw new Error("PDF signature does not match the filename");
     }
-    return;
+    return undefined;
   }
   try {
     const source = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
     if (source.includes("\0")) throw new Error("NUL byte");
+    return source;
   } catch {
     throw new Error("Text artifacts must contain valid UTF-8");
   }
 };
 
-const assertSafeContent = (bytes: Uint8Array, label = "Artifact content"): void => {
-  const finding = findSensitiveContent(new TextDecoder().decode(bytes))[0];
+const assertSafeContent = (content: string | Uint8Array, label = "Artifact content"): void => {
+  const source = typeof content === "string" ? content : new TextDecoder().decode(content);
+  const finding = findSensitiveContent(source)[0];
   if (finding !== undefined) {
     throw new Error(`${label} may contain sensitive ${finding.label}`);
   }
@@ -146,6 +149,7 @@ const assertSafeContent = (bytes: Uint8Array, label = "Artifact content"): void 
 interface PreparedExtraction {
   readonly metadata: ExtractionMetadata;
   readonly derivedBytes?: Uint8Array;
+  readonly derivedText?: string;
 }
 
 const addExtraction = async (
@@ -186,7 +190,7 @@ const addExtraction = async (
     form.set("derived_text", new File([derivedBytes], `${basename("artifact.pdf")}.txt`, {
       type: "text/plain;charset=utf-8",
     }));
-    return { metadata: result.metadata, derivedBytes };
+    return { metadata: result.metadata, derivedBytes, derivedText };
   } else if (result.metadata.reason !== undefined) {
     form.set("extraction_reason", result.metadata.reason);
   }
@@ -200,6 +204,7 @@ export const publishArtifact = async (
   const authorizedDependencies = authorizePublishDependencies(dependencies);
   const operations = authorizedDependencies.fileOperations ?? nodeFileOperations;
   const path = await resolveApprovedPath(input.path, authorizedDependencies.workspaceRoots, operations);
+  const filename = basename(path);
   const sensitiveSegment = findSensitivePath(path);
   if (sensitiveSegment !== null) {
     throw new Error(`Artifact path contains a sensitive segment: ${sensitiveSegment}`);
@@ -214,11 +219,11 @@ export const publishArtifact = async (
     if (before.size > PROTOCOL_MAX_ARTIFACT_BYTES) throw new Error("Artifact exceeds the supported size");
     const bytes = new Uint8Array(await file.readFile());
     assertUnchanged(before, await file.stat());
-    validateBytes(bytes, mimeType);
-    assertSafeContent(bytes);
+    const sourceText = validateBytes(bytes, mimeType);
+    assertSafeContent(sourceText ?? bytes);
 
     const form = new FormData();
-    form.set("file", new File([bytes], basename(path), { type: mimeType }));
+    form.set("file", new File([bytes], filename, { type: mimeType }));
     form.set("expires_in_seconds", String(input.expiresInSeconds));
     const extraction = await addExtraction(
       form,
@@ -227,7 +232,7 @@ export const publishArtifact = async (
       authorizedDependencies.extractPdf ?? (async (pdfBytes) => extractPdfInNode({ bytes: pdfBytes })),
     );
     if (extraction.derivedBytes !== undefined) {
-      assertSafeContent(extraction.derivedBytes, "Derived PDF text");
+      assertSafeContent(extraction.derivedText ?? extraction.derivedBytes, "Derived PDF text");
     }
     assertUnchanged(before, await file.stat());
 
@@ -236,7 +241,7 @@ export const publishArtifact = async (
       ...(extraction.derivedBytes === undefined ? {} : { derivedBytes: extraction.derivedBytes }),
       expiresInSeconds: input.expiresInSeconds,
       extraction: extraction.metadata,
-      filename: basename(path),
+      filename,
       mimeType,
     });
     const journal = authorizedDependencies.journal ?? new MemoryPublicationJournal();
@@ -264,15 +269,9 @@ export const publishArtifact = async (
     );
     if (!response.ok) throw await responseError(response);
     const result = uploadResponseSchemaForOrigin(baseUrl).parse(await response.json());
-    const shareUrl = new URL(result.share_url);
-    if (
-      shareUrl.origin !== baseUrl.origin ||
-      shareUrl.username !== "" ||
-      shareUrl.password !== "" ||
-      shareUrl.search !== "" ||
-      shareUrl.hash !== "" ||
-      !/^\/a\/[A-Za-z0-9_-]{32,256}$/u.test(shareUrl.pathname)
-    ) {
+    try {
+      parseShareUrl(result.share_url, baseUrl);
+    } catch {
       throw new Error("Artifact Share returned a foreign share origin");
     }
     await journal.acknowledge(payloadCommitment, publication.attemptId);

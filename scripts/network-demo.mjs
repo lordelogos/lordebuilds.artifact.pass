@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { networkInterfaces, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -290,16 +290,21 @@ export const startQuickTunnel = async ({
   readinessTimeoutMs = 30_000,
   fetchImplementation = globalThis.fetch,
 } = {}) => {
-  if (cloudflaredPath.includes("/")) {
-    await access(cloudflaredPath).catch(() => {
-      throw new Error(`cloudflared was not found at ${cloudflaredPath}. Install it with Homebrew: brew install cloudflared`);
-    });
-  }
   const gateway = await createTunnelGateway({ targetOrigin, fetchImplementation });
   const configRoot = await mkdtemp(join(tmpdir(), "artifact-share-cloudflared-"));
   const configPath = join(configRoot, "config.yaml");
   await writeFile(configPath, "{}\n", { mode: 0o600 });
   let child;
+  let closed = false;
+  const cleanup = async () => {
+    if (closed) return;
+    closed = true;
+    await Promise.allSettled([
+      ...(child === undefined ? [] : [stopChild(child)]),
+      gateway.close(),
+      rm(configRoot, { recursive: true, force: true }),
+    ]);
+  };
   try {
     child = spawnProcess(
       cloudflaredPath,
@@ -307,7 +312,7 @@ export const startQuickTunnel = async ({
       { stdio: ["ignore", "pipe", "pipe"] },
     );
   } catch (error) {
-    await Promise.allSettled([gateway.close(), rm(configRoot, { recursive: true, force: true })]);
+    await cleanup();
     throw new Error(`Could not start cloudflared: ${error instanceof Error ? error.message : "process launch failed"}`);
   }
   let output = "";
@@ -332,10 +337,9 @@ export const startQuickTunnel = async ({
     child.once("exit", (code) => finish(new Error(`cloudflared exited before creating a Quick Tunnel (${code ?? "signal"}). ${output.trim()}`)));
     timer = setTimeout(() => finish(new Error(`cloudflared did not create a Quick Tunnel within ${timeoutMs}ms. ${output.trim()}`)), timeoutMs);
   }).catch(async (error) => {
-    await Promise.allSettled([stopChild(child), gateway.close(), rm(configRoot, { recursive: true, force: true })]);
+    await cleanup();
     throw error;
   });
-  let closed = false;
   if (readinessDelayMs > 0) {
     await new Promise((resolve) => setTimeout(resolve, readinessDelayMs));
   }
@@ -343,7 +347,7 @@ export const startQuickTunnel = async ({
   let lastReadiness = "no edge response";
   while (true) {
     if (child.exitCode !== null || child.signalCode !== null) {
-      await Promise.allSettled([gateway.close(), rm(configRoot, { recursive: true, force: true })]);
+      await cleanup();
       throw new Error("cloudflared exited while the Quick Tunnel was becoming reachable");
     }
     try {
@@ -355,16 +359,13 @@ export const startQuickTunnel = async ({
       lastReadiness = error instanceof Error ? error.message : "network error";
     }
     if (Date.now() >= readinessDeadline) {
-      await Promise.allSettled([stopChild(child), gateway.close(), rm(configRoot, { recursive: true, force: true })]);
+      await cleanup();
       throw new Error(`Quick Tunnel was created but did not become reachable within ${readinessTimeoutMs}ms (${lastReadiness}). ${output.trim()}`);
     }
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
   child.once("exit", () => {
-    if (!closed) {
-      closed = true;
-      void Promise.allSettled([gateway.close(), rm(configRoot, { recursive: true, force: true })]);
-    }
+    void cleanup();
   });
   return {
     publicOrigin,
@@ -373,9 +374,7 @@ export const startQuickTunnel = async ({
     gatewayOrigin: gateway.localOrigin,
     child,
     async close() {
-      if (closed) return;
-      closed = true;
-      await Promise.allSettled([stopChild(child), gateway.close(), rm(configRoot, { recursive: true, force: true })]);
+      await cleanup();
     },
   };
 };

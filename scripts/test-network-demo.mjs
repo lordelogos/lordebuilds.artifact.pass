@@ -1,5 +1,4 @@
 import { execFile, spawn } from "node:child_process";
-import { createHash, randomBytes } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -9,8 +8,10 @@ import { promisify } from "node:util";
 
 import {
   findLanIpv4Address,
+  generateUploadToken,
   startQuickTunnel,
 } from "./network-demo.mjs";
+import { sourceSha256 } from "./publication-commitment.mjs";
 
 const execute = promisify(execFile);
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -81,7 +82,7 @@ const startIsolatedDemo = async () => {
       ALLOWED_EXPIRY_SECONDS: "900,1800,3600,43200,86400",
       MAX_ARTIFACT_BYTES: "26214400",
       MAX_EXPIRY_SECONDS: "86400",
-      LOCAL_TEST_CONTROL_TOKEN: randomBytes(32).toString("base64url"),
+      LOCAL_TEST_CONTROL_TOKEN: generateUploadToken(),
     },
     d1_databases: [{
       binding: "ARTIFACT_DB",
@@ -185,7 +186,7 @@ const verify = async (shareUrl, fixture, expectedOrigin) => {
   assert(raw.ok, `Raw read failed for ${fixture.name} (${raw.status})`);
   const manifest = await manifestResponse.json();
   const rawBytes = Buffer.from(await raw.arrayBuffer());
-  const checksum = createHash("sha256").update(fixture.bytes).digest("hex");
+  const checksum = await sourceSha256(fixture.bytes);
   assert(rawBytes.equals(fixture.bytes), `Raw bytes changed for ${fixture.name}`);
   assert(manifest.sha256 === checksum, `Checksum changed for ${fixture.name}`);
   assert(manifest.mime_type === fixture.type, `MIME type changed for ${fixture.name}`);

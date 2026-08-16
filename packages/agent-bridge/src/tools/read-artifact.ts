@@ -38,7 +38,7 @@ export interface ReadArtifactResult {
 const sharePathPattern = /^\/a\/([A-Za-z0-9_-]{32,256})$/u;
 const cursorPattern = /^[A-Za-z0-9_-]{16,256}$/u;
 
-const parseShareUrl = (value: string, baseUrl: URL): { readonly url: URL; readonly token: string } => {
+export const parseShareUrl = (value: string, baseUrl: URL): { readonly url: URL; readonly token: string } => {
   let url: URL;
   try {
     url = new URL(value);

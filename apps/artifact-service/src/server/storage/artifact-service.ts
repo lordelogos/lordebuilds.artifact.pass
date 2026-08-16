@@ -89,7 +89,10 @@ export class ArtifactApplicationService {
   public async create(input: ArtifactUploadInput): Promise<CreatedArtifact> {
     const mimeType = validateArtifactUpload(input, this.options.policy);
     const publication = publicationRetryFromInput(input);
-    const checksum = await sha256(input.bytes);
+    const [checksum, derivedSha256] = await Promise.all([
+      sha256(input.bytes),
+      input.derivedText === undefined ? Promise.resolve(null) : sha256(input.derivedText),
+    ]);
     if (publication !== undefined) {
       if (
         !/^[A-Za-z0-9:_-]{8,255}$/u.test(publication.publisherId) ||
@@ -100,7 +103,7 @@ export class ArtifactApplicationService {
         throw new ArtifactError("malformed_upload", "Publication retry fields are malformed", 400);
       }
       const expectedCommitment = await createPayloadCommitmentFromSourceHash({
-        derivedHash: input.derivedText === undefined ? null : await sha256(input.derivedText),
+        derivedHash: derivedSha256,
         expiresInSeconds: input.expiresInSeconds,
         extraction: input.extraction,
         filename: input.filename,
@@ -158,7 +161,7 @@ export class ArtifactApplicationService {
     try {
       await this.options.objectStore.put(objectKey, input.bytes, mimeType);
       if (input.derivedText !== undefined && derivedObjectKey !== null) {
-        const derivedSha256 = await sha256(input.derivedText);
+        if (derivedSha256 === null) throw new Error("Derived artifact checksum is unavailable");
         await this.options.objectStore.put(
           derivedObjectKey,
           input.derivedText,

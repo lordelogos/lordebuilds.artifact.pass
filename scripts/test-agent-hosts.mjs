@@ -1,9 +1,10 @@
 import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { relative, resolve } from "node:path";
 import { promisify } from "node:util";
+
+import { sourceSha256 } from "./publication-commitment.mjs";
 
 const execute = promisify(execFile);
 const repositoryRoot = resolve(new URL("..", import.meta.url).pathname);
@@ -16,7 +17,7 @@ const run = async (command, args, environment) => execute(command, args, {
   maxBuffer: 8 * 1024 * 1024,
 });
 
-const digest = async (path) => createHash("sha256").update(await readFile(path)).digest("hex");
+const digest = async (path) => sourceSha256(await readFile(path));
 
 const portableFiles = async () => {
   const entries = await readdir(canonicalRoot, { recursive: true, withFileTypes: true });
