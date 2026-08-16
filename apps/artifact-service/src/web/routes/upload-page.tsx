@@ -1,7 +1,7 @@
 import {
   SUPPORTED_MIME_TYPES,
   protocolLimitsSchema,
-  uploadResponseSchema,
+  uploadResponseSchemaForOrigin,
   type ExtractionMetadata,
   type ProtocolLimits,
   type UploadResponse,
@@ -104,7 +104,7 @@ const uploadWithProgress = (
         reject(new Error(message));
         return;
       }
-      const parsed = uploadResponseSchema.safeParse(body);
+      const parsed = uploadResponseSchemaForOrigin(new URL(window.location.origin)).safeParse(body);
       if (!parsed.success) {
         reject(new Error("The service returned an incomplete share result."));
         return;

@@ -15,34 +15,49 @@ const isPrivateIpv4 = (hostname: string): boolean => {
     first >= 224;
 };
 
-export const assertSafeDeploymentOrigin = (url: URL): URL => {
+export interface DeploymentOriginOptions {
+  readonly openDevelopment?: boolean;
+}
+
+export const assertDeploymentOrigin = (
+  url: URL,
+  options: DeploymentOriginOptions = {},
+): URL => {
+  const openDevelopment = options.openDevelopment === true;
   if (
-    url.protocol !== "https:" ||
+    (url.protocol !== "https:" && !(openDevelopment && url.protocol === "http:")) ||
     url.username !== "" ||
     url.password !== "" ||
     url.search !== "" ||
     url.hash !== "" ||
     (url.pathname !== "/" && url.pathname !== "")
   ) {
-    throw new Error("Artifact Share deployment must be a credential-free HTTPS origin");
+    throw new Error(openDevelopment
+      ? "Artifact Share development deployment must be a credential-free HTTP or HTTPS origin"
+      : "Artifact Share deployment must be a credential-free HTTPS origin");
   }
   const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/gu, "");
   if (
-    hostname === "localhost" ||
-    hostname.endsWith(".localhost") ||
-    hostname === "::1" ||
-    hostname.startsWith("fc") ||
-    hostname.startsWith("fd") ||
-    hostname.startsWith("fe8") ||
-    hostname.startsWith("fe9") ||
-    hostname.startsWith("fea") ||
-    hostname.startsWith("feb") ||
-    isPrivateIpv4(hostname)
+    !openDevelopment && (
+      hostname === "localhost" ||
+      hostname.endsWith(".localhost") ||
+      hostname === "::1" ||
+      hostname.startsWith("fc") ||
+      hostname.startsWith("fd") ||
+      hostname.startsWith("fe8") ||
+      hostname.startsWith("fe9") ||
+      hostname.startsWith("fea") ||
+      hostname.startsWith("feb") ||
+      isPrivateIpv4(hostname)
+    )
   ) {
     throw new Error("Artifact Share deployment origin must not target a private network");
   }
   return new URL(url.origin);
 };
+
+export const assertSafeDeploymentOrigin = (url: URL): URL =>
+  assertDeploymentOrigin(url);
 
 export const fetchWithoutRedirects = async (
   fetchImplementation: typeof globalThis.fetch,

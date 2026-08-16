@@ -48,7 +48,7 @@ See [agent setup](docs/agent-setup.md) for host-specific commands and revocation
 
 ## Develop and verify
 
-Launch a complete localhost demo with the production upload UI, Worker routes,
+Launch an open development demo with the production upload UI, Worker routes,
 and persistent local D1/R2 emulation:
 
 ```sh
@@ -56,9 +56,33 @@ pnpm demo
 ```
 
 The command applies local migrations, opens `http://127.0.0.1:8787/upload`, and
-keeps demo artifacts under the ignored `.wrangler/demo-state` directory. The
-demo injects a locally signed identity only from its separate loopback-bound
-Worker entry; the production Cloudflare Access boundary is unchanged.
+prints a second URL for other devices on the same network. Demo artifacts stay
+under the ignored `.wrangler/demo-state` directory. Upload and agent routes are
+open in this separate development Worker so the complete share/read behavior can
+be tested before authentication is configured; the production Worker and its
+Cloudflare Access boundary are unchanged.
+
+Build the setup CLI, then connect the installed plugin to the open demo without
+device authorization or a token:
+
+```sh
+pnpm --dir packages/setup-cli build
+node packages/setup-cli/dist/cli.mjs connect http://127.0.0.1:8787 \
+  --open-development \
+  --workspace-root /absolute/path/to/approved/workspace
+```
+
+The explicit flag permits the local HTTP/private origin and persists non-secret
+open-development mode in the bridge configuration. Restart the agent session so
+the installed plugin reloads it. Omit the flag for production connections; they
+continue to require HTTPS and device authorization.
+
+Use the network URL as the `connect` base URL to test from another machine.
+For an optional temporary HTTPS tunnel, press `t` and Enter in the terminal
+where `pnpm demo` is running. The installed Cloudflare Vite plugin starts the
+tunnel and prints its public URL; connect that origin with `--open-development`
+because the demo remains intentionally unauthenticated. Press `t` and Enter
+again to close the tunnel.
 
 For automated verification:
 

@@ -69220,10 +69220,14 @@ var validateSettings = (value) => {
   if (!Array.isArray(candidate.workspace_roots) || candidate.workspace_roots.length === 0 || !candidate.workspace_roots.every((root) => typeof root === "string" && resolve(root) === root)) {
     throw new Error("Artifact Share config requires absolute workspace roots");
   }
+  if (candidate.open_development !== void 0 && candidate.open_development !== true) {
+    throw new Error("Artifact Share config open_development must be true when enabled");
+  }
   return {
     version: 1,
     base_url: candidate.base_url,
-    workspace_roots: candidate.workspace_roots
+    workspace_roots: candidate.workspace_roots,
+    ...candidate.open_development === true ? { open_development: true } : {}
   };
 };
 var defaultLocalConfigPath = (environment = process.env, platform = process.platform) => {
@@ -69379,11 +69383,20 @@ var sourceChunkSchema = external_exports.object({
     });
   }
 });
-var uploadResponseSchema = external_exports.object({
+var uploadResponseShape = external_exports.object({
   protocol_version: protocolVersionSchema,
   manifest: artifactManifestSchema,
-  share_url: external_exports.url({ protocol: /^https$/u })
+  share_url: external_exports.url()
 }).strict();
+var uploadResponseSchema = uploadResponseShape.extend({
+  share_url: external_exports.url({ protocol: /^https$/u })
+});
+var uploadResponseSchemaForOrigin = (origin) => uploadResponseShape.extend({
+  share_url: external_exports.url({ protocol: /^https?$/u })
+}).refine(
+  (response) => new URL(response.share_url).origin === origin.origin,
+  { path: ["share_url"], message: "Expected the configured deployment origin" }
+);
 var protocolLimitsSchema = external_exports.object({
   protocol_version: protocolVersionSchema,
   supported_mime_types: external_exports.tuple([
@@ -69431,12 +69444,13 @@ var isPrivateIpv4 = (hostname3) => {
   const [first = -1, second = -1] = octets;
   return first === 0 || first === 10 || first === 127 || first === 169 && second === 254 || first === 172 && second >= 16 && second <= 31 || first === 192 && second === 168 || first >= 224;
 };
-var assertSafeDeploymentOrigin = (url2) => {
-  if (url2.protocol !== "https:" || url2.username !== "" || url2.password !== "" || url2.search !== "" || url2.hash !== "" || url2.pathname !== "/" && url2.pathname !== "") {
-    throw new Error("Artifact Share deployment must be a credential-free HTTPS origin");
+var assertDeploymentOrigin = (url2, options = {}) => {
+  const openDevelopment = options.openDevelopment === true;
+  if (url2.protocol !== "https:" && !(openDevelopment && url2.protocol === "http:") || url2.username !== "" || url2.password !== "" || url2.search !== "" || url2.hash !== "" || url2.pathname !== "/" && url2.pathname !== "") {
+    throw new Error(openDevelopment ? "Artifact Share development deployment must be a credential-free HTTP or HTTPS origin" : "Artifact Share deployment must be a credential-free HTTPS origin");
   }
   const hostname3 = url2.hostname.toLowerCase().replace(/^\[|\]$/gu, "");
-  if (hostname3 === "localhost" || hostname3.endsWith(".localhost") || hostname3 === "::1" || hostname3.startsWith("fc") || hostname3.startsWith("fd") || hostname3.startsWith("fe8") || hostname3.startsWith("fe9") || hostname3.startsWith("fea") || hostname3.startsWith("feb") || isPrivateIpv4(hostname3)) {
+  if (!openDevelopment && (hostname3 === "localhost" || hostname3.endsWith(".localhost") || hostname3 === "::1" || hostname3.startsWith("fc") || hostname3.startsWith("fd") || hostname3.startsWith("fe8") || hostname3.startsWith("fe9") || hostname3.startsWith("fea") || hostname3.startsWith("feb") || isPrivateIpv4(hostname3))) {
     throw new Error("Artifact Share deployment origin must not target a private network");
   }
   return new URL(url2.origin);
@@ -69582,6 +69596,16 @@ var extractPdfInNode = async (request) => {
 };
 
 // src/tools/publish-artifact.ts
+var authorizePublishDependencies = (dependencies) => {
+  const token = dependencies.token?.trim();
+  if (dependencies.openDevelopment === true) {
+    return { ...dependencies, openDevelopment: true, token };
+  }
+  if (!token) {
+    throw new Error("A non-empty Artifact Share token is required for production publishing");
+  }
+  return { ...dependencies, openDevelopment: false, token };
+};
 var nodeFileOperations = {
   realpath,
   open: async (path) => open(path, "r")
@@ -69657,8 +69681,9 @@ var addExtraction = async (form, mimeType, bytes, extractPdf) => {
   }
 };
 var publishArtifact = async (input, dependencies) => {
-  const operations = dependencies.fileOperations ?? nodeFileOperations;
-  const path = await resolveApprovedPath(input.path, dependencies.workspaceRoots, operations);
+  const authorizedDependencies = authorizePublishDependencies(dependencies);
+  const operations = authorizedDependencies.fileOperations ?? nodeFileOperations;
+  const path = await resolveApprovedPath(input.path, authorizedDependencies.workspaceRoots, operations);
   const mimeType = mimeByExtension[extname(path).toLowerCase()];
   if (mimeType === void 0) throw new Error("Artifact type is not supported");
   const file2 = await operations.open(path);
@@ -69676,21 +69701,27 @@ var publishArtifact = async (input, dependencies) => {
       form,
       mimeType,
       bytes,
-      dependencies.extractPdf ?? (async (pdfBytes) => extractPdfInNode({ bytes: pdfBytes }))
+      authorizedDependencies.extractPdf ?? (async (pdfBytes) => extractPdfInNode({ bytes: pdfBytes }))
     );
     assertUnchanged(before, await file2.stat());
-    const baseUrl = assertSafeDeploymentOrigin(dependencies.baseUrl);
+    const baseUrl = assertDeploymentOrigin(authorizedDependencies.baseUrl, {
+      openDevelopment: authorizedDependencies.openDevelopment
+    });
+    const headers = new Headers();
+    if (authorizedDependencies.token !== void 0) {
+      headers.set("authorization", `Bearer ${authorizedDependencies.token}`);
+    }
     const response = await fetchWithoutRedirects(
-      dependencies.fetch ?? globalThis.fetch,
+      authorizedDependencies.fetch ?? globalThis.fetch,
       new URL("/api/artifacts", baseUrl),
       {
         method: "POST",
-        headers: { authorization: `Bearer ${dependencies.token}` },
+        headers,
         body: form
       }
     );
     if (!response.ok) throw await responseError(response);
-    const result = uploadResponseSchema.parse(await response.json());
+    const result = uploadResponseSchemaForOrigin(baseUrl).parse(await response.json());
     const shareUrl = new URL(result.share_url);
     if (shareUrl.origin !== baseUrl.origin || shareUrl.username !== "" || shareUrl.password !== "" || shareUrl.search !== "" || shareUrl.hash !== "" || !/^\/a\/[A-Za-z0-9_-]{32,256}$/u.test(shareUrl.pathname)) {
       throw new Error("Artifact Share returned a foreign share origin");
@@ -69711,7 +69742,7 @@ var parseShareUrl = (value, baseUrl) => {
   } catch {
     throw new Error("Artifact Share URL is malformed");
   }
-  if (url2.origin !== baseUrl.origin || url2.protocol !== "https:" || url2.username !== "" || url2.password !== "" || url2.search !== "" || url2.hash !== "") {
+  if (url2.origin !== baseUrl.origin || url2.username !== "" || url2.password !== "" || url2.search !== "" || url2.hash !== "") {
     throw new Error("Artifact Share URL must use the configured deployment origin");
   }
   const match = sharePathPattern.exec(url2.pathname);
@@ -69798,7 +69829,9 @@ var readDerived = async (manifest, shareBase, input, fetchImplementation, maximu
   };
 };
 var readArtifact = async (input, dependencies) => {
-  const baseUrl = assertSafeDeploymentOrigin(dependencies.baseUrl);
+  const baseUrl = assertDeploymentOrigin(dependencies.baseUrl, {
+    openDevelopment: dependencies.openDevelopment === true
+  });
   const share = parseShareUrl(input.shareUrl, baseUrl);
   if (input.cursor !== void 0 && !cursorPattern.test(input.cursor)) {
     throw new Error("Artifact source cursor is invalid");
@@ -69894,7 +69927,7 @@ var createBridgeServer = (configuration) => {
     }
   }, async ({ path, expires_in_seconds: expiresInSeconds }) => {
     try {
-      const token = await resolveCredential({
+      const token = configuration.openDevelopment === true ? void 0 : await resolveCredential({
         headless: configuration.headless,
         environmentStore: configuration.environmentStore,
         ...configuration.osStore === void 0 ? {} : { osStore: configuration.osStore }
@@ -69902,7 +69935,8 @@ var createBridgeServer = (configuration) => {
       const result = await publishArtifact({ path, expiresInSeconds }, {
         baseUrl: configuration.baseUrl,
         workspaceRoots: configuration.workspaceRoots,
-        token,
+        ...token === void 0 ? {} : { token },
+        openDevelopment: configuration.openDevelopment === true,
         ...configuration.fetch === void 0 ? {} : { fetch: configuration.fetch }
       });
       return {
@@ -69938,6 +69972,7 @@ var createBridgeServer = (configuration) => {
         ...representation === void 0 ? {} : { representation }
       }, {
         baseUrl: configuration.baseUrl,
+        openDevelopment: configuration.openDevelopment === true,
         ...configuration.fetch === void 0 ? {} : { fetch: configuration.fetch }
       });
       return {
@@ -69959,10 +69994,16 @@ var configurationFromEnvironment = (environment = process.env) => {
   const workspaceRoots = rootsValue === void 0 ? [...localSettings?.workspace_roots ?? []] : rootsValue.split(delimiter).filter((root) => root.length > 0);
   if (workspaceRoots.length === 0) throw new Error("ARTIFACT_SHARE_WORKSPACE_ROOTS must not be empty");
   const environmentStore = new EnvironmentCredentialStore("ARTIFACT_SHARE_TOKEN", environment);
+  const openDevelopmentValue = environment.ARTIFACT_SHARE_OPEN_DEVELOPMENT;
+  if (openDevelopmentValue !== void 0 && openDevelopmentValue !== "1") {
+    throw new Error("ARTIFACT_SHARE_OPEN_DEVELOPMENT must be 1 when enabled");
+  }
+  const openDevelopment = openDevelopmentValue === "1" || openDevelopmentValue === void 0 && environment.ARTIFACT_SHARE_BASE_URL === void 0 && localSettings?.open_development === true;
   const headless = environment.ARTIFACT_SHARE_TOKEN !== void 0;
   return {
-    baseUrl: assertSafeDeploymentOrigin(new URL(baseUrlValue)),
+    baseUrl: assertDeploymentOrigin(new URL(baseUrlValue), { openDevelopment }),
     workspaceRoots,
+    openDevelopment,
     headless,
     environmentStore,
     ...headless ? {} : { osStore: new OsCredentialStore() }

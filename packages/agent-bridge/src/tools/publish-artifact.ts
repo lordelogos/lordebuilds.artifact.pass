@@ -3,13 +3,13 @@ import { basename, extname, isAbsolute, relative, resolve, sep } from "node:path
 
 import {
   PROTOCOL_MAX_ARTIFACT_BYTES,
-  uploadResponseSchema,
+  uploadResponseSchemaForOrigin,
   type SupportedMimeType,
   type UploadResponse,
 } from "artifact-protocol";
 import { extractPdfInNode, pdfPagesToText, type PdfExtractionResult } from "representation-pipeline";
 
-import { assertSafeDeploymentOrigin, fetchWithoutRedirects, responseError } from "../http/safe-fetch";
+import { assertDeploymentOrigin, fetchWithoutRedirects, responseError } from "../http/safe-fetch";
 
 interface FileStat {
   readonly dev: number | bigint;
@@ -40,11 +40,31 @@ export interface PublishArtifactInput {
 export interface PublishArtifactDependencies {
   readonly baseUrl: URL;
   readonly workspaceRoots: readonly string[];
-  readonly token: string;
+  readonly token?: string;
+  readonly openDevelopment?: boolean;
   readonly fetch?: typeof globalThis.fetch;
   readonly fileOperations?: FileOperations;
   readonly extractPdf?: (bytes: Uint8Array) => Promise<PdfExtractionResult>;
 }
+
+type AuthorizedPublishArtifactDependencies =
+  Omit<PublishArtifactDependencies, "openDevelopment" | "token"> & (
+    | { readonly openDevelopment: true; readonly token: string | undefined }
+    | { readonly openDevelopment: false; readonly token: string }
+  );
+
+const authorizePublishDependencies = (
+  dependencies: PublishArtifactDependencies,
+): AuthorizedPublishArtifactDependencies => {
+  const token = dependencies.token?.trim();
+  if (dependencies.openDevelopment === true) {
+    return { ...dependencies, openDevelopment: true, token };
+  }
+  if (!token) {
+    throw new Error("A non-empty Artifact Share token is required for production publishing");
+  }
+  return { ...dependencies, openDevelopment: false, token };
+};
 
 const nodeFileOperations: FileOperations = {
   realpath,
@@ -149,8 +169,9 @@ export const publishArtifact = async (
   input: PublishArtifactInput,
   dependencies: PublishArtifactDependencies,
 ): Promise<UploadResponse> => {
-  const operations = dependencies.fileOperations ?? nodeFileOperations;
-  const path = await resolveApprovedPath(input.path, dependencies.workspaceRoots, operations);
+  const authorizedDependencies = authorizePublishDependencies(dependencies);
+  const operations = authorizedDependencies.fileOperations ?? nodeFileOperations;
+  const path = await resolveApprovedPath(input.path, authorizedDependencies.workspaceRoots, operations);
   const mimeType = mimeByExtension[extname(path).toLowerCase()];
   if (mimeType === undefined) throw new Error("Artifact type is not supported");
 
@@ -170,22 +191,28 @@ export const publishArtifact = async (
       form,
       mimeType,
       bytes,
-      dependencies.extractPdf ?? (async (pdfBytes) => extractPdfInNode({ bytes: pdfBytes })),
+      authorizedDependencies.extractPdf ?? (async (pdfBytes) => extractPdfInNode({ bytes: pdfBytes })),
     );
     assertUnchanged(before, await file.stat());
 
-    const baseUrl = assertSafeDeploymentOrigin(dependencies.baseUrl);
+    const baseUrl = assertDeploymentOrigin(authorizedDependencies.baseUrl, {
+      openDevelopment: authorizedDependencies.openDevelopment,
+    });
+    const headers = new Headers();
+    if (authorizedDependencies.token !== undefined) {
+      headers.set("authorization", `Bearer ${authorizedDependencies.token}`);
+    }
     const response = await fetchWithoutRedirects(
-      dependencies.fetch ?? globalThis.fetch,
+      authorizedDependencies.fetch ?? globalThis.fetch,
       new URL("/api/artifacts", baseUrl),
       {
         method: "POST",
-        headers: { authorization: `Bearer ${dependencies.token}` },
+        headers,
         body: form,
       },
     );
     if (!response.ok) throw await responseError(response);
-    const result = uploadResponseSchema.parse(await response.json());
+    const result = uploadResponseSchemaForOrigin(baseUrl).parse(await response.json());
     const shareUrl = new URL(result.share_url);
     if (
       shareUrl.origin !== baseUrl.origin ||

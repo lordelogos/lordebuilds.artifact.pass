@@ -1,7 +1,9 @@
 export {
+  assertDeploymentOrigin,
   assertSafeDeploymentOrigin,
   fetchWithoutRedirects,
   responseError,
+  type DeploymentOriginOptions,
 } from "./http/safe-fetch";
 export {
   CredentialStoreCommandError,

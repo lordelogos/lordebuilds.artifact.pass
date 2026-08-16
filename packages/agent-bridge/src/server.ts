@@ -11,7 +11,7 @@ import {
   type CredentialStore,
 } from "./auth/credential-store";
 import { defaultLocalConfigPath, readLocalBridgeSettingsSync } from "./config/local-config";
-import { assertSafeDeploymentOrigin } from "./http/safe-fetch";
+import { assertDeploymentOrigin } from "./http/safe-fetch";
 import {
   createRedactingLogger,
   redactSensitiveText,
@@ -23,6 +23,7 @@ import { readArtifact } from "./tools/read-artifact";
 export interface BridgeConfiguration {
   readonly baseUrl: URL;
   readonly workspaceRoots: readonly string[];
+  readonly openDevelopment?: boolean;
   readonly headless: boolean;
   readonly environmentStore: CredentialStore;
   readonly osStore?: CredentialStore;
@@ -64,15 +65,18 @@ export const createBridgeServer = (configuration: BridgeConfiguration): McpServe
     },
   }, async ({ path, expires_in_seconds: expiresInSeconds }) => {
     try {
-      const token = await resolveCredential({
-        headless: configuration.headless,
-        environmentStore: configuration.environmentStore,
-        ...(configuration.osStore === undefined ? {} : { osStore: configuration.osStore }),
-      });
+      const token = configuration.openDevelopment === true
+        ? undefined
+        : await resolveCredential({
+          headless: configuration.headless,
+          environmentStore: configuration.environmentStore,
+          ...(configuration.osStore === undefined ? {} : { osStore: configuration.osStore }),
+        });
       const result = await publishArtifact({ path, expiresInSeconds }, {
         baseUrl: configuration.baseUrl,
         workspaceRoots: configuration.workspaceRoots,
-        token,
+        ...(token === undefined ? {} : { token }),
+        openDevelopment: configuration.openDevelopment === true,
         ...(configuration.fetch === undefined ? {} : { fetch: configuration.fetch }),
       });
       return {
@@ -109,6 +113,7 @@ export const createBridgeServer = (configuration: BridgeConfiguration): McpServe
         ...(representation === undefined ? {} : { representation }),
       }, {
         baseUrl: configuration.baseUrl,
+        openDevelopment: configuration.openDevelopment === true,
         ...(configuration.fetch === undefined ? {} : { fetch: configuration.fetch }),
       });
       return {
@@ -139,10 +144,20 @@ export const configurationFromEnvironment = (
     : rootsValue.split(delimiter).filter((root) => root.length > 0);
   if (workspaceRoots.length === 0) throw new Error("ARTIFACT_SHARE_WORKSPACE_ROOTS must not be empty");
   const environmentStore = new EnvironmentCredentialStore("ARTIFACT_SHARE_TOKEN", environment);
+  const openDevelopmentValue = environment.ARTIFACT_SHARE_OPEN_DEVELOPMENT;
+  if (openDevelopmentValue !== undefined && openDevelopmentValue !== "1") {
+    throw new Error("ARTIFACT_SHARE_OPEN_DEVELOPMENT must be 1 when enabled");
+  }
+  const openDevelopment = openDevelopmentValue === "1" || (
+    openDevelopmentValue === undefined &&
+    environment.ARTIFACT_SHARE_BASE_URL === undefined &&
+    localSettings?.open_development === true
+  );
   const headless = environment.ARTIFACT_SHARE_TOKEN !== undefined;
   return {
-    baseUrl: assertSafeDeploymentOrigin(new URL(baseUrlValue)),
+    baseUrl: assertDeploymentOrigin(new URL(baseUrlValue), { openDevelopment }),
     workspaceRoots,
+    openDevelopment,
     headless,
     environmentStore,
     ...(headless ? {} : { osStore: new OsCredentialStore() }),

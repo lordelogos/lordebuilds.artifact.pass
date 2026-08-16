@@ -28,6 +28,7 @@ import { artifactPolicyFromBindings } from "./storage/validation";
 export interface ArtifactApplicationOptions {
   readonly now?: () => number;
   readonly accessJwks?: JWTVerifyGetKey;
+  readonly allowUnauthenticatedUploads?: boolean;
 }
 
 const createService = (
@@ -46,6 +47,9 @@ export const createArtifactApplication = (options: ArtifactApplicationOptions = 
   const authorizationOptions = {
     ...(options.now === undefined ? {} : { now: options.now }),
     ...(options.accessJwks === undefined ? {} : { accessJwks: options.accessJwks }),
+    ...(options.allowUnauthenticatedUploads === undefined
+      ? {}
+      : { allowUnauthenticatedUploads: options.allowUnauthenticatedUploads }),
   };
 
   app.get("/health", (context) =>

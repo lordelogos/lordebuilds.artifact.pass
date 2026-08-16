@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 
 import {
   OsCredentialStore,
-  assertSafeDeploymentOrigin,
+  assertDeploymentOrigin,
   defaultLocalConfigPath,
   fetchWithoutRedirects,
   readLocalBridgeSettings,
@@ -38,6 +38,7 @@ const revokeToken = async (
 export interface ConnectInput {
   readonly baseUrl: string;
   readonly workspaceRoots: readonly string[];
+  readonly openDevelopment?: boolean;
   readonly hosts?: readonly AgentHost[];
   readonly marketplaceSource: string;
   readonly configPath?: string;
@@ -55,8 +56,13 @@ export interface ConnectDependencies {
 export const connectHost = async (
   input: ConnectInput,
   dependencies: ConnectDependencies,
-): Promise<{ readonly hosts: readonly AgentHost[]; readonly expiresIn: number; readonly configPath: string }> => {
-  const origin = assertSafeDeploymentOrigin(new URL(input.baseUrl));
+): Promise<{
+  readonly hosts: readonly AgentHost[];
+  readonly expiresIn?: number;
+  readonly configPath: string;
+}> => {
+  const openDevelopment = input.openDevelopment === true;
+  const origin = assertDeploymentOrigin(new URL(input.baseUrl), { openDevelopment });
   const roots = input.workspaceRoots.map((root) => resolve(root));
   if (roots.length === 0) throw new Error("At least one workspace root is required");
   const fetchImplementation = dependencies.deviceFlowDependencies.fetch ?? globalThis.fetch;
@@ -79,9 +85,18 @@ export const connectHost = async (
   const hosts = input.hosts ?? await detectHosts(runner);
   if (hosts.length === 0) throw new Error("Install Claude Code or Codex before connecting Artifact Share");
   await installPluginForHosts(hosts, input.marketplaceSource, runner);
+  const configPath = input.configPath ?? defaultLocalConfigPath();
+  if (openDevelopment) {
+    await (dependencies.writeSettings ?? writeLocalBridgeSettings)(configPath, {
+      version: 1,
+      base_url: origin.toString(),
+      workspace_roots: roots,
+      open_development: true,
+    });
+    return { hosts, configPath };
+  }
   const store = dependencies.credentialStore ?? new OsCredentialStore();
   const previousToken = await store.get();
-  const configPath = input.configPath ?? defaultLocalConfigPath();
   const previousSettings = await (dependencies.readSettings ?? readLocalBridgeSettings)(configPath).catch((error: unknown) => {
     if (isMissingFile(error)) return null;
     throw error;
@@ -102,9 +117,13 @@ export const connectHost = async (
     });
     wroteConfig = true;
     await store.set(token.accessToken);
-    if (previousToken !== null && previousSettings !== null) {
+    if (
+      previousToken !== null &&
+      previousSettings !== null &&
+      previousSettings.open_development !== true
+    ) {
       await revokeToken(
-        assertSafeDeploymentOrigin(new URL(previousSettings.base_url)),
+        assertDeploymentOrigin(new URL(previousSettings.base_url)),
         previousToken,
         fetchImplementation,
       );

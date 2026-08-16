@@ -371,7 +371,7 @@ describe("local demo Worker", () => {
   const localRequest = (path: string, init?: RequestInit) =>
     new Request(`http://127.0.0.1:8787${path}`, init);
 
-  it("authorizes only the human demo routes on a loopback origin", async () => {
+  it("opens browser and agent upload routes on localhost and the local network", async () => {
     const policy = await localDemoHandler.fetch(localRequest("/upload/policy"), bindings());
     expect(policy.status).toBe(200);
 
@@ -379,15 +379,15 @@ describe("local demo Worker", () => {
       method: "POST",
       body: markdownUpload(),
     }), bindings());
-    expect(agentRoute.status).toBe(404);
+    expect(agentRoute.status).toBe(201);
     expect(await env.ARTIFACT_DB.prepare("SELECT COUNT(*) AS count FROM artifacts").first("count"))
-      .toBe(0);
+      .toBe(1);
 
-    const nonLoopback = await localDemoHandler.fetch(
-      new Request("https://artifacts.example/upload/policy"),
+    const networkPolicy = await localDemoHandler.fetch(
+      new Request("http://192.168.1.20:8787/upload/policy"),
       bindings(),
     );
-    expect(nonLoopback.status).toBe(404);
+    expect(networkPolicy.status).toBe(200);
   });
 
   it("uploads and renders a real artifact through local D1 and R2", async () => {

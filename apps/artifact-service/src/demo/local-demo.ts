@@ -16,9 +16,6 @@ const demoIdentity = {
   email: "local-demo@artifact-share.test",
 } as const;
 
-const isLoopback = (hostname: string): boolean =>
-  hostname === "127.0.0.1" || hostname === "localhost";
-
 const requiresHumanIdentity = (pathname: string): boolean =>
   pathname === "/upload" ||
   pathname.startsWith("/upload/") ||
@@ -39,7 +36,10 @@ export const createLocalDemoHandler = async (): Promise<LocalDemoHandler> => {
   const accessJwks = createLocalJWKSet({
     keys: [{ ...publicJwk, alg: "RS256", kid: keyId, use: "sig" }],
   });
-  const application = createArtifactApplication({ accessJwks });
+  const application = createArtifactApplication({
+    accessJwks,
+    allowUnauthenticatedUploads: true,
+  });
   let cachedIdentity: { readonly assertion: string; readonly refreshAt: number } | undefined;
   let signingIdentity: Promise<{ readonly assertion: string; readonly refreshAt: number }> | undefined;
 
@@ -71,13 +71,6 @@ export const createLocalDemoHandler = async (): Promise<LocalDemoHandler> => {
   return {
     fetch: async (request, bindings, executionContext) => {
       const url = new URL(request.url);
-      if (!isLoopback(url.hostname)) {
-        return new Response("Local demo is available only on this computer.", {
-          status: 404,
-          headers: { "Cache-Control": "no-store" },
-        });
-      }
-
       const demoBindings = {
         ...bindings,
         ACCESS_TEAM_DOMAIN: issuer,

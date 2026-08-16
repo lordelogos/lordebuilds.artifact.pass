@@ -7,6 +7,7 @@ import {
   expiryPolicySchema,
   sourceChunkSchema,
   uploadResponseSchema,
+  uploadResponseSchemaForOrigin,
 } from "../src/index";
 
 const validManifest = {
@@ -128,5 +129,49 @@ describe("transport schemas", () => {
         share_url: "https://artifacts.example.com/a/opaque-token",
       }),
     ).toBeDefined();
+  });
+
+  it("accepts HTTP only when validating against that explicit local origin", () => {
+    const response = {
+      protocol_version: PROTOCOL_VERSION,
+      manifest: validManifest,
+      share_url: "http://127.0.0.1:8787/a/opaque-token",
+    };
+
+    expect(() => uploadResponseSchema.parse(response)).toThrow();
+    expect(
+      uploadResponseSchemaForOrigin(new URL("http://127.0.0.1:8787")).parse(response),
+    ).toBeDefined();
+    expect(() =>
+      uploadResponseSchemaForOrigin(new URL("http://192.168.1.20:8787")).parse(response)
+    ).toThrow();
+  });
+
+  it("accepts HTTPS when validating against that explicit origin", () => {
+    const response = {
+      protocol_version: PROTOCOL_VERSION,
+      manifest: validManifest,
+      share_url: "https://artifacts.example.com/a/opaque-token",
+    };
+
+    expect(
+      uploadResponseSchemaForOrigin(new URL("https://artifacts.example.com")).parse(
+        response,
+      ),
+    ).toBeDefined();
+  });
+
+  it.each([
+    "blob:https://artifacts.example.com/opaque-token",
+    "ftp://artifacts.example.com/a/opaque-token",
+    "data:text/plain,opaque-token",
+  ])("rejects non-web share URL %s for configured-origin validation", (shareUrl) => {
+    expect(() =>
+      uploadResponseSchemaForOrigin(new URL("https://artifacts.example.com")).parse({
+        protocol_version: PROTOCOL_VERSION,
+        manifest: validManifest,
+        share_url: shareUrl,
+      }),
+    ).toThrow();
   });
 });

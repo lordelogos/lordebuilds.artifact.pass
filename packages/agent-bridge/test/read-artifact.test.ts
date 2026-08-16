@@ -33,6 +33,33 @@ const pdfManifest = (extraction: Record<string, unknown>) => ({
 });
 
 describe("read_artifact", () => {
+  it("reads from the configured HTTP origin in open development mode", async () => {
+    const localShareUrl = `http://192.168.1.20:8787/a/${token}`;
+    const source = new TextEncoder().encode("# Local network artifact");
+    const metadata = manifest(source);
+    const fetch = vi.fn<typeof globalThis.fetch>(async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/manifest")) return Response.json(metadata);
+      return Response.json({
+        protocol_version: 1,
+        artifact_id: artifactId,
+        encoding: "base64",
+        byte_offset: 0,
+        byte_length: source.byteLength,
+        total_size: source.byteLength,
+        sha256: metadata.sha256,
+        data: Buffer.from(source).toString("base64"),
+        next_cursor: null,
+      });
+    });
+
+    await expect(readArtifact({ shareUrl: localShareUrl }, {
+      baseUrl: new URL("http://192.168.1.20:8787"),
+      openDevelopment: true,
+      fetch,
+    })).resolves.toMatchObject({ text: "# Local network artifact" });
+  });
+
   it("reconstructs exact source through deterministic bounded chunks", async () => {
     const source = new TextEncoder().encode("0123456789abcdef".repeat(10_000));
     const metadata = manifest(source);

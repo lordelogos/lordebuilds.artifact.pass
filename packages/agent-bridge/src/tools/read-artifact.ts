@@ -6,7 +6,7 @@ import {
   type ArtifactManifest,
 } from "artifact-protocol";
 
-import { assertSafeDeploymentOrigin, fetchWithoutRedirects, responseError } from "../http/safe-fetch";
+import { assertDeploymentOrigin, fetchWithoutRedirects, responseError } from "../http/safe-fetch";
 
 export interface ReadArtifactInput {
   readonly shareUrl: string;
@@ -17,6 +17,7 @@ export interface ReadArtifactInput {
 
 export interface ReadArtifactDependencies {
   readonly baseUrl: URL;
+  readonly openDevelopment?: boolean;
   readonly fetch?: typeof globalThis.fetch;
 }
 
@@ -46,7 +47,6 @@ const parseShareUrl = (value: string, baseUrl: URL): { readonly url: URL; readon
   }
   if (
     url.origin !== baseUrl.origin ||
-    url.protocol !== "https:" ||
     url.username !== "" ||
     url.password !== "" ||
     url.search !== "" ||
@@ -160,7 +160,9 @@ export const readArtifact = async (
   input: ReadArtifactInput,
   dependencies: ReadArtifactDependencies,
 ): Promise<ReadArtifactResult> => {
-  const baseUrl = assertSafeDeploymentOrigin(dependencies.baseUrl);
+  const baseUrl = assertDeploymentOrigin(dependencies.baseUrl, {
+    openDevelopment: dependencies.openDevelopment === true,
+  });
   const share = parseShareUrl(input.shareUrl, baseUrl);
   if (input.cursor !== undefined && !cursorPattern.test(input.cursor)) {
     throw new Error("Artifact source cursor is invalid");

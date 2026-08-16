@@ -191,6 +191,102 @@ describe("host connection", () => {
     expect(persisted).not.toContain(token);
   });
 
+  it("connects an open development origin without resolving or storing a token", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifact-share-open-connect-test-"));
+    const configPath = resolve(root, "config.json");
+    const store = { get: vi.fn(), set: vi.fn(), delete: vi.fn() };
+    const deviceFlow = vi.fn();
+
+    const result = await connectHost({
+      baseUrl: "http://127.0.0.1:8787",
+      workspaceRoots: [root],
+      hosts: ["codex"],
+      marketplaceSource: "/trusted/repository",
+      configPath,
+      openDevelopment: true,
+    }, {
+      runner: runnerFor(["codex"]),
+      credentialStore: store,
+      deviceFlow,
+      deviceFlowDependencies: {
+        openBrowser: async () => undefined,
+        fetch: vi.fn(async () => new Response(JSON.stringify({
+          service: "lordebuilds.artifacts.share",
+          status: "ok",
+        }))),
+      },
+    });
+
+    expect(result).toEqual({ hosts: ["codex"], configPath });
+    expect(deviceFlow).not.toHaveBeenCalled();
+    expect(store.get).not.toHaveBeenCalled();
+    expect(store.set).not.toHaveBeenCalled();
+    expect(JSON.parse(await readFile(configPath, "utf8"))).toEqual({
+      version: 1,
+      base_url: "http://127.0.0.1:8787/",
+      workspace_roots: [root],
+      open_development: true,
+    });
+  });
+
+  it("rejects a local HTTP connection unless open development is explicit", async () => {
+    const runner = runnerFor(["codex"]);
+
+    await expect(connectHost({
+      baseUrl: "http://127.0.0.1:8787",
+      workspaceRoots: [process.cwd()],
+      hosts: ["codex"],
+      marketplaceSource: "/trusted/repository",
+    }, {
+      runner,
+      deviceFlowDependencies: { openBrowser: async () => undefined },
+    })).rejects.toThrow("HTTPS origin");
+
+    expect(runner).not.toHaveBeenCalled();
+  });
+
+  it("does not treat a prior open connection as a token-bearing production connection", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifact-share-open-transition-test-"));
+    const configPath = resolve(root, "config.json");
+    const previousToken = `as_${"o".repeat(43)}`;
+    const nextToken = `as_${"n".repeat(43)}`;
+    await writeFile(configPath, JSON.stringify({
+      version: 1,
+      base_url: "http://127.0.0.1:8787/",
+      workspace_roots: [root],
+      open_development: true,
+    }));
+    const store = {
+      get: vi.fn().mockResolvedValue(previousToken),
+      set: vi.fn(),
+      delete: vi.fn(),
+    };
+    const fetch = vi.fn<typeof globalThis.fetch>(async (input) => {
+      const url = new URL(input instanceof Request ? input.url : input.toString());
+      if (url.pathname === "/health") {
+        return new Response(JSON.stringify({ service: "lordebuilds.artifacts.share", status: "ok" }));
+      }
+      throw new Error(`Unexpected token revocation request to ${url.toString()}`);
+    });
+
+    await expect(connectHost({
+      baseUrl: "https://artifacts.example.test",
+      workspaceRoots: [root],
+      hosts: ["codex"],
+      marketplaceSource: "/trusted/repository",
+      configPath,
+    }, {
+      runner: runnerFor(["codex"]),
+      credentialStore: store,
+      deviceFlow: vi.fn(async () => ({ accessToken: nextToken, expiresIn: 3600 })),
+      deviceFlowDependencies: { openBrowser: async () => undefined, fetch },
+    })).resolves.toMatchObject({ expiresIn: 3600 });
+
+    expect(store.set).toHaveBeenCalledWith(nextToken);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(await readFile(configPath, "utf8"))).not.toHaveProperty("open_development");
+  });
+
   it("revokes before deleting the local credential", async () => {
     const order: string[] = [];
     const store = {

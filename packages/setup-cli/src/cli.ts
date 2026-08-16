@@ -37,6 +37,12 @@ const optionalValue = (args: readonly string[], flag: string): string | undefine
   return matches[0];
 };
 
+const booleanFlag = (args: readonly string[], flag: string): boolean => {
+  const count = args.filter((argument) => argument === flag).length;
+  if (count > 1) throw new Error(`${flag} may be provided once`);
+  return count === 1;
+};
+
 const positional = (args: readonly string[], position: number): string => {
   const positionals = args.filter((item, index) => index === 0 || !args[index - 1]?.startsWith("--"))
     .filter((item) => !item.startsWith("--"));
@@ -53,7 +59,7 @@ const help = `Artifact Share setup
 
 Commands:
   deploy --account-id <id> --zone-id <id> --hostname <host> (--allow-email <email> | --allow-domain <domain>) [--dry-run]
-  connect <base-url> [--workspace-root <path>] [--host codex|claude|both] [--marketplace <source>]
+  connect <base-url> [--workspace-root <path>] [--host codex|claude|both] [--marketplace <source>] [--open-development]
   disconnect [<base-url>]
   doctor
 
@@ -102,6 +108,7 @@ const main = async (): Promise<void> => {
         : [process.cwd()],
       ...(hosts === undefined ? {} : { hosts }),
       marketplaceSource: optionalValue(args, "--marketplace") ?? defaultMarketplace,
+      openDevelopment: booleanFlag(args, "--open-development"),
     }, {
       deviceFlowDependencies: { openBrowser },
     });

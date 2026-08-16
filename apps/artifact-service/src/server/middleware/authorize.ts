@@ -20,6 +20,7 @@ export type ArtifactHonoEnvironment = {
 export interface AuthorizationOptions {
   readonly accessJwks?: JWTVerifyGetKey;
   readonly now?: () => number;
+  readonly allowUnauthenticatedUploads?: boolean;
 }
 
 const unavailable = (): ArtifactError =>
@@ -79,6 +80,10 @@ export const requireUploader = (
   options: AuthorizationOptions = {},
 ): MiddlewareHandler<ArtifactHonoEnvironment> =>
   async (context, next) => {
+    if (options.allowUnauthenticatedUploads === true) {
+      await next();
+      return;
+    }
     if (context.req.header("cf-access-jwt-assertion") !== undefined) {
       context.set("accessIdentity", await accessIdentity(context, options));
     } else {

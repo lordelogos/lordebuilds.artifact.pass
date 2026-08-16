@@ -1,8 +1,18 @@
 import { exports } from "cloudflare:workers";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import demoConfigSource from "../wrangler-demo.jsonc?raw";
 import productionConfigSource from "../wrangler.jsonc?raw";
+
+vi.mock("@cloudflare/vite-plugin", () => ({
+  cloudflare: () => ({ name: "cloudflare" }),
+}));
+vi.mock("@vitejs/plugin-react", () => ({
+  default: () => ({ name: "react" }),
+}));
+vi.mock("vite", () => ({
+  defineConfig: <Config>(config: Config) => config,
+}));
 
 describe("deployment runtime", () => {
   it("reports that the local artifact service is healthy", async () => {
@@ -33,6 +43,17 @@ describe("deployment runtime", () => {
     expect(demoConfig).toMatchObject({
       main: "src/demo/index.ts",
       assets: { binding: "ASSETS" },
+    });
+  });
+
+  it("binds the local demo Vite server to the fixed public listener", async () => {
+    const { default: demoViteConfig } = await import("../vite-demo.config");
+    const resolvedDemoConfig = await Promise.resolve(demoViteConfig);
+
+    expect(resolvedDemoConfig.server).toMatchObject({
+      host: "0.0.0.0",
+      port: 8787,
+      strictPort: true,
     });
   });
 });

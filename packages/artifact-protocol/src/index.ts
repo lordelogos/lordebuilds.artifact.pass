@@ -167,13 +167,27 @@ export const sourceChunkSchema = z
     }
   });
 
-export const uploadResponseSchema = z
+const uploadResponseShape = z
   .object({
     protocol_version: protocolVersionSchema,
     manifest: artifactManifestSchema,
-    share_url: z.url({ protocol: /^https$/u }),
+    share_url: z.url(),
   })
   .strict();
+
+export const uploadResponseSchema = uploadResponseShape.extend({
+  share_url: z.url({ protocol: /^https$/u }),
+});
+
+export const uploadResponseSchemaForOrigin = (origin: URL) =>
+  uploadResponseShape
+    .extend({
+      share_url: z.url({ protocol: /^https?$/u }),
+    })
+    .refine(
+      (response) => new URL(response.share_url).origin === origin.origin,
+      { path: ["share_url"], message: "Expected the configured deployment origin" },
+    );
 
 export const protocolLimitsSchema = z
   .object({

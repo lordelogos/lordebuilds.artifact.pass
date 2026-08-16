@@ -7,6 +7,7 @@ export interface LocalBridgeSettings {
   readonly version: 1;
   readonly base_url: string;
   readonly workspace_roots: readonly string[];
+  readonly open_development?: true;
 }
 
 const validateSettings = (value: unknown): LocalBridgeSettings => {
@@ -24,10 +25,14 @@ const validateSettings = (value: unknown): LocalBridgeSettings => {
   ) {
     throw new Error("Artifact Share config requires absolute workspace roots");
   }
+  if (candidate.open_development !== undefined && candidate.open_development !== true) {
+    throw new Error("Artifact Share config open_development must be true when enabled");
+  }
   return {
     version: 1,
     base_url: candidate.base_url,
     workspace_roots: candidate.workspace_roots as string[],
+    ...(candidate.open_development === true ? { open_development: true } : {}),
   };
 };
 

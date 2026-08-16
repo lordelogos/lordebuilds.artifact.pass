@@ -24,6 +24,56 @@ afterEach(async () => {
 });
 
 describe("publish_artifact", () => {
+  it("rejects production publishing without a token before opening or dispatching", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    const realpath = vi.fn(async (value: string) => value);
+    const openFile = vi.fn(async () => {
+      throw new Error("artifact file should not be opened");
+    });
+
+    await expect(publishArtifact({ path: "artifact.md", expiresInSeconds: 900 }, {
+      baseUrl: new URL("https://artifacts.example.test"),
+      fetch,
+      workspaceRoots: ["."],
+      fileOperations: { realpath, open: openFile },
+    })).rejects.toThrow(/non-empty.*token/u);
+
+    expect(realpath).not.toHaveBeenCalled();
+    expect(openFile).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("publishes without a token to the configured HTTP origin in open development mode", async () => {
+    const root = await workspace();
+    const path = join(root, "local.md");
+    await writeFile(path, "# Local artifact");
+    const localShareUrl = `http://127.0.0.1:8787/a/${"s".repeat(32)}`;
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response(JSON.stringify({
+      protocol_version: 1,
+      manifest: {
+        protocol_version: 1,
+        artifact_id: "018f1f52-cbf1-7a5e-b66e-9ac829614b53",
+        filename: "local.md",
+        mime_type: "text/markdown",
+        byte_size: 16,
+        sha256: "a".repeat(64),
+        created_at: "2026-08-16T00:00:00.000Z",
+        expires_at: "2026-08-16T00:30:00.000Z",
+        extraction: { status: "not_applicable" },
+      },
+      share_url: localShareUrl,
+    }), { status: 201, headers: { "content-type": "application/json" } }));
+
+    await expect(publishArtifact({ path, expiresInSeconds: 900 }, {
+      baseUrl: new URL("http://127.0.0.1:8787"),
+      openDevelopment: true,
+      fetch,
+      workspaceRoots: [root],
+    })).resolves.toMatchObject({ share_url: localShareUrl });
+
+    expect(new Headers(fetch.mock.calls[0]?.[1]?.headers).has("authorization")).toBe(false);
+  });
+
   it.each([
     ["handoff notes.md", "text/markdown", "# Exact source\n\nhello"],
     ["review page.html", "text/html", "<!doctype html><title>Exact source</title>"],
