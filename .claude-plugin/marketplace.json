@@ -1,0 +1,17 @@
+{
+  "name": "lordebuilds-artifacts",
+  "owner": {
+    "name": "Lorde Builds"
+  },
+  "metadata": {
+    "description": "Publishes a file from an explicitly allowed workspace through Artifact Share and reads supported shared artifacts in bounded chunks."
+  },
+  "plugins": [
+    {
+      "name": "artifact-share",
+      "source": "./plugins/artifact-share",
+      "description": "Share local Markdown, HTML, and PDF artifacts through a private temporary link.",
+      "category": "Productivity"
+    }
+  ]
+}

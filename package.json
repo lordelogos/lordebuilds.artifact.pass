@@ -11,13 +11,15 @@
     "build": "pnpm -r --if-present build",
     "dev": "pnpm --dir apps/artifact-service dev",
     "lint": "oxlint --deny-warnings .",
+    "plugin:build": "pnpm --dir packages/agent-bridge build && node scripts/build-plugin.mjs",
+    "plugin:check": "node scripts/build-plugin.mjs --check",
     "test": "vitest run --config vitest.workspace.ts",
     "test:browser": "playwright test",
     "test:protocol": "pnpm --dir packages/artifact-protocol test",
     "test:worker": "pnpm --dir apps/artifact-service test",
     "typecheck": "pnpm -r --if-present typecheck",
     "types:worker": "pnpm --dir apps/artifact-service types:worker",
-    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
+    "check": "pnpm plugin:build && pnpm lint && pnpm typecheck && pnpm test && pnpm build"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",

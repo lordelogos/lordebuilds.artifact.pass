@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "artifact-share": {
+      "command": "node",
+      "args": [
+        "./dist/cli.mjs"
+      ],
+      "cwd": "."
+    }
+  }
+}

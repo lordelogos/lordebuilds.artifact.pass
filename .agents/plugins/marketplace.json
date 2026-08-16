@@ -1,0 +1,20 @@
+{
+  "name": "lordebuilds-artifacts",
+  "interface": {
+    "displayName": "Lorde Builds Artifacts"
+  },
+  "plugins": [
+    {
+      "name": "artifact-share",
+      "source": {
+        "source": "local",
+        "path": "./plugins/artifact-share"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

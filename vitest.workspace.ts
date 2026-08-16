@@ -4,7 +4,8 @@ export default defineConfig({
   test: {
     projects: [
       "apps/artifact-service/vitest.config.ts",
-      "packages/*/vitest.config.ts"
+      "packages/*/vitest.config.ts",
+      "tests/vitest.config.ts"
     ],
   },
 });

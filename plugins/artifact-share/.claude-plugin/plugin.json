@@ -1,0 +1,12 @@
+{
+  "name": "artifact-share",
+  "version": "0.1.0",
+  "displayName": "Artifact Share",
+  "description": "Share local Markdown, HTML, and PDF artifacts through a private temporary link.",
+  "author": {
+    "name": "Lorde Builds"
+  },
+  "homepage": "https://github.com/lordebuilds/lordebuilds.artifacts.share",
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json"
+}
