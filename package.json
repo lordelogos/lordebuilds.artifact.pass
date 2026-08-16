@@ -1,0 +1,17 @@
+{
+  "name": "lordebuilds.artifacts.share",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.11.0",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "dev": "pnpm --dir apps/artifact-service dev",
+    "test": "pnpm --dir apps/artifact-service test",
+    "typecheck": "pnpm --dir apps/artifact-service typecheck",
+    "types:worker": "pnpm --dir apps/artifact-service types:worker",
+    "check": "pnpm typecheck && pnpm test"
+  }
+}
