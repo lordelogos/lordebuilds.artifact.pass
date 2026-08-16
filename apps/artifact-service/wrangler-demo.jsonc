@@ -1,7 +1,7 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "lordebuilds-artifacts-share",
-  "main": "src/server/index.ts",
+  "name": "lordebuilds-artifacts-share-local-demo",
+  "main": "src/demo/index.ts",
   "compatibility_date": "2026-08-16",
   "vars": {
     "ALLOWED_EXPIRY_SECONDS": "900,1800,3600,43200,86400",
@@ -11,7 +11,7 @@
   "d1_databases": [
     {
       "binding": "ARTIFACT_DB",
-      "database_name": "lordebuilds-artifacts-share",
+      "database_name": "lordebuilds-artifacts-share-local-demo",
       "database_id": "00000000-0000-0000-0000-000000000000",
       "migrations_dir": "migrations"
     }
@@ -19,12 +19,9 @@
   "r2_buckets": [
     {
       "binding": "ARTIFACTS",
-      "bucket_name": "lordebuilds-artifacts-share"
+      "bucket_name": "lordebuilds-artifacts-share-local-demo"
     }
   ],
-  "triggers": {
-    "crons": ["* * * * *"]
-  },
   "assets": {
     "binding": "ASSETS",
     "run_worker_first": ["/health", "/upload", "/connect/*", "/api/*", "/a/*"]

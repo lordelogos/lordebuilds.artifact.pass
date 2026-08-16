@@ -48,6 +48,20 @@ See [agent setup](docs/agent-setup.md) for host-specific commands and revocation
 
 ## Develop and verify
 
+Launch a complete localhost demo with the production upload UI, Worker routes,
+and persistent local D1/R2 emulation:
+
+```sh
+pnpm demo
+```
+
+The command applies local migrations, opens `http://127.0.0.1:8787/upload`, and
+keeps demo artifacts under the ignored `.wrangler/demo-state` directory. The
+demo injects a locally signed identity only from its separate loopback-bound
+Worker entry; the production Cloudflare Access boundary is unchanged.
+
+For automated verification:
+
 ```sh
 pnpm install --frozen-lockfile
 pnpm plugin:build

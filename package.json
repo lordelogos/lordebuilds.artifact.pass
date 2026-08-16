@@ -9,6 +9,7 @@
   },
   "scripts": {
     "build": "pnpm -r --if-present build",
+    "demo": "pnpm --dir apps/artifact-service demo",
     "dev": "pnpm --dir apps/artifact-service dev",
     "lint": "oxlint --deny-warnings .",
     "plugin:build": "pnpm --dir packages/agent-bridge build && node scripts/build-plugin.mjs",

@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
+    "demo": "pnpm demo:prepare && vite --config vite-demo.config.ts",
+    "demo:prepare": "CI=1 wrangler d1 migrations apply ARTIFACT_DB --local --persist-to .wrangler/demo-state --config wrangler-demo.jsonc",
     "dev": "vite",
     "preview:test": "vite --host 127.0.0.1 --port 4173",
     "test": "vitest run",

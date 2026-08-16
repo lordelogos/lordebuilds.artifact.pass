@@ -10,6 +10,10 @@ import {
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createArtifactApplication } from "../src/server/index";
+import {
+  createLocalDemoHandler,
+  type LocalDemoHandler,
+} from "../src/demo/local-demo";
 import { ARTIFACT_SCHEMA_SQL } from "../src/server/db/schema";
 import { sha256 } from "../src/server/storage/crypto";
 
@@ -21,6 +25,7 @@ const keyId = "test-access-key";
 
 let privateKey: CryptoKey;
 let accessJwks: ReturnType<typeof createLocalJWKSet>;
+let localDemoHandler: LocalDemoHandler;
 
 const bindings = (overrides: Record<string, unknown> = {}) => ({
   ...env,
@@ -121,6 +126,7 @@ beforeAll(async () => {
   privateKey = generated.privateKey as CryptoKey;
   const publicJwk = await exportJWK(generated.publicKey);
   accessJwks = createLocalJWKSet({ keys: [{ ...publicJwk, alg: "RS256", kid: keyId, use: "sig" }] });
+  localDemoHandler = await createLocalDemoHandler();
 });
 
 beforeEach(async () => {
@@ -358,6 +364,110 @@ describe("device authorization", () => {
     expect(await env.ARTIFACT_DB.prepare(
       "SELECT COUNT(*) AS count FROM device_authorizations",
     ).first("count")).toBe(10);
+  });
+});
+
+describe("local demo Worker", () => {
+  const localRequest = (path: string, init?: RequestInit) =>
+    new Request(`http://127.0.0.1:8787${path}`, init);
+
+  it("authorizes only the human demo routes on a loopback origin", async () => {
+    const policy = await localDemoHandler.fetch(localRequest("/upload/policy"), bindings());
+    expect(policy.status).toBe(200);
+
+    const agentRoute = await localDemoHandler.fetch(localRequest("/api/artifacts", {
+      method: "POST",
+      body: markdownUpload(),
+    }), bindings());
+    expect(agentRoute.status).toBe(404);
+    expect(await env.ARTIFACT_DB.prepare("SELECT COUNT(*) AS count FROM artifacts").first("count"))
+      .toBe(0);
+
+    const nonLoopback = await localDemoHandler.fetch(
+      new Request("https://artifacts.example/upload/policy"),
+      bindings(),
+    );
+    expect(nonLoopback.status).toBe(404);
+  });
+
+  it("uploads and renders a real artifact through local D1 and R2", async () => {
+    const form = new FormData();
+    form.set("file", new File(["# Local demo\n\nThis is real Worker storage."], "demo.md", {
+      type: "text/markdown",
+    }));
+    form.set("expires_in_seconds", "900");
+
+    const upload = await localDemoHandler.fetch(localRequest("/upload/artifacts", {
+      method: "POST",
+      headers: { origin: "http://127.0.0.1:8787" },
+      body: form,
+    }), bindings());
+    expect(upload.status).toBe(201);
+    const result = await upload.json<{ share_url: string }>();
+
+    const viewer = await localDemoHandler.fetch(
+      localRequest(new URL(result.share_url).pathname),
+      bindings(),
+    );
+    expect(viewer.status).toBe(200);
+    await expect(viewer.text()).resolves.toContain("This is real Worker storage.");
+  });
+
+  it("approves a local agent without leaking the demo identity into agent routes", async () => {
+    const verifier = verifierFor("local demo approval creates a scoped agent credential");
+    const deviceResponse = await localDemoHandler.fetch(localRequest("/connect/device", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        code_challenge: await challengeFor(verifier),
+        code_challenge_method: "S256",
+      }),
+    }), bindings());
+    expect(deviceResponse.status).toBe(201);
+    const device = await deviceResponse.json<{ device_code: string; user_code: string }>();
+
+    const page = await localDemoHandler.fetch(
+      localRequest(`/connect/approve?user_code=${device.user_code}&format=html`),
+      bindings(),
+    );
+    expect(page.status).toBe(200);
+    await expect(page.text()).resolves.toContain(device.user_code);
+
+    const approvalBody = new URLSearchParams({ user_code: device.user_code });
+    const rejected = await localDemoHandler.fetch(localRequest("/connect/approve", {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        origin: "https://attacker.example",
+      },
+      body: approvalBody,
+    }), bindings());
+    expect(rejected.status).toBe(404);
+
+    const approved = await localDemoHandler.fetch(localRequest("/connect/approve", {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        origin: "http://127.0.0.1:8787",
+      },
+      body: approvalBody,
+    }), bindings());
+    expect(approved.status).toBe(200);
+
+    const tokenResponse = await localDemoHandler.fetch(localRequest("/connect/token", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ device_code: device.device_code, code_verifier: verifier }),
+    }), bindings());
+    expect(tokenResponse.status).toBe(200);
+    const token = await tokenResponse.json<{ access_token: string }>();
+
+    const agentUpload = await localDemoHandler.fetch(localRequest("/api/artifacts", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token.access_token}` },
+      body: markdownUpload(),
+    }), bindings());
+    expect(agentUpload.status).toBe(201);
   });
 });
 
