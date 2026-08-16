@@ -16,11 +16,30 @@ interface UploadOptions {
 
 const testBindings = (overrides: Record<string, unknown> = {}) => ({
   ...env,
-  ARTIFACT_INTERNAL_UPLOAD_KEY: "local-test-only",
   ...overrides,
 });
 
+const storageTestAgentToken = `as_${"A".repeat(43)}`;
+
+const authorizeStorageTestAgent = async () => {
+  await env.ARTIFACT_DB.prepare(
+    `INSERT OR IGNORE INTO agent_tokens (
+      id, token_hash, identity_subject, identity_email, scope, created_at, expires_at
+    ) VALUES (?, ?, ?, ?, 'artifact:create', ?, ?)`,
+  )
+    .bind(
+      "00000000-0000-4000-8000-000000000001",
+      await digest(storageTestAgentToken),
+      "storage-test-user",
+      "storage-test@example.com",
+      Date.now(),
+      Date.now() + 60 * 60 * 1000,
+    )
+    .run();
+};
+
 const upload = async (options: UploadOptions, overrides: Record<string, unknown> = {}) => {
+  await authorizeStorageTestAgent();
   const form = new FormData();
   const fileBody =
     typeof options.bytes === "string" ? options.bytes : Uint8Array.from(options.bytes).buffer;
@@ -39,7 +58,7 @@ const upload = async (options: UploadOptions, overrides: Record<string, unknown>
   return createArtifactApplication().fetch(
     new Request("https://artifacts.example/api/artifacts", {
       method: "POST",
-      headers: { "x-artifact-internal-key": "local-test-only" },
+      headers: { authorization: `Bearer ${storageTestAgentToken}` },
       body: form,
     }),
     testBindings(overrides),

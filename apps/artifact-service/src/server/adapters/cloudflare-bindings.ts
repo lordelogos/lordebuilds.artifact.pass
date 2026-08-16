@@ -4,7 +4,8 @@ export interface ArtifactServiceBindings {
   readonly ASSETS?: Fetcher;
   readonly ARTIFACT_DB: D1Database;
   readonly ARTIFACTS: R2Bucket;
-  readonly ARTIFACT_INTERNAL_UPLOAD_KEY?: string;
+  readonly ACCESS_AUD?: string;
+  readonly ACCESS_TEAM_DOMAIN?: string;
   readonly ALLOWED_EXPIRY_SECONDS?: string;
   readonly MAX_ARTIFACT_BYTES?: string;
   readonly MAX_EXPIRY_SECONDS?: string;

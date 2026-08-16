@@ -6,6 +6,10 @@ import { Hono } from "hono";
 
 import type { ArtifactServiceBindings } from "../adapters/cloudflare-bindings";
 import {
+  requirePublicCapability,
+  type ArtifactHonoEnvironment,
+} from "../middleware/authorize";
+import {
   ArtifactApplicationService,
   artifactRecordToManifest,
 } from "../storage/artifact-service";
@@ -102,24 +106,27 @@ export const createSharesRouter = (
   createService: ServiceFactory,
   createPolicy: PolicyFactory,
 ) => {
-  const router = new Hono<{ Bindings: ArtifactServiceBindings }>();
+  const router = new Hono<ArtifactHonoEnvironment>();
+
+  router.use("/:shareToken/*", requirePublicCapability());
+  router.use("/:shareToken", requirePublicCapability());
 
   router.get("/:shareToken", async (context) => {
-    const artifact = await createService(context.env).resolve(context.req.param("shareToken"));
-    return context.html(viewer(artifact, context.req.param("shareToken")), 200, {
+    const artifact = await createService(context.env).resolve(context.get("shareToken"));
+    return context.html(viewer(artifact, context.get("shareToken")), 200, {
       ...PUBLIC_RESPONSE_HEADERS,
       "Content-Type": "text/html; charset=utf-8",
     });
   });
 
   router.get("/:shareToken/manifest", async (context) => {
-    const artifact = await createService(context.env).resolve(context.req.param("shareToken"));
+    const artifact = await createService(context.env).resolve(context.get("shareToken"));
     return context.json(artifactRecordToManifest(artifact), 200, PUBLIC_RESPONSE_HEADERS);
   });
 
   router.get("/:shareToken/source", async (context) => {
     const service = createService(context.env);
-    const artifact = await service.resolve(context.req.param("shareToken"));
+    const artifact = await service.resolve(context.get("shareToken"));
     const policy = createPolicy(context.env);
     const cursor = context.req.query("cursor");
     const offsetQuery = context.req.query("offset");
@@ -169,7 +176,7 @@ export const createSharesRouter = (
 
   router.get("/:shareToken/derived", async (context) => {
     const service = createService(context.env);
-    const artifact = await service.resolve(context.req.param("shareToken"));
+    const artifact = await service.resolve(context.get("shareToken"));
     const object = await service.getDerived(artifact);
     return new Response(object.body, {
       headers: {
@@ -182,7 +189,7 @@ export const createSharesRouter = (
 
   router.get("/:shareToken/raw", async (context) => {
     const service = createService(context.env);
-    const artifact = await service.resolve(context.req.param("shareToken"));
+    const artifact = await service.resolve(context.get("shareToken"));
     const rangeHeader = context.req.header("range");
     if (artifact.mimeType === "application/pdf" && rangeHeader !== undefined) {
       let range: ReturnType<typeof parseRange>;
@@ -235,4 +242,3 @@ export const createSharesRouter = (
 
   return router;
 };
-

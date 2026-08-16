@@ -1,9 +1,17 @@
 import { PROTOCOL_VERSION } from "artifact-protocol";
 import { Hono } from "hono";
+import type { JWTVerifyGetKey } from "jose";
 
 import type { ArtifactServiceBindings } from "./adapters/cloudflare-bindings";
+import { AgentTokenRepository } from "./auth/agent-token";
 import { expireArtifacts } from "./jobs/expire-artifacts";
+import {
+  requireAccess,
+  requireAgent,
+  type ArtifactHonoEnvironment,
+} from "./middleware/authorize";
 import { createArtifactsRouter } from "./routes/artifacts";
+import { createConnectRouter } from "./routes/connect";
 import { PUBLIC_RESPONSE_HEADERS, createSharesRouter } from "./routes/shares";
 import { D1ArtifactRepository } from "./storage/artifact-repository";
 import { ArtifactApplicationService } from "./storage/artifact-service";
@@ -13,6 +21,7 @@ import { artifactPolicyFromBindings } from "./storage/validation";
 
 export interface ArtifactApplicationOptions {
   readonly now?: () => number;
+  readonly accessJwks?: JWTVerifyGetKey;
 }
 
 const createService = (
@@ -27,7 +36,11 @@ const createService = (
   });
 
 export const createArtifactApplication = (options: ArtifactApplicationOptions = {}) => {
-  const app = new Hono<{ Bindings: ArtifactServiceBindings }>();
+  const app = new Hono<ArtifactHonoEnvironment>();
+  const authorizationOptions = {
+    ...(options.now === undefined ? {} : { now: options.now }),
+    ...(options.accessJwks === undefined ? {} : { accessJwks: options.accessJwks }),
+  };
 
   app.get("/health", (context) =>
     context.json({
@@ -36,10 +49,26 @@ export const createArtifactApplication = (options: ArtifactApplicationOptions = 
     }),
   );
 
+  app.get("/upload", requireAccess(authorizationOptions), (context) => {
+    if (context.env.ASSETS === undefined) {
+      throw new ArtifactError("not_found", "Route is unavailable", 404);
+    }
+    return context.env.ASSETS.fetch(context.req.raw);
+  });
+
   app.route(
     "/api/artifacts",
-    createArtifactsRouter((bindings) => createService(bindings, options)),
+    createArtifactsRouter((bindings) => createService(bindings, options), authorizationOptions),
   );
+  app.delete("/api/connection", requireAgent(authorizationOptions), async (context) => {
+    const revoked = await new AgentTokenRepository(
+      context.env.ARTIFACT_DB,
+      options.now,
+    ).revoke(context.get("agentPrincipal"));
+    if (!revoked) throw new ArtifactError("not_found", "Route is unavailable", 404);
+    return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
+  });
+  app.route("/connect", createConnectRouter(authorizationOptions));
   app.route(
     "/a",
     createSharesRouter(

@@ -2,6 +2,11 @@ import { PROTOCOL_VERSION, type ExtractionMetadata } from "artifact-protocol";
 import { Hono } from "hono";
 
 import type { ArtifactServiceBindings } from "../adapters/cloudflare-bindings";
+import {
+  requireUploader,
+  type ArtifactHonoEnvironment,
+  type AuthorizationOptions,
+} from "../middleware/authorize";
 import { ArtifactApplicationService } from "../storage/artifact-service";
 import { ArtifactError } from "../storage/artifact-error";
 
@@ -45,18 +50,13 @@ const parseExtraction = (form: FormData, isPdf: boolean): ExtractionMetadata => 
   throw new ArtifactError("malformed_upload", "PDF extraction status is required", 400);
 };
 
-export const createArtifactsRouter = (createService: ServiceFactory) => {
-  const router = new Hono<{ Bindings: ArtifactServiceBindings }>();
+export const createArtifactsRouter = (
+  createService: ServiceFactory,
+  authorizationOptions: AuthorizationOptions = {},
+) => {
+  const router = new Hono<ArtifactHonoEnvironment>();
 
-  router.post("/", async (context) => {
-    const expectedKey = context.env.ARTIFACT_INTERNAL_UPLOAD_KEY;
-    if (
-      expectedKey === undefined ||
-      context.req.header("x-artifact-internal-key") !== expectedKey
-    ) {
-      throw new ArtifactError("not_found", "Route is unavailable", 404);
-    }
-
+  router.post("/", requireUploader(authorizationOptions), async (context) => {
     const form = await context.req.formData().catch(() => {
       throw new ArtifactError("malformed_upload", "Expected a multipart upload", 400);
     });
@@ -94,4 +94,3 @@ export const createArtifactsRouter = (createService: ServiceFactory) => {
 
   return router;
 };
-
