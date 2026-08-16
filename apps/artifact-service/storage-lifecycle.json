@@ -1,0 +1,17 @@
+{
+  "rules": [
+    {
+      "id": "delete-artifact-objects-after-two-days",
+      "enabled": true,
+      "conditions": {
+        "prefix": "artifacts/"
+      },
+      "deleteObjectsTransition": {
+        "condition": {
+          "type": "Age",
+          "maxAge": 172800
+        }
+      }
+    }
+  ]
+}

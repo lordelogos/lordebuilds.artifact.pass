@@ -1,0 +1,284 @@
+import { env } from "cloudflare:workers";
+import { reset } from "cloudflare:test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { createArtifactApplication } from "../src/server/index";
+import { ARTIFACT_SCHEMA_SQL } from "../src/server/db/schema";
+
+interface UploadOptions {
+  readonly bytes: Uint8Array | string;
+  readonly filename: string;
+  readonly mimeType: string;
+  readonly expiresInSeconds?: number;
+  readonly extractionStatus?: "best_effort" | "unavailable";
+  readonly derivedText?: string;
+}
+
+const testBindings = (overrides: Record<string, unknown> = {}) => ({
+  ...env,
+  ARTIFACT_INTERNAL_UPLOAD_KEY: "local-test-only",
+  ...overrides,
+});
+
+const upload = async (options: UploadOptions, overrides: Record<string, unknown> = {}) => {
+  const form = new FormData();
+  const fileBody =
+    typeof options.bytes === "string" ? options.bytes : Uint8Array.from(options.bytes).buffer;
+  form.set("file", new File([fileBody], options.filename, { type: options.mimeType }));
+  form.set("expires_in_seconds", String(options.expiresInSeconds ?? 900));
+  if (options.extractionStatus !== undefined) {
+    form.set("extraction_status", options.extractionStatus);
+    if (options.extractionStatus === "best_effort") {
+      form.set("extractor", "fixture-extractor");
+      form.set("extractor_version", "1.0.0");
+      form.set("page_count", "1");
+    }
+  }
+  if (options.derivedText !== undefined) form.set("derived_text", options.derivedText);
+
+  return createArtifactApplication().fetch(
+    new Request("https://artifacts.example/api/artifacts", {
+      method: "POST",
+      headers: { "x-artifact-internal-key": "local-test-only" },
+      body: form,
+    }),
+    testBindings(overrides),
+  );
+};
+
+const expectUpload = async (options: UploadOptions) => {
+  const response = await upload(options);
+  expect(response.status).toBe(201);
+  return response.json<{
+    share_url: string;
+    manifest: { sha256: string; byte_size: number; mime_type: string };
+  }>();
+};
+
+const requestShare = (url: string, suffix = "", init?: RequestInit) =>
+  createArtifactApplication().fetch(
+    new Request(`${url}${suffix}`, init),
+    testBindings(),
+  );
+
+const digest = async (value: string): Promise<string> =>
+  Array.from(
+    new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))),
+    (byte) => byte.toString(16).padStart(2, "0"),
+  ).join("");
+
+describe("private artifact routes", () => {
+  beforeEach(async () => {
+    await reset();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-16T12:00:00.000Z"));
+    await env.ARTIFACT_DB.exec(ARTIFACT_SCHEMA_SQL);
+  });
+
+  afterEach(() => vi.useRealTimers());
+
+  it.each([
+    {
+      filename: "exact.html",
+      mimeType: "text/html",
+      bytes: "<!doctype html>\n<h1>Exact</h1>\n",
+    },
+    {
+      filename: "handoff.md",
+      mimeType: "text/markdown",
+      bytes: "# Exact\n\nTwo lines.\n",
+    },
+    {
+      filename: "report.pdf",
+      mimeType: "application/pdf",
+      bytes: "%PDF-1.7\nfixture\n%%EOF",
+      extractionStatus: "unavailable" as const,
+    },
+  ])("round-trips exact $mimeType bytes", async (fixture) => {
+    const created = await expectUpload(fixture);
+    const raw = await requestShare(created.share_url, "/raw");
+
+    expect(raw.status).toBe(200);
+    expect(new Uint8Array(await raw.arrayBuffer())).toEqual(
+      new TextEncoder().encode(fixture.bytes),
+    );
+    expect(raw.headers.get("cache-control")).toContain("no-store");
+    expect(created.manifest.sha256).toBe(await digest(fixture.bytes));
+
+    const token = new URL(created.share_url).pathname.split("/").pop() ?? "";
+    const row = await env.ARTIFACT_DB.prepare(
+      "SELECT share_token_hash FROM artifacts",
+    ).first<{ share_token_hash: string }>();
+    expect(row?.share_token_hash).toBe(await digest(token));
+  });
+
+  it("stores and labels best-effort PDF text separately from exact source", async () => {
+    const source = "%PDF-1.7\nexact-source\n%%EOF";
+    const created = await expectUpload({
+      filename: "report.pdf",
+      mimeType: "application/pdf",
+      bytes: source,
+      extractionStatus: "best_effort",
+      derivedText: "--- Page 1 ---\nBest effort text",
+    });
+
+    const manifest = await requestShare(created.share_url, "/manifest");
+    await expect(manifest.json()).resolves.toMatchObject({
+      mime_type: "application/pdf",
+      extraction: {
+        status: "best_effort",
+        extractor: "fixture-extractor",
+        extractor_version: "1.0.0",
+        page_count: 1,
+      },
+    });
+    const derived = await requestShare(created.share_url, "/derived");
+    await expect(derived.text()).resolves.toBe("--- Page 1 ---\nBest effort text");
+    const raw = await requestShare(created.share_url, "/raw");
+    expect(new TextDecoder().decode(await raw.arrayBuffer())).toBe(source);
+  });
+
+  it("serves deterministic bounded chunks that reconstruct a large exact source", async () => {
+    const source = "a".repeat(70_000) + "THE-END";
+    const created = await expectUpload({
+      filename: "large.md",
+      mimeType: "text/markdown",
+      bytes: source,
+    });
+
+    const firstResponse = await requestShare(created.share_url, "/source");
+    const first = await firstResponse.json<{
+      data: string;
+      byte_length: number;
+      next_cursor: string;
+    }>();
+    expect(first.byte_length).toBe(65_536);
+    const secondResponse = await requestShare(
+      created.share_url,
+      `/source?cursor=${encodeURIComponent(first.next_cursor)}`,
+    );
+    const second = await secondResponse.json<{ data: string; next_cursor: null }>();
+    const reconstructed = atob(first.data) + atob(second.data);
+    expect(reconstructed).toBe(source);
+    expect(second.next_cursor).toBeNull();
+
+    const oversized = await requestShare(created.share_url, "/source?limit=65537");
+    expect(oversized.status).toBe(400);
+    const wrongCursor = await requestShare(created.share_url, "/source?cursor=not-a-cursor");
+    expect(wrongCursor.status).toBe(400);
+  });
+
+  it("supports satisfiable PDF byte ranges and rejects invalid ranges", async () => {
+    const source = "%PDF-1.7\n0123456789\n%%EOF";
+    const created = await expectUpload({
+      filename: "range.pdf",
+      mimeType: "application/pdf",
+      bytes: source,
+      extractionStatus: "unavailable",
+    });
+
+    const partial = await requestShare(created.share_url, "/raw", {
+      headers: { Range: "bytes=5-9" },
+    });
+    expect(partial.status).toBe(206);
+    expect(partial.headers.get("content-range")).toBe(`bytes 5-9/${source.length}`);
+    expect(new TextDecoder().decode(await partial.arrayBuffer())).toBe(source.slice(5, 10));
+
+    const invalid = await requestShare(created.share_url, "/raw", {
+      headers: { Range: "bytes=999-1000" },
+    });
+    expect(invalid.status).toBe(416);
+    expect(invalid.headers.get("content-range")).toBe(`bytes */${source.length}`);
+  });
+
+  it.each([
+    ["unsupported media", { filename: "file.txt", mimeType: "text/plain", bytes: "hello" }, 415],
+    ["extension mismatch", { filename: "file.pdf", mimeType: "text/markdown", bytes: "hello" }, 400],
+    ["path traversal", { filename: "../file.md", mimeType: "text/markdown", bytes: "hello" }, 400],
+    [
+      "invalid PDF signature",
+      { filename: "file.pdf", mimeType: "application/pdf", bytes: "not-pdf", extractionStatus: "unavailable" },
+      400,
+    ],
+    [
+      "invalid UTF-8",
+      { filename: "file.md", mimeType: "text/markdown", bytes: new Uint8Array([0xff]) },
+      400,
+    ],
+    ["disallowed expiry", { filename: "file.md", mimeType: "text/markdown", bytes: "hello", expiresInSeconds: 901 }, 400],
+  ] as const)("rejects %s", async (_name, options, status) => {
+    const response = await upload(options);
+    expect(response.status).toBe(status);
+    expect(await env.ARTIFACT_DB.prepare("SELECT COUNT(*) AS count FROM artifacts").first("count"))
+      .toBe(0);
+  });
+
+  it("rejects input over the configured size before storage", async () => {
+    const response = await upload(
+      { filename: "file.md", mimeType: "text/markdown", bytes: "123456789" },
+      { MAX_ARTIFACT_BYTES: "8" },
+    );
+    expect(response.status).toBe(413);
+    expect((await env.ARTIFACTS.list()).objects).toHaveLength(0);
+  });
+
+  it("requires the disabled-by-default internal upload seam and exposes no list route", async () => {
+    const form = new FormData();
+    form.set("file", new File(["hello"], "file.md", { type: "text/markdown" }));
+    form.set("expires_in_seconds", "900");
+    const noBinding = await createArtifactApplication().fetch(
+      new Request("https://artifacts.example/api/artifacts", { method: "POST", body: form }),
+      env,
+    );
+    expect(noBinding.status).toBe(404);
+
+    const list = await createArtifactApplication().fetch(
+      new Request("https://artifacts.example/api/artifacts"),
+      testBindings(),
+    );
+    expect(list.status).toBe(404);
+  });
+
+  it("denies random tokens and every representation at the exact expiry cutoff", async () => {
+    const createdAt = new Date("2026-08-16T12:00:00.000Z");
+    const { share_url: shareUrl } = await expectUpload({
+      filename: "handoff.md",
+      mimeType: "text/markdown",
+      bytes: "# Exact\n",
+    });
+    const random = await requestShare(
+      "https://artifacts.example/a/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "/manifest",
+    );
+    expect(random.status).toBe(404);
+
+    vi.setSystemTime(new Date(createdAt.getTime() + 900_000));
+    for (const suffix of ["", "/manifest", "/raw", "/source", "/derived"]) {
+      const response = await requestShare(shareUrl, suffix);
+      expect(response.status, suffix).toBe(404);
+      await expect(response.json()).resolves.toMatchObject({ error: { code: "not_found" } });
+      expect(response.headers.get("cache-control")).toContain("no-store");
+    }
+  });
+
+  it("makes a record unreachable when its private object disappears", async () => {
+    const created = await expectUpload({
+      filename: "handoff.md",
+      mimeType: "text/markdown",
+      bytes: "# Exact\n",
+    });
+    const row = await env.ARTIFACT_DB.prepare("SELECT id, object_key FROM artifacts").first<{
+      id: string;
+      object_key: string;
+    }>();
+    await env.ARTIFACTS.delete(row?.object_key ?? "missing");
+
+    const response = await requestShare(created.share_url, "/raw");
+    expect(response.status).toBe(404);
+    expect(
+      await env.ARTIFACT_DB.prepare("SELECT status FROM artifacts WHERE id = ?")
+        .bind(row?.id)
+        .first("status"),
+    ).toBe("cleanup_pending");
+  });
+});
