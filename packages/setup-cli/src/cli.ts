@@ -59,7 +59,7 @@ const help = `Artifact Share setup
 
 Commands:
   deploy --account-id <id> --zone-id <id> --hostname <host> (--allow-email <email> | --allow-domain <domain>) [--dry-run]
-  connect <base-url> [--workspace-root <path>] [--host codex|claude|both] [--marketplace <source>] [--open-development]
+  connect <base-url> [--workspace-root <path>] [--host codex|claude|both] [--no-host-install] [--marketplace <source>] [--open-development]
   disconnect [<base-url>]
   doctor
 
@@ -98,20 +98,39 @@ const main = async (): Promise<void> => {
     return;
   }
   if (command === "connect") {
-    const host = optionalValue(args, "--host") ?? "both";
+    const installKnownHostAdapters = !booleanFlag(args, "--no-host-install");
+    const requestedHost = optionalValue(args, "--host");
+    const host = requestedHost ?? "both";
     if (!new Set(["codex", "claude", "both"]).has(host)) throw new Error("--host must be codex, claude, or both");
+    if (!installKnownHostAdapters && requestedHost !== undefined) {
+      throw new Error("--host cannot be combined with --no-host-install");
+    }
     const hosts = host === "both" ? undefined : [host as AgentHost];
+    const marketplaceSource = optionalValue(args, "--marketplace") ?? defaultMarketplace;
     const result = await connectHost({
       baseUrl: positional(args, 0),
       workspaceRoots: values(args, "--workspace-root").length > 0
         ? values(args, "--workspace-root")
         : [process.cwd()],
       ...(hosts === undefined ? {} : { hosts }),
-      marketplaceSource: optionalValue(args, "--marketplace") ?? defaultMarketplace,
+      installKnownHostAdapters,
+      marketplaceSource,
       openDevelopment: booleanFlag(args, "--open-development"),
     }, {
       deviceFlowDependencies: { openBrowser },
     });
+    if (!installKnownHostAdapters) {
+      const portableRoot = resolve(marketplaceSource, "plugins/artifact-share");
+      print({
+        ...result,
+        portableIntegration: {
+          mcpConfig: resolve(portableRoot, ".mcp.json"),
+          skillsDirectory: resolve(portableRoot, "skills"),
+        },
+        next: "Register the MCP configuration and Agent Skills directory in your agent system.",
+      });
+      return;
+    }
     print({ ...result, next: "Start a new agent session so the plugin and bridge reload." });
     return;
   }

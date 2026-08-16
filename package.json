@@ -23,6 +23,8 @@
     "test": "vitest run --config vitest.workspace.ts",
     "test:browser": "playwright test",
     "test:browser:live": "playwright test tests/e2e/browser-share.spec.ts tests/e2e/end-to-end-handoff.spec.ts",
+    "test:agent-contract": "pnpm --dir packages/agent-bridge build && pnpm --dir packages/agent-bridge exec vitest run test/stdio-smoke.test.ts && vitest run --config tests/vitest.config.ts tests/agent-portability.test.ts",
+    "test:agent-hosts": "pnpm plugin:build && node scripts/test-agent-hosts.mjs",
     "test:protocol": "pnpm --dir packages/artifact-protocol test",
     "test:worker": "pnpm --dir apps/artifact-service test",
     "typecheck": "pnpm -r --if-present typecheck",

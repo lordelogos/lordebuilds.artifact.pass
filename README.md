@@ -1,6 +1,6 @@
 # lordebuilds.artifacts.share
 
-Share a local Markdown, HTML, or PDF artifact once, then hand the same temporary HTTPS URL to a person, Claude Code, or Codex.
+Share a local Markdown, HTML, or PDF artifact once, then hand the same temporary HTTPS URL to a person or any compatible AI agent.
 
 Artifact Share is self-hosted in your Cloudflare account. The exact source stays in private R2 storage, metadata stays in D1, and your upload and device-approval pages sit behind Cloudflare Access. A share URL is a bearer capability: anyone holding it can read that artifact until its exact expiry time.
 
@@ -12,7 +12,7 @@ Artifact Share is self-hosted in your Cloudflare account. The exact source stays
 - Renders sanitized Markdown, sandboxes sanitized HTML without permissions, and previews PDFs.
 - Gives agents deterministic 64 KiB source chunks so large files can be reconstructed exactly.
 - Labels PDF text as best-effort and keeps the exact PDF available separately. OCR is not included.
-- Installs one plugin with `share-artifact` and `read-shared-artifact` skills in Claude Code and Codex.
+- Ships one MCP server and one Agent Skills bundle for every compatible agent system. Ecosystem plugins only register that shared package.
 
 There is no account system, dashboard, history, billing, entitlement layer, or multi-tenant control plane.
 
@@ -33,7 +33,7 @@ node packages/setup-cli/dist/cli.mjs deploy \
 
 The deployer creates or reuses one Worker custom domain, one D1 database, one private R2 bucket, and one path-scoped Access application. It refuses conflicting resources and is safe to rerun. See [deployment](docs/deployment.md) for OAuth, permissions, and the manual fallback.
 
-## Connect an agent host
+## Connect an agent system
 
 After deployment, run the command printed by the deployer from each developer machine:
 
@@ -42,9 +42,19 @@ pnpm dlx @artifact-share/setup connect https://artifacts.example.com \
   --workspace-root /absolute/path/to/approved/workspace
 ```
 
-The command detects Claude Code and Codex, installs the plugin, opens a browser for Access approval, stores the scoped agent token in the operating-system credential store, and writes only non-secret connection settings locally. Restart the agent session, then ask it to use `$artifact-share:share-artifact` or `$artifact-share:read-shared-artifact`.
+The command detects known ecosystem installers, installs the same portable package, opens a browser for Access approval, stores the scoped agent token in the operating-system credential store, and writes only non-secret connection settings locally. Restart the agent session, then ask it to share or read an artifact.
 
-See [agent setup](docs/agent-setup.md) for host-specific commands and revocation.
+For any other MCP and Agent Skills compatible system, configure the same package without running a vendor installer:
+
+```sh
+pnpm dlx @artifact-share/setup connect https://artifacts.example.com \
+  --no-host-install \
+  --workspace-root /absolute/path/to/approved/workspace
+```
+
+The command prints the MCP configuration and Agent Skills directory to register. This path uses the same bridge and skills as every ecosystem plugin; there is no separate implementation.
+
+See [agent setup](docs/agent-setup.md) for portable setup, optional ecosystem installers, and revocation.
 
 ## Develop and verify
 

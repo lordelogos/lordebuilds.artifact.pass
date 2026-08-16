@@ -1,0 +1,72 @@
+import {
+  PROTOCOL_MAX_ARTIFACT_BYTES,
+  PROTOCOL_MAX_SOURCE_CHUNK_BYTES,
+  artifactManifestSchema,
+  protocolVersionSchema,
+} from "artifact-protocol";
+import { z } from "zod";
+
+const webUrlSchema = z.url({ protocol: /^https?$/u });
+const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/u);
+const opaqueCursorSchema = z.string().regex(/^[A-Za-z0-9_-]{16,256}$/u);
+
+export const publishArtifactInputSchema = z.object({
+  path: z.string().min(1).describe("Absolute or workspace-relative local file path"),
+  expires_in_seconds: z.number().int().positive().describe(
+    "Deployment expiry preset in seconds. Default setup presets: 900, 1800, 3600, 43200, 86400; a rejection reports the deployment's allowed values.",
+  ),
+});
+
+export const publishArtifactOutputSchema = z.object({
+  protocol_version: protocolVersionSchema,
+  manifest: artifactManifestSchema,
+  share_url: webUrlSchema,
+}).strict();
+
+export const readArtifactInputSchema = z.object({
+  share_url: z.string().url(),
+  cursor: z.string().optional(),
+  max_bytes: z.number().int().positive().optional(),
+  representation: z.enum(["auto", "source", "derived"]).optional(),
+});
+
+export const readArtifactOutputSchema = z.object({
+  manifest: artifactManifestSchema,
+  representation: z.enum(["source", "derived", "pdf_metadata"]),
+  encoding: z.literal("base64"),
+  byte_offset: z.number().int().nonnegative().max(PROTOCOL_MAX_ARTIFACT_BYTES),
+  byte_length: z.number().int().nonnegative().max(PROTOCOL_MAX_SOURCE_CHUNK_BYTES),
+  total_size: z.number().int().nonnegative().max(PROTOCOL_MAX_ARTIFACT_BYTES),
+  sha256: sha256Schema,
+  data: z.string(),
+  text: z.string().optional(),
+  next_cursor: opaqueCursorSchema.nullable(),
+  exact_source_url: webUrlSchema.optional(),
+}).strict().superRefine((result, context) => {
+  if (result.byte_offset + result.byte_length > result.total_size) {
+    context.addIssue({
+      code: "custom",
+      message: "Read range exceeds total_size",
+      path: ["byte_length"],
+    });
+  }
+  if (result.manifest.sha256 !== result.sha256 && result.representation !== "derived") {
+    context.addIssue({
+      code: "custom",
+      message: "Exact-source SHA-256 must match the manifest",
+      path: ["sha256"],
+    });
+  }
+  if (result.representation === "pdf_metadata" && (
+    result.byte_offset !== 0 ||
+    result.byte_length !== 0 ||
+    result.data !== "" ||
+    result.next_cursor !== null
+  )) {
+    context.addIssue({
+      code: "custom",
+      message: "PDF metadata results cannot contain source bytes or a cursor",
+      path: ["representation"],
+    });
+  }
+});

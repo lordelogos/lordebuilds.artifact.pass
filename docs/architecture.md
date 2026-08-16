@@ -5,7 +5,7 @@ Artifact Share is a customer-owned Cloudflare Worker plus a local agent bridge. 
 ```text
 authorized human ──Access──> /upload, /connect/approve
                                 │
-local Claude/Codex ─agent token─┤ Worker ──> D1 metadata
+local AI agent ────agent token─┤ Worker ──> D1 metadata
                                 │        └─> private R2 exact bytes
 person or agent ─share token──> /a/<opaque-token>/*
 ```
@@ -19,7 +19,7 @@ person or agent ─share token──> /a/<opaque-token>/*
 | `packages/representation-pipeline` | Browser and Node PDF extraction with truthful quality metadata |
 | `packages/agent-bridge` | MCP tools, approved-root file reads, exact upload/read, keychain credential resolution, redacted logging |
 | `packages/setup-cli` | Idempotent Cloudflare deployment, device connection, plugin installation, disconnect |
-| `plugins/artifact-share` | One generated plugin bundle consumed by both Claude Code and Codex |
+| `plugins/artifact-share` | One portable MCP and Agent Skills bundle; ecosystem manifests are thin registration adapters |
 
 ## Data flow
 
@@ -31,4 +31,4 @@ At `expires_at`, every public representation returns the same not-found response
 
 ## Ownership boundary
 
-The deploying organization owns the hostname, Worker, D1 database, R2 bucket, Access policy, logs, and Cloudflare bill. The local machine owns its plugin install, non-secret workspace allowlist, and scoped agent token. The open-source project does not receive artifact content or credentials.
+The deploying organization owns the hostname, Worker, D1 database, R2 bucket, Access policy, logs, and Cloudflare bill. The local machine owns its agent integration, non-secret workspace allowlist, and scoped agent token. The open-source project does not receive artifact content or credentials.

@@ -69896,6 +69896,63 @@ var readArtifact = async (input, dependencies) => {
   };
 };
 
+// src/tool-contract.ts
+var webUrlSchema = external_exports.url({ protocol: /^https?$/u });
+var sha256Schema2 = external_exports.string().regex(/^[a-f0-9]{64}$/u);
+var opaqueCursorSchema = external_exports.string().regex(/^[A-Za-z0-9_-]{16,256}$/u);
+var publishArtifactInputSchema = external_exports.object({
+  path: external_exports.string().min(1).describe("Absolute or workspace-relative local file path"),
+  expires_in_seconds: external_exports.number().int().positive().describe(
+    "Deployment expiry preset in seconds. Default setup presets: 900, 1800, 3600, 43200, 86400; a rejection reports the deployment's allowed values."
+  )
+});
+var publishArtifactOutputSchema = external_exports.object({
+  protocol_version: protocolVersionSchema,
+  manifest: artifactManifestSchema,
+  share_url: webUrlSchema
+}).strict();
+var readArtifactInputSchema = external_exports.object({
+  share_url: external_exports.string().url(),
+  cursor: external_exports.string().optional(),
+  max_bytes: external_exports.number().int().positive().optional(),
+  representation: external_exports.enum(["auto", "source", "derived"]).optional()
+});
+var readArtifactOutputSchema = external_exports.object({
+  manifest: artifactManifestSchema,
+  representation: external_exports.enum(["source", "derived", "pdf_metadata"]),
+  encoding: external_exports.literal("base64"),
+  byte_offset: external_exports.number().int().nonnegative().max(PROTOCOL_MAX_ARTIFACT_BYTES),
+  byte_length: external_exports.number().int().nonnegative().max(PROTOCOL_MAX_SOURCE_CHUNK_BYTES),
+  total_size: external_exports.number().int().nonnegative().max(PROTOCOL_MAX_ARTIFACT_BYTES),
+  sha256: sha256Schema2,
+  data: external_exports.string(),
+  text: external_exports.string().optional(),
+  next_cursor: opaqueCursorSchema.nullable(),
+  exact_source_url: webUrlSchema.optional()
+}).strict().superRefine((result, context) => {
+  if (result.byte_offset + result.byte_length > result.total_size) {
+    context.addIssue({
+      code: "custom",
+      message: "Read range exceeds total_size",
+      path: ["byte_length"]
+    });
+  }
+  if (result.manifest.sha256 !== result.sha256 && result.representation !== "derived") {
+    context.addIssue({
+      code: "custom",
+      message: "Exact-source SHA-256 must match the manifest",
+      path: ["sha256"]
+    });
+  }
+  if (result.representation === "pdf_metadata" && (result.byte_offset !== 0 || result.byte_length !== 0 || result.data !== "" || result.next_cursor !== null)) {
+    context.addIssue({
+      code: "custom",
+      message: "PDF metadata results cannot contain source bytes or a cursor",
+      path: ["representation"]
+    });
+  }
+});
+
 // src/server.ts
 var errorResult = (error51) => ({
   isError: true,
@@ -69913,12 +69970,8 @@ var createBridgeServer = (configuration) => {
   server.registerTool("publish_artifact", {
     title: "Publish Artifact",
     description: "Publish one approved local Markdown, HTML, or PDF file without placing its bytes in model context.",
-    inputSchema: external_exports.object({
-      path: external_exports.string().min(1).describe("Absolute or workspace-relative local file path"),
-      expires_in_seconds: external_exports.number().int().positive().describe(
-        "Deployment expiry preset in seconds. Default setup presets: 900, 1800, 3600, 43200, 86400; a rejection reports the deployment's allowed values."
-      )
-    }),
+    inputSchema: publishArtifactInputSchema,
+    outputSchema: publishArtifactOutputSchema,
     annotations: {
       readOnlyHint: false,
       destructiveHint: false,
@@ -69951,12 +70004,8 @@ var createBridgeServer = (configuration) => {
   server.registerTool("read_artifact", {
     title: "Read Artifact",
     description: "Read a configured Artifact Share URL in bounded deterministic chunks with exact-source and PDF fidelity metadata.",
-    inputSchema: external_exports.object({
-      share_url: external_exports.string().url(),
-      cursor: external_exports.string().optional(),
-      max_bytes: external_exports.number().int().positive().optional(),
-      representation: external_exports.enum(["auto", "source", "derived"]).optional()
-    }),
+    inputSchema: readArtifactInputSchema,
+    outputSchema: readArtifactOutputSchema,
     annotations: {
       readOnlyHint: true,
       destructiveHint: false,

@@ -2,8 +2,6 @@ import { delimiter } from "node:path";
 
 import { McpServer } from "@modelcontextprotocol/server";
 import { serveStdio, type StdioServerHandle } from "@modelcontextprotocol/server/stdio";
-import { z } from "zod";
-
 import {
   EnvironmentCredentialStore,
   OsCredentialStore,
@@ -19,6 +17,12 @@ import {
 } from "./logging/redacting-logger";
 import { publishArtifact } from "./tools/publish-artifact";
 import { readArtifact } from "./tools/read-artifact";
+import {
+  publishArtifactInputSchema,
+  publishArtifactOutputSchema,
+  readArtifactInputSchema,
+  readArtifactOutputSchema,
+} from "./tool-contract";
 
 export interface BridgeConfiguration {
   readonly baseUrl: URL;
@@ -51,12 +55,8 @@ export const createBridgeServer = (configuration: BridgeConfiguration): McpServe
   server.registerTool("publish_artifact", {
     title: "Publish Artifact",
     description: "Publish one approved local Markdown, HTML, or PDF file without placing its bytes in model context.",
-    inputSchema: z.object({
-      path: z.string().min(1).describe("Absolute or workspace-relative local file path"),
-      expires_in_seconds: z.number().int().positive().describe(
-        "Deployment expiry preset in seconds. Default setup presets: 900, 1800, 3600, 43200, 86400; a rejection reports the deployment's allowed values.",
-      ),
-    }),
+    inputSchema: publishArtifactInputSchema,
+    outputSchema: publishArtifactOutputSchema,
     annotations: {
       readOnlyHint: false,
       destructiveHint: false,
@@ -92,12 +92,8 @@ export const createBridgeServer = (configuration: BridgeConfiguration): McpServe
   server.registerTool("read_artifact", {
     title: "Read Artifact",
     description: "Read a configured Artifact Share URL in bounded deterministic chunks with exact-source and PDF fidelity metadata.",
-    inputSchema: z.object({
-      share_url: z.string().url(),
-      cursor: z.string().optional(),
-      max_bytes: z.number().int().positive().optional(),
-      representation: z.enum(["auto", "source", "derived"]).optional(),
-    }),
+    inputSchema: readArtifactInputSchema,
+    outputSchema: readArtifactOutputSchema,
     annotations: {
       readOnlyHint: true,
       destructiveHint: false,

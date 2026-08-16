@@ -1,6 +1,6 @@
 # Agent setup
 
-An administrator deploys one service. Each developer connects their own Claude Code or Codex installation through the Access-protected device flow.
+An administrator deploys one service. Each developer connects an AI agent through the Access-protected device flow. Artifact Share's baseline integration is one MCP server plus Agent Skills; ecosystem plugins only register those same files.
 
 ## Connect
 
@@ -10,16 +10,30 @@ pnpm dlx @artifact-share/setup connect https://artifacts.example.com \
   --workspace-root /absolute/path/to/workspace-b
 ```
 
-Use `--host codex` or `--host claude` to install one host only; the default is both detected hosts. During browser approval, confirm the deployment hostname and Access identity. The terminal never asks you to paste a token.
+When a known installer is available, use `--host codex` or `--host claude` to install one adapter only; the default detects both. These are convenience adapters, not separate implementations. During browser approval, confirm the deployment hostname and Access identity. The terminal never asks you to paste a token.
 
 Connection installs or refreshes `artifact-share@lordebuilds-artifacts`, saves the scoped token in macOS Keychain or Linux Secret Service, and writes a mode-0600 config file at `${XDG_CONFIG_HOME:-~/.config}/lordebuilds.artifacts.share/config.json`. Set `ARTIFACT_SHARE_CONFIG_PATH` to choose another non-secret config path.
 
-Restart the host after connecting so it reloads the plugin and MCP bridge.
+Restart the agent after connecting so it reloads the skills and MCP bridge.
+
+### Portable MCP and Agent Skills setup
+
+For any other compatible agent system, skip automatic host installation:
+
+```sh
+pnpm dlx @artifact-share/setup connect https://artifacts.example.com \
+  --no-host-install \
+  --workspace-root /absolute/path/to/workspace
+```
+
+The result prints `portableIntegration.mcpConfig` and `portableIntegration.skillsDirectory`. Register those paths using the agent system's normal MCP and Agent Skills controls. Systems that support MCP but do not load Agent Skills can still discover and invoke the two tools from their MCP schemas.
 
 ## Use
 
-- Ask the host to use `$artifact-share:share-artifact` with an absolute supported path and an expiry preset.
-- Ask it to use `$artifact-share:read-shared-artifact` with a URL from the configured deployment.
+- Ask the agent to share a supported absolute path with an expiry preset.
+- Ask it to read an Artifact Share URL from the configured deployment.
+
+Some ecosystems namespace installed skills, such as `$artifact-share:share-artifact`. That syntax is an adapter detail, not part of the portable product contract.
 
 The sharing tool sends file bytes directly from the bridge to your Worker; the model receives only the resulting URL and manifest. The reading tool returns bounded chunks. Continue with `next_cursor` until it is `null`, then verify the reconstructed byte length and SHA-256 from the manifest.
 

@@ -40,6 +40,7 @@ export interface ConnectInput {
   readonly workspaceRoots: readonly string[];
   readonly openDevelopment?: boolean;
   readonly hosts?: readonly AgentHost[];
+  readonly installKnownHostAdapters?: boolean;
   readonly marketplaceSource: string;
   readonly configPath?: string;
 }
@@ -82,9 +83,14 @@ export const connectHost = async (
     throw new Error(`Artifact Share health check failed (${health.status})`);
   }
   const runner = dependencies.runner ?? runProcess;
-  const hosts = input.hosts ?? await detectHosts(runner);
-  if (hosts.length === 0) throw new Error("Install Claude Code or Codex before connecting Artifact Share");
-  await installPluginForHosts(hosts, input.marketplaceSource, runner);
+  const installKnownHostAdapters = input.installKnownHostAdapters !== false;
+  const hosts = installKnownHostAdapters ? (input.hosts ?? await detectHosts(runner)) : [];
+  if (installKnownHostAdapters && hosts.length === 0) {
+    throw new Error("No supported automatic host installer was detected; use --no-host-install for portable MCP and skills setup");
+  }
+  if (installKnownHostAdapters) {
+    await installPluginForHosts(hosts, input.marketplaceSource, runner);
+  }
   const configPath = input.configPath ?? defaultLocalConfigPath();
   if (openDevelopment) {
     await (dependencies.writeSettings ?? writeLocalBridgeSettings)(configPath, {

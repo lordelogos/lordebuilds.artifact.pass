@@ -32,6 +32,16 @@ describe("built stdio bridge", () => {
         "publish_artifact",
         "read_artifact",
       ]);
+      expect(listed.tools).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          name: "publish_artifact",
+          outputSchema: expect.objectContaining({ type: "object" }),
+        }),
+        expect.objectContaining({
+          name: "read_artifact",
+          outputSchema: expect.objectContaining({ type: "object" }),
+        }),
+      ]));
 
       const result = await client.callTool({
         name: "read_artifact",

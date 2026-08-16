@@ -48,6 +48,41 @@ describe("host connection", () => {
     ]);
   });
 
+  it("configures the portable MCP and skills package without invoking a vendor host", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifact-share-portable-connect-test-"));
+    const configPath = resolve(root, "config.json");
+    const runner: ProcessRunner = vi.fn(async () => {
+      throw new Error("a vendor CLI must not run");
+    });
+
+    const result = await connectHost({
+      baseUrl: "http://127.0.0.1:8787",
+      workspaceRoots: [root],
+      marketplaceSource: "/trusted/repository",
+      configPath,
+      openDevelopment: true,
+      installKnownHostAdapters: false,
+    }, {
+      runner,
+      deviceFlowDependencies: {
+        openBrowser: async () => undefined,
+        fetch: vi.fn(async () => new Response(JSON.stringify({
+          service: "lordebuilds.artifacts.share",
+          status: "ok",
+        }))),
+      },
+    });
+
+    expect(result).toEqual({ hosts: [], configPath });
+    expect(runner).not.toHaveBeenCalled();
+    expect(JSON.parse(await readFile(configPath, "utf8"))).toEqual({
+      version: 1,
+      base_url: "http://127.0.0.1:8787/",
+      workspace_roots: [root],
+      open_development: true,
+    });
+  });
+
   it("reinstalls its own cached plugin so updated bridge code is loaded", async () => {
     const runner: ProcessRunner = vi.fn(async (command, args) => {
       if (command === "codex" && args.join(" ") === "plugin marketplace list --json") {
