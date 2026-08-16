@@ -1,0 +1,36 @@
+import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { build } from "esbuild";
+
+const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const packageRoot = resolve(repositoryRoot, "packages/setup-cli");
+const outputRoot = resolve(packageRoot, "dist");
+const serviceRoot = resolve(repositoryRoot, "apps/artifact-service");
+const builtWorkerRoot = resolve(serviceRoot, "dist/lordebuilds_artifacts_share");
+
+await rm(outputRoot, { recursive: true, force: true });
+await mkdir(outputRoot, { recursive: true });
+await build({
+  entryPoints: [resolve(packageRoot, "src/cli.ts")],
+  outfile: resolve(outputRoot, "cli.mjs"),
+  bundle: true,
+  platform: "node",
+  format: "esm",
+  banner: { js: "#!/usr/bin/env node" },
+});
+
+const deploymentRoot = resolve(outputRoot, "deployment");
+await mkdir(deploymentRoot, { recursive: true });
+await cp(resolve(builtWorkerRoot, "index.js"), resolve(deploymentRoot, "index.js"));
+await cp(resolve(serviceRoot, "dist/client"), resolve(deploymentRoot, "client"), { recursive: true });
+await cp(resolve(serviceRoot, "migrations"), resolve(deploymentRoot, "migrations"), { recursive: true });
+await cp(resolve(serviceRoot, "storage-lifecycle.json"), resolve(deploymentRoot, "storage-lifecycle.json"));
+const workerConfiguration = JSON.parse(await readFile(resolve(builtWorkerRoot, "wrangler.json"), "utf8"));
+workerConfiguration.main = "./index.js";
+workerConfiguration.assets.directory = "./client";
+workerConfiguration.d1_databases[0].migrations_dir = "./migrations";
+await writeFile(
+  resolve(deploymentRoot, "wrangler-template.json"),
+  `${JSON.stringify(workerConfiguration, null, 2)}\n`,
+);

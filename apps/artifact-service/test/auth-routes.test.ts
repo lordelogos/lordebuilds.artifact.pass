@@ -150,6 +150,35 @@ describe("Cloudflare Access assertions", () => {
     expect(uploadSurface.status).toBe(200);
   });
 
+  it("renders and submits the human device-approval page without exposing a token", async () => {
+    const verifier = verifierFor("a browser approval page needs a valid PKCE verifier");
+    const device = await startDeviceFlow(verifier);
+    const page = await request(
+      `/connect/approve?user_code=${device.user_code}&format=html`,
+      { headers: await accessHeaders() },
+    );
+    expect(page.status).toBe(200);
+    expect(page.headers.get("content-security-policy")).toContain("style-src 'nonce-");
+    const markup = await page.text();
+    expect(markup).toContain("Approve this agent?");
+    expect(markup).toContain(device.user_code);
+    expect(markup).not.toContain("as_");
+
+    const form = new URLSearchParams({ user_code: device.user_code });
+    const approval = await request("/connect/approve", {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        origin: "https://artifacts.example",
+        ...(await accessHeaders()),
+      },
+      body: form,
+    });
+    expect(approval.status).toBe(200);
+    expect(await approval.text()).toContain("Connected.");
+    expect((await exchangeDeviceFlow(device.device_code, verifier)).status).toBe(200);
+  });
+
   it("returns deployment-defined upload limits only to an Access-authenticated browser", async () => {
     const anonymous = await request("/upload/policy");
     expect(anonymous.status).toBe(404);

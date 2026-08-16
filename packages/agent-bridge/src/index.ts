@@ -1,10 +1,22 @@
 export {
+  assertSafeDeploymentOrigin,
+  fetchWithoutRedirects,
+  responseError,
+} from "./http/safe-fetch";
+export {
   EnvironmentCredentialStore,
   OsCredentialStore,
   resolveCredential,
   type CommandRunner,
   type CredentialStore,
 } from "./auth/credential-store";
+export {
+  defaultLocalConfigPath,
+  readLocalBridgeSettings,
+  readLocalBridgeSettingsSync,
+  writeLocalBridgeSettings,
+  type LocalBridgeSettings,
+} from "./config/local-config";
 export {
   createRedactingLogger,
   redactSensitiveText,

@@ -38,7 +38,8 @@ describe("credential and logging boundaries", () => {
   it("redacts bearer tokens, share URLs, and content from controlled logs", () => {
     const write = vi.fn();
     const logger = createRedactingLogger(write);
-    logger.error("upload failed", {
+    const cloudflareToken = `cfut_${"c".repeat(40)}`;
+    logger.error(`upload failed with ${cloudflareToken}`, {
       authorization: `Bearer ${agentToken}`,
       share_url: `https://artifacts.example.test/a/${shareToken}`,
       content: "TOP SECRET SOURCE",
@@ -49,6 +50,7 @@ describe("credential and logging boundaries", () => {
     expect(line).not.toContain(agentToken);
     expect(line).not.toContain(shareToken);
     expect(line).not.toContain("TOP SECRET SOURCE");
+    expect(line).not.toContain(cloudflareToken);
     expect(line).toContain("[REDACTED]");
   });
 });

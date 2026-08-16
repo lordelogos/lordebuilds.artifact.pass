@@ -1,11 +1,13 @@
 const sensitiveKey = /(?:authorization|content|data|share_?url|token|secret|credential|password)/iu;
 const bearerPattern = /\bBearer\s+[A-Za-z0-9._~-]+/giu;
 const agentTokenPattern = /\bas_[A-Za-z0-9_-]{20,}\b/gu;
+const cloudflareTokenPattern = /\bcfut_[A-Za-z0-9_-]{20,}\b/gu;
 const shareUrlPattern = /https:\/\/[^\s/]+\/a\/[A-Za-z0-9_-]{32,256}(?:\/[^\s]*)?/gu;
 
 export const redactSensitiveText = (value: string): string => value
   .replace(bearerPattern, "Bearer [REDACTED]")
   .replace(agentTokenPattern, "[REDACTED]")
+  .replace(cloudflareTokenPattern, "[REDACTED]")
   .replace(shareUrlPattern, "[REDACTED SHARE URL]");
 
 const redact = (value: unknown, key?: string): unknown => {

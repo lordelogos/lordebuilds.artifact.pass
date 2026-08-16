@@ -39652,7 +39652,7 @@ async function extractImages$1(data, pageNumber) {
     for (let i2 = 0; i2 < operatorList.fnArray.length; i2++) {
       if (operatorList.fnArray[i2] !== OPS.paintImageXObject) continue;
       const imageKey = operatorList.argsArray[i2][0];
-      const image = await new Promise((resolve2) => (imageKey.startsWith("g_") ? page.commonObjs : page.objs).get(imageKey, resolve2));
+      const image = await new Promise((resolve3) => (imageKey.startsWith("g_") ? page.commonObjs : page.objs).get(imageKey, resolve3));
       if (!image || !image.data || !image.width || !image.height) continue;
       const { width, height, data: data2 } = image;
       const calculatedChannels = data2.length / (width * height);
@@ -39697,8 +39697,8 @@ async function renderPageAsImage$1(data, pageNumber, options = {}) {
         const buffer = await canvas.encode("png");
         return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
       }
-      const blob = await new Promise((resolve2) => {
-        canvas.toBlob(resolve2);
+      const blob = await new Promise((resolve3) => {
+        canvas.toBlob(resolve3);
       });
       if (!blob) throw new Error("Failed to encode canvas to a PNG blob.");
       return await blob.arrayBuffer();
@@ -58815,14 +58815,14 @@ function inputRequiredRoundsExceededMessage(method, maxRounds) {
   return `Multi-round-trip request '${method}' still required input after ${maxRounds} rounds (inputRequired.maxRounds)`;
 }
 function sleep(ms2, signal) {
-  return new Promise((resolve2, reject) => {
+  return new Promise((resolve3, reject) => {
     if (signal?.aborted) {
       reject(signal.reason instanceof SdkError ? signal.reason : new SdkError(SdkErrorCode.RequestTimeout, String(signal.reason)));
       return;
     }
     const timer = setTimeout(() => {
       signal?.removeEventListener("abort", onAbort);
-      resolve2();
+      resolve3();
     }, ms2);
     const onAbort = () => {
       clearTimeout(timer);
@@ -59616,7 +59616,7 @@ var Protocol = class {
     const flowStartedAt = Date.now();
     let onAbort;
     let cleanupMessageId;
-    return new Promise((resolve2, reject) => {
+    return new Promise((resolve3, reject) => {
       const earlyReject = (error51) => {
         reject(error51);
       };
@@ -59684,7 +59684,7 @@ var Protocol = class {
         }
         if (decoded.kind === "invalid") return reject(decoded.error);
         if (decoded.kind === "input_required") {
-          if (options?.allowInputRequired === true) return resolve2(manualInputRequiredValue(decoded));
+          if (options?.allowInputRequired === true) return resolve3(manualInputRequiredValue(decoded));
           const flow = {
             codec: codec2,
             request,
@@ -59696,11 +59696,11 @@ var Protocol = class {
               params
             }, resultSchema, legOptions)
           };
-          return resolve2(this._resolveNonCompleteResult(decoded, flow));
+          return resolve3(this._resolveNonCompleteResult(decoded, flow));
         }
         const result = decoded.result;
         validateStandardSchema(resultSchema, result).then((parseResult) => {
-          if (parseResult.success) resolve2(parseResult.data);
+          if (parseResult.success) resolve3(parseResult.data);
           else reject(new SdkError(SdkErrorCode.InvalidResult, `Invalid result for ${request.method}: ${parseResult.error}`));
         }, reject);
       });
@@ -62612,7 +62612,7 @@ var require_compile = /* @__PURE__ */ __commonJSMin(((exports) => {
     ref = (0, resolve_1.resolveUrl)(this.opts.uriResolver, baseId, ref);
     const schOrFunc = root.refs[ref];
     if (schOrFunc) return schOrFunc;
-    let _sch = resolve2.call(this, root, ref);
+    let _sch = resolve3.call(this, root, ref);
     if (_sch === void 0) {
       const schema = (_a4 = root.localRefs) === null || _a4 === void 0 ? void 0 : _a4[ref];
       const { schemaId } = this.opts;
@@ -62638,7 +62638,7 @@ var require_compile = /* @__PURE__ */ __commonJSMin(((exports) => {
   function sameSchemaEnv(s1, s2) {
     return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
   }
-  function resolve2(root, ref) {
+  function resolve3(root, ref) {
     let sch;
     while (typeof (sch = this.refs[ref]) == "string") ref = sch;
     return sch || this.schemas[ref] || resolveSchema.call(this, root, ref);
@@ -63088,7 +63088,7 @@ var require_fast_uri = /* @__PURE__ */ __commonJSMin(((exports, module) => {
     else if (typeof uri === "object") uri = parse3(serialize(uri, options), options);
     return uri;
   }
-  function resolve2(baseURI, relativeURI, options) {
+  function resolve3(baseURI, relativeURI, options) {
     const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
     const resolved = resolveComponent(parse3(baseURI, schemelessOptions), parse3(relativeURI, schemelessOptions), schemelessOptions, true);
     schemelessOptions.skipEscape = true;
@@ -63262,7 +63262,7 @@ var require_fast_uri = /* @__PURE__ */ __commonJSMin(((exports, module) => {
   const fastUri = {
     SCHEMES,
     normalize,
-    resolve: resolve2,
+    resolve: resolve3,
     resolveComponent,
     equal,
     serialize,
@@ -68635,7 +68635,7 @@ var StdioServerTransport = class {
   }
   send(message) {
     if (this._closed) return Promise.reject(/* @__PURE__ */ new Error("StdioServerTransport is closed"));
-    return new Promise((resolve2, reject) => {
+    return new Promise((resolve3, reject) => {
       const json2 = serializeMessage(message);
       let settled = false;
       const onError = (error51) => {
@@ -68650,14 +68650,14 @@ var StdioServerTransport = class {
         settled = true;
         this._stdout.off("error", onError);
         this._stdout.off("drain", onDrain);
-        resolve2();
+        resolve3();
       };
       this._stdout.once("error", onError);
       if (this._stdout.write(json2)) {
         if (settled) return;
         settled = true;
         this._stdout.off("error", onError);
-        resolve2();
+        resolve3();
       } else if (!settled) this._stdout.once("drain", onDrain);
     });
   }
@@ -68711,14 +68711,14 @@ var StdioConnectionChannel = class {
   */
   async whenRequestsAnswered(timeoutMs) {
     if (this._closed || this._pendingRequests.size === 0) return true;
-    return await new Promise((resolve2) => {
+    return await new Promise((resolve3) => {
       const waiter = () => {
         clearTimeout(timer);
-        resolve2(true);
+        resolve3(true);
       };
       const timer = setTimeout(() => {
         this._drainWaiters = this._drainWaiters.filter((pending) => pending !== waiter);
-        resolve2(false);
+        resolve3(false);
       }, timeoutMs);
       this._drainWaiters.push(waiter);
     });
@@ -69059,7 +69059,7 @@ function toError(value) {
 
 // src/auth/credential-store.ts
 import { spawn } from "node:child_process";
-var defaultRunner = async (executable, args, options = {}) => new Promise((resolve2, reject) => {
+var defaultRunner = async (executable, args, options = {}) => new Promise((resolve3, reject) => {
   const child = spawn(executable, [...args], {
     stdio: ["pipe", "pipe", "pipe"],
     windowsHide: true
@@ -69080,7 +69080,7 @@ var defaultRunner = async (executable, args, options = {}) => new Promise((resol
   child.stderr.on("data", (chunk) => capture(stderr, chunk));
   child.once("error", reject);
   child.once("close", (code) => {
-    if (code === 0) resolve2({ stdout: Buffer.concat(stdout).toString("utf8") });
+    if (code === 0) resolve3({ stdout: Buffer.concat(stdout).toString("utf8") });
     else reject(new Error(`Credential store command failed with status ${code ?? "unknown"}`));
   });
   child.stdin.end(options.input);
@@ -69191,6 +69191,50 @@ var resolveCredential = async (options) => {
   if (value === null) throw new Error("No interactive credential is stored; connect this host first");
   return value;
 };
+
+// src/config/local-config.ts
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, resolve } from "node:path";
+var validateSettings = (value) => {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Artifact Share config must contain a JSON object");
+  }
+  const candidate = value;
+  if (candidate.version !== 1 || typeof candidate.base_url !== "string") {
+    throw new Error("Artifact Share config has an unsupported format");
+  }
+  if (!Array.isArray(candidate.workspace_roots) || candidate.workspace_roots.length === 0 || !candidate.workspace_roots.every((root) => typeof root === "string" && resolve(root) === root)) {
+    throw new Error("Artifact Share config requires absolute workspace roots");
+  }
+  return {
+    version: 1,
+    base_url: candidate.base_url,
+    workspace_roots: candidate.workspace_roots
+  };
+};
+var defaultLocalConfigPath = (environment = process.env, platform = process.platform) => {
+  const explicit = environment.ARTIFACT_SHARE_CONFIG_PATH;
+  if (explicit !== void 0 && explicit.length > 0) return resolve(explicit);
+  if (platform === "win32") {
+    const applicationData = environment.APPDATA;
+    if (applicationData === void 0 || applicationData.length === 0) {
+      throw new Error("APPDATA is required to locate Artifact Share config");
+    }
+    return resolve(applicationData, "lordebuilds.artifacts.share", "config.json");
+  }
+  const configurationHome = environment.XDG_CONFIG_HOME;
+  return resolve(
+    configurationHome === void 0 || configurationHome.length === 0 ? resolve(homedir(), ".config") : configurationHome,
+    "lordebuilds.artifacts.share",
+    "config.json"
+  );
+};
+var parseSettings = (contents) => {
+  if (Buffer.byteLength(contents) > 16 * 1024) throw new Error("Artifact Share config is too large");
+  return validateSettings(JSON.parse(contents));
+};
+var readLocalBridgeSettingsSync = (path) => parseSettings(readFileSync(path, "utf8"));
 
 // ../artifact-protocol/src/index.ts
 var PROTOCOL_VERSION = 1;
@@ -69404,8 +69448,9 @@ var responseError = async (response) => {
 var sensitiveKey = /(?:authorization|content|data|share_?url|token|secret|credential|password)/iu;
 var bearerPattern = /\bBearer\s+[A-Za-z0-9._~-]+/giu;
 var agentTokenPattern = /\bas_[A-Za-z0-9_-]{20,}\b/gu;
+var cloudflareTokenPattern = /\bcfut_[A-Za-z0-9_-]{20,}\b/gu;
 var shareUrlPattern = /https:\/\/[^\s/]+\/a\/[A-Za-z0-9_-]{32,256}(?:\/[^\s]*)?/gu;
-var redactSensitiveText = (value) => value.replace(bearerPattern, "Bearer [REDACTED]").replace(agentTokenPattern, "[REDACTED]").replace(shareUrlPattern, "[REDACTED SHARE URL]");
+var redactSensitiveText = (value) => value.replace(bearerPattern, "Bearer [REDACTED]").replace(agentTokenPattern, "[REDACTED]").replace(cloudflareTokenPattern, "[REDACTED]").replace(shareUrlPattern, "[REDACTED SHARE URL]");
 var redact = (value, key) => {
   if (key !== void 0 && sensitiveKey.test(key)) return "[REDACTED]";
   if (typeof value === "string") return redactSensitiveText(value);
@@ -69430,7 +69475,7 @@ var createRedactingLogger = (write = (line) => process.stderr.write(`${line}
 
 // src/tools/publish-artifact.ts
 import { open, realpath } from "node:fs/promises";
-import { basename, extname, isAbsolute, relative, resolve, sep } from "node:path";
+import { basename, extname, isAbsolute, relative, resolve as resolve2, sep } from "node:path";
 
 // ../representation-pipeline/src/pdf-text.ts
 var normalizePageText = (text) => text.replaceAll("\0", "").replace(/[ \t]+\n/gu, "\n").replace(/[ \t]{2,}/gu, " ").trim();
@@ -69545,8 +69590,8 @@ var isWithin = (root, candidate) => {
 };
 var resolveApprovedPath = async (candidate, roots, operations) => {
   if (roots.length === 0) throw new Error("At least one approved workspace root is required");
-  const resolvedCandidate = await operations.realpath(resolve(candidate));
-  const resolvedRoots = await Promise.all(roots.map(async (root) => operations.realpath(resolve(root))));
+  const resolvedCandidate = await operations.realpath(resolve2(candidate));
+  const resolvedRoots = await Promise.all(roots.map(async (root) => operations.realpath(resolve2(root))));
   if (!resolvedRoots.some((root) => isWithin(root, resolvedCandidate))) {
     throw new Error("Artifact path is outside the approved workspace roots");
   }
@@ -69865,11 +69910,11 @@ var createBridgeServer = (configuration) => {
   return server;
 };
 var configurationFromEnvironment = (environment = process.env) => {
-  const baseUrlValue = environment.ARTIFACT_SHARE_BASE_URL;
+  const localSettings = environment.ARTIFACT_SHARE_BASE_URL === void 0 || environment.ARTIFACT_SHARE_WORKSPACE_ROOTS === void 0 ? readLocalBridgeSettingsSync(defaultLocalConfigPath(environment)) : void 0;
+  const baseUrlValue = environment.ARTIFACT_SHARE_BASE_URL ?? localSettings?.base_url;
   if (baseUrlValue === void 0) throw new Error("ARTIFACT_SHARE_BASE_URL is required");
   const rootsValue = environment.ARTIFACT_SHARE_WORKSPACE_ROOTS;
-  if (rootsValue === void 0) throw new Error("ARTIFACT_SHARE_WORKSPACE_ROOTS is required");
-  const workspaceRoots = rootsValue.split(delimiter).filter((root) => root.length > 0);
+  const workspaceRoots = rootsValue === void 0 ? [...localSettings?.workspace_roots ?? []] : rootsValue.split(delimiter).filter((root) => root.length > 0);
   if (workspaceRoots.length === 0) throw new Error("ARTIFACT_SHARE_WORKSPACE_ROOTS must not be empty");
   const environmentStore = new EnvironmentCredentialStore("ARTIFACT_SHARE_TOKEN", environment);
   const headless = environment.ARTIFACT_SHARE_TOKEN !== void 0;

@@ -10,6 +10,7 @@ import {
   resolveCredential,
   type CredentialStore,
 } from "./auth/credential-store";
+import { defaultLocalConfigPath, readLocalBridgeSettingsSync } from "./config/local-config";
 import { assertSafeDeploymentOrigin } from "./http/safe-fetch";
 import {
   createRedactingLogger,
@@ -124,11 +125,16 @@ export const createBridgeServer = (configuration: BridgeConfiguration): McpServe
 export const configurationFromEnvironment = (
   environment: Readonly<Record<string, string | undefined>> = process.env,
 ): BridgeConfiguration => {
-  const baseUrlValue = environment.ARTIFACT_SHARE_BASE_URL;
+  const localSettings = environment.ARTIFACT_SHARE_BASE_URL === undefined ||
+      environment.ARTIFACT_SHARE_WORKSPACE_ROOTS === undefined
+    ? readLocalBridgeSettingsSync(defaultLocalConfigPath(environment))
+    : undefined;
+  const baseUrlValue = environment.ARTIFACT_SHARE_BASE_URL ?? localSettings?.base_url;
   if (baseUrlValue === undefined) throw new Error("ARTIFACT_SHARE_BASE_URL is required");
   const rootsValue = environment.ARTIFACT_SHARE_WORKSPACE_ROOTS;
-  if (rootsValue === undefined) throw new Error("ARTIFACT_SHARE_WORKSPACE_ROOTS is required");
-  const workspaceRoots = rootsValue.split(delimiter).filter((root) => root.length > 0);
+  const workspaceRoots = rootsValue === undefined
+    ? [...(localSettings?.workspace_roots ?? [])]
+    : rootsValue.split(delimiter).filter((root) => root.length > 0);
   if (workspaceRoots.length === 0) throw new Error("ARTIFACT_SHARE_WORKSPACE_ROOTS must not be empty");
   const environmentStore = new EnvironmentCredentialStore("ARTIFACT_SHARE_TOKEN", environment);
   const headless = environment.ARTIFACT_SHARE_TOKEN !== undefined;
