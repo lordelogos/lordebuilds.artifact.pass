@@ -17,3 +17,11 @@
 - Before implementation, name the phase, its user-visible behavior, and the smallest validation gate.
 - Keep Cloudflare account changes, credentials, production resources, and deployments behind explicit user confirmation.
 - Never ask for credentials in chat or commit them to the repository.
+
+## Verification gates
+
+- Run `pnpm test:protocol` plus the affected package's `pnpm typecheck` for a shared-contract change.
+- Run `pnpm test:worker` for Worker route changes.
+- Run `pnpm check` for the U1 release-equivalent gate: lint, all package typechecks, the Vitest workspace, and production builds.
+- Run `pnpm install --frozen-lockfile` before recording clean-install build evidence.
+- For the smallest local startup smoke, run `pnpm dev`, then request both `http://127.0.0.1:8787/` and `http://127.0.0.1:8787/health`.

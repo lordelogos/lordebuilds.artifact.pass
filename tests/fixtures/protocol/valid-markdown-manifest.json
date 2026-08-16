@@ -1,0 +1,13 @@
+{
+  "protocol_version": 1,
+  "artifact_id": "018f47a2-93c6-7fd0-9d0f-80b9ac47f005",
+  "filename": "handoff.md",
+  "mime_type": "text/markdown",
+  "byte_size": 128,
+  "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "created_at": "2026-08-16T12:00:00.000Z",
+  "expires_at": "2026-08-16T12:30:00.000Z",
+  "extraction": {
+    "status": "not_applicable"
+  }
+}

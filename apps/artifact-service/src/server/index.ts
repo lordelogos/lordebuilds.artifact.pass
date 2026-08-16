@@ -1,6 +1,8 @@
 import { Hono } from "hono";
 
-const app = new Hono();
+import type { ArtifactServiceBindings } from "./adapters/cloudflare-bindings";
+
+const app = new Hono<{ Bindings: ArtifactServiceBindings }>();
 
 app.get("/health", (context) =>
   context.json({

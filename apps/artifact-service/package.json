@@ -4,17 +4,27 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
+    "build": "vite build",
+    "dev": "vite",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "types:worker": "wrangler types"
   },
   "dependencies": {
-    "hono": "^4.13.2"
+    "artifact-protocol": "workspace:*",
+    "drizzle-orm": "^0.45.2",
+    "hono": "^4.13.2",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.52.1",
     "@cloudflare/vitest-pool-workers": "^0.21.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^6.0.5",
     "typescript": "^7.0.2",
+    "vite": "^8.2.1",
     "vitest": "^4.1.10",
     "wrangler": "^4.123.0"
   }

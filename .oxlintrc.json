@@ -1,0 +1,6 @@
+{
+  "ignorePatterns": [
+    "**/dist/**",
+    "**/worker-configuration.d.ts"
+  ]
+}
