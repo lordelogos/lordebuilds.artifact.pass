@@ -20,6 +20,14 @@ export const contentPatterns = [
   },
 ];
 
+const sensitivePathSegments = [
+  /^\.env(?:\.(?!example(?:\.|$))[^/]+)?$/iu,
+  /^\.ssh$/iu,
+  /^\.aws$/iu,
+  /^\.gnupg$/iu,
+  /^(?:id_rsa|id_ed25519|credentials|secrets?)$/iu,
+];
+
 export const findSensitiveContent = (source) => {
   const findings = [];
   for (const { label, pattern } of contentPatterns) {
@@ -29,4 +37,12 @@ export const findSensitiveContent = (source) => {
     }
   }
   return findings;
+};
+
+export const findSensitivePath = (path) => {
+  const normalized = path.replaceAll("\\", "/");
+  const segments = normalized.split("/").filter(Boolean);
+  return segments.find((segment) =>
+    sensitivePathSegments.some((pattern) => pattern.test(segment))
+  ) ?? null;
 };

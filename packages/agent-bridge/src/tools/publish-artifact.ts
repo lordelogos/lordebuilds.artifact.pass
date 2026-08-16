@@ -4,12 +4,19 @@ import { basename, extname, isAbsolute, relative, resolve, sep } from "node:path
 import {
   PROTOCOL_MAX_ARTIFACT_BYTES,
   uploadResponseSchemaForOrigin,
+  type ExtractionMetadata,
   type SupportedMimeType,
   type UploadResponse,
 } from "artifact-protocol";
 import { extractPdfInNode, pdfPagesToText, type PdfExtractionResult } from "representation-pipeline";
+import { createPayloadCommitment } from "../../../../scripts/publication-commitment.mjs";
+import { findSensitiveContent, findSensitivePath } from "../../../../scripts/security-patterns.mjs";
 
 import { assertDeploymentOrigin, fetchWithoutRedirects, responseError } from "../http/safe-fetch";
+import {
+  MemoryPublicationJournal,
+  type PublicationJournal,
+} from "../state/publication-journal";
 
 interface FileStat {
   readonly dev: number | bigint;
@@ -45,6 +52,7 @@ export interface PublishArtifactDependencies {
   readonly fetch?: typeof globalThis.fetch;
   readonly fileOperations?: FileOperations;
   readonly extractPdf?: (bytes: Uint8Array) => Promise<PdfExtractionResult>;
+  readonly journal?: PublicationJournal;
 }
 
 type AuthorizedPublishArtifactDependencies =
@@ -128,15 +136,27 @@ const validateBytes = (bytes: Uint8Array, mimeType: SupportedMimeType): void => 
   }
 };
 
+const assertSafeContent = (bytes: Uint8Array, label = "Artifact content"): void => {
+  const finding = findSensitiveContent(new TextDecoder().decode(bytes))[0];
+  if (finding !== undefined) {
+    throw new Error(`${label} may contain sensitive ${finding.label}`);
+  }
+};
+
+interface PreparedExtraction {
+  readonly metadata: ExtractionMetadata;
+  readonly derivedBytes?: Uint8Array;
+}
+
 const addExtraction = async (
   form: FormData,
   mimeType: SupportedMimeType,
   bytes: Uint8Array,
   extractPdf: (bytes: Uint8Array) => Promise<PdfExtractionResult>,
-): Promise<void> => {
+): Promise<PreparedExtraction> => {
   if (mimeType !== "application/pdf") {
     form.set("extraction_status", "not_applicable");
-    return;
+    return { metadata: { status: "not_applicable" } };
   }
   let result: PdfExtractionResult;
   try {
@@ -144,7 +164,12 @@ const addExtraction = async (
   } catch {
     form.set("extraction_status", "unavailable");
     form.set("extraction_reason", "Embedded PDF text extraction was unavailable.");
-    return;
+    return {
+      metadata: {
+        status: "unavailable",
+        reason: "Embedded PDF text extraction was unavailable.",
+      },
+    };
   }
   form.set("extraction_status", result.metadata.status);
   if (result.metadata.extractor !== undefined) form.set("extractor", result.metadata.extractor);
@@ -157,12 +182,15 @@ const addExtraction = async (
       ? "[Extraction quality note: column or table layout may be degraded.]\n\n"
       : "";
     const derivedText = `${warning}${pdfPagesToText(result.pages)}`;
-    form.set("derived_text", new File([derivedText], `${basename("artifact.pdf")}.txt`, {
+    const derivedBytes = new TextEncoder().encode(derivedText);
+    form.set("derived_text", new File([derivedBytes], `${basename("artifact.pdf")}.txt`, {
       type: "text/plain;charset=utf-8",
     }));
+    return { metadata: result.metadata, derivedBytes };
   } else if (result.metadata.reason !== undefined) {
     form.set("extraction_reason", result.metadata.reason);
   }
+  return { metadata: result.metadata };
 };
 
 export const publishArtifact = async (
@@ -172,6 +200,10 @@ export const publishArtifact = async (
   const authorizedDependencies = authorizePublishDependencies(dependencies);
   const operations = authorizedDependencies.fileOperations ?? nodeFileOperations;
   const path = await resolveApprovedPath(input.path, authorizedDependencies.workspaceRoots, operations);
+  const sensitiveSegment = findSensitivePath(path);
+  if (sensitiveSegment !== null) {
+    throw new Error(`Artifact path contains a sensitive segment: ${sensitiveSegment}`);
+  }
   const mimeType = mimeByExtension[extname(path).toLowerCase()];
   if (mimeType === undefined) throw new Error("Artifact type is not supported");
 
@@ -183,22 +215,41 @@ export const publishArtifact = async (
     const bytes = new Uint8Array(await file.readFile());
     assertUnchanged(before, await file.stat());
     validateBytes(bytes, mimeType);
+    assertSafeContent(bytes);
 
     const form = new FormData();
     form.set("file", new File([bytes], basename(path), { type: mimeType }));
     form.set("expires_in_seconds", String(input.expiresInSeconds));
-    await addExtraction(
+    const extraction = await addExtraction(
       form,
       mimeType,
       bytes,
       authorizedDependencies.extractPdf ?? (async (pdfBytes) => extractPdfInNode({ bytes: pdfBytes })),
     );
+    if (extraction.derivedBytes !== undefined) {
+      assertSafeContent(extraction.derivedBytes, "Derived PDF text");
+    }
     assertUnchanged(before, await file.stat());
+
+    const payloadCommitment = await createPayloadCommitment({
+      bytes,
+      ...(extraction.derivedBytes === undefined ? {} : { derivedBytes: extraction.derivedBytes }),
+      expiresInSeconds: input.expiresInSeconds,
+      extraction: extraction.metadata,
+      filename: basename(path),
+      mimeType,
+    });
+    const journal = authorizedDependencies.journal ?? new MemoryPublicationJournal();
+    const publication = await journal.prepare(payloadCommitment);
+    form.set("publication_attempt", publication.attemptId);
+    form.set("share_token", publication.shareToken);
+    form.set("payload_commitment", payloadCommitment);
 
     const baseUrl = assertDeploymentOrigin(authorizedDependencies.baseUrl, {
       openDevelopment: authorizedDependencies.openDevelopment,
     });
     const headers = new Headers();
+    headers.set("x-artifact-publisher", publication.publisherId);
     if (authorizedDependencies.token !== undefined) {
       headers.set("authorization", `Bearer ${authorizedDependencies.token}`);
     }
@@ -224,6 +275,7 @@ export const publishArtifact = async (
     ) {
       throw new Error("Artifact Share returned a foreign share origin");
     }
+    await journal.acknowledge(payloadCommitment, publication.attemptId);
     return result;
   } finally {
     await file.close();

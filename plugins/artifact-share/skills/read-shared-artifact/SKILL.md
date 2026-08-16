@@ -1,6 +1,6 @@
 ---
 name: read-shared-artifact
-description: Read an Artifact Share link when the user supplies a configured /a/<token> URL or asks to inspect a previously shared supported artifact.
+description: Read a valid Artifact Share handoff link from the configured origin when it appears in a final handoff or the user asks to inspect a previously shared supported artifact.
 ---
 
 # Read a shared artifact

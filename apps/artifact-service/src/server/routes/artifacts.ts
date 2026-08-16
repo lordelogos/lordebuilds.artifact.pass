@@ -1,5 +1,5 @@
 import { PROTOCOL_VERSION, type ExtractionMetadata } from "artifact-protocol";
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 
 import type { ArtifactServiceBindings } from "../adapters/cloudflare-bindings";
 import {
@@ -8,6 +8,7 @@ import {
   type AuthorizationOptions,
 } from "../middleware/authorize";
 import { ArtifactApplicationService } from "../storage/artifact-service";
+import { sha256 } from "../storage/crypto";
 import { ArtifactError } from "../storage/artifact-error";
 
 type ServiceFactory = (bindings: ArtifactServiceBindings) => ArtifactApplicationService;
@@ -21,6 +22,21 @@ const parseInteger = (value: FormDataEntryValue | null, field: string): number =
 
 const optionalString = (value: FormDataEntryValue | null): string | undefined =>
   typeof value === "string" && value.length > 0 ? value : undefined;
+
+const publicationPublisher = async (
+  context: Context<ArtifactHonoEnvironment>,
+): Promise<string | undefined> => {
+  const principal = context.get("agentPrincipal");
+  if (principal !== undefined) return `agent:${await sha256(principal.id)}`;
+  const identity = context.get("accessIdentity");
+  if (identity !== undefined) return `access:${await sha256(identity.subject)}`;
+  const localPublisher = context.req.header("x-artifact-publisher");
+  if (localPublisher === undefined) return undefined;
+  if (!/^[A-Za-z0-9_-]{16,128}$/u.test(localPublisher)) {
+    throw new ArtifactError("malformed_upload", "Local publisher identity is malformed", 400);
+  }
+  return `local:${await sha256(localPublisher)}`;
+};
 
 const parseExtraction = (form: FormData, isPdf: boolean): ExtractionMetadata => {
   const status = form.get("extraction_status");
@@ -78,6 +94,12 @@ export const createArtifactsRouter = (
           ? new TextEncoder().encode(derivedEntry)
           : undefined;
     const service = createService(context.env);
+    const publicationAttempt = optionalString(form.get("publication_attempt"));
+    const shareToken = optionalString(form.get("share_token"));
+    const payloadCommitment = optionalString(form.get("payload_commitment"));
+    const hasPublicationFields =
+      publicationAttempt !== undefined || shareToken !== undefined || payloadCommitment !== undefined;
+    const publisherId = hasPublicationFields ? await publicationPublisher(context) : undefined;
     const created = await service.create({
       filename: file.name,
       mimeType: file.type,
@@ -85,6 +107,10 @@ export const createArtifactsRouter = (
       expiresInSeconds: parseInteger(form.get("expires_in_seconds"), "expires_in_seconds"),
       extraction: parseExtraction(form, file.type.toLowerCase() === "application/pdf"),
       ...(derivedText === undefined ? {} : { derivedText }),
+      ...(publisherId === undefined ? {} : { publisherId }),
+      ...(publicationAttempt === undefined ? {} : { publicationAttempt }),
+      ...(shareToken === undefined ? {} : { shareToken }),
+      ...(payloadCommitment === undefined ? {} : { payloadCommitment }),
     });
     const shareUrl = new URL(`/a/${created.shareToken}`, context.req.url).toString();
 
@@ -94,7 +120,7 @@ export const createArtifactsRouter = (
         manifest: created.manifest,
         share_url: shareUrl,
       },
-      201,
+      created.created ? 201 : 200,
     );
   });
 

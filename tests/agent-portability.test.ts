@@ -64,6 +64,10 @@ describe("portable agent package", () => {
     expect(source).toMatch(/size/iu);
     expect(source).toMatch(/checksum|sha-?256/iu);
     expect(source).toMatch(/expir/iu);
+    expect(source).toMatch(/final durable artifact/iu);
+    expect(source).toMatch(/opt(?: |-)?out/iu);
+    expect(source).toMatch(/no (?:declared )?artifact.*(?:quiet|no visible)/isu);
+    expect(source).not.toMatch(/slash command|hook syntax|end[- ]of[- ]turn command/iu);
   });
 
   it("keeps ecosystem manifests as thin references to the same MCP and skills", async () => {

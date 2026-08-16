@@ -12,6 +12,9 @@ interface ArtifactRow {
   byte_size: number;
   sha256: string;
   share_token_hash: string;
+  publisher_id: string | null;
+  publication_attempt: string | null;
+  payload_commitment: string | null;
   created_at: number;
   expires_at: number;
   extraction_status: ExtractionMetadata["status"];
@@ -51,6 +54,9 @@ const artifactFromRow = (row: ArtifactRow): ArtifactRecord => ({
   byteSize: row.byte_size,
   sha256: row.sha256,
   shareTokenHash: row.share_token_hash,
+  publisherId: row.publisher_id,
+  publicationAttempt: row.publication_attempt,
+  payloadCommitment: row.payload_commitment,
   createdAt: row.created_at,
   expiresAt: row.expires_at,
   extraction: extractionFromRow(row),
@@ -63,6 +69,7 @@ export interface ArtifactRepository {
   activate(id: string): Promise<void>;
   delete(id: string): Promise<void>;
   findActiveByShareTokenHash(tokenHash: string): Promise<ArtifactRecord | null>;
+  findByPublication(publisherId: string, publicationAttempt: string): Promise<ArtifactRecord | null>;
   findCleanupCandidates(now: number, limit: number): Promise<readonly ArtifactRecord[]>;
   markCleanupPending(id: string): Promise<void>;
   recordCleanupFailure(id: string, message: string): Promise<void>;
@@ -77,9 +84,10 @@ export class D1ArtifactRepository implements ArtifactRepository {
       .prepare(
         `INSERT INTO artifacts (
           id, status, object_key, derived_object_key, filename, mime_type, byte_size, sha256,
-          share_token_hash, created_at, expires_at, extraction_status, extractor,
+          share_token_hash, publisher_id, publication_attempt, payload_commitment,
+          created_at, expires_at, extraction_status, extractor,
           extractor_version, page_count, extraction_reason
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .bind(
         artifact.id,
@@ -91,6 +99,9 @@ export class D1ArtifactRepository implements ArtifactRepository {
         artifact.byteSize,
         artifact.sha256,
         artifact.shareTokenHash,
+        artifact.publisherId,
+        artifact.publicationAttempt,
+        artifact.payloadCommitment,
         artifact.createdAt,
         artifact.expiresAt,
         extraction.status,
@@ -118,6 +129,17 @@ export class D1ArtifactRepository implements ArtifactRepository {
     const row = await this.database
       .prepare("SELECT * FROM artifacts WHERE share_token_hash = ? AND status = 'active'")
       .bind(tokenHash)
+      .first<ArtifactRow>();
+    return row === null ? null : artifactFromRow(row);
+  }
+
+  public async findByPublication(
+    publisherId: string,
+    publicationAttempt: string,
+  ): Promise<ArtifactRecord | null> {
+    const row = await this.database
+      .prepare("SELECT * FROM artifacts WHERE publisher_id = ? AND publication_attempt = ?")
+      .bind(publisherId, publicationAttempt)
       .first<ArtifactRow>();
     return row === null ? null : artifactFromRow(row);
   }
@@ -157,4 +179,3 @@ export class D1ArtifactRepository implements ArtifactRepository {
       .run();
   }
 }
-

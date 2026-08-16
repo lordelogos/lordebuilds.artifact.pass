@@ -20,6 +20,7 @@ const repository = (overrides: Partial<ArtifactRepository> = {}): ArtifactReposi
   activate: vi.fn(async () => undefined),
   delete: vi.fn(async () => undefined),
   findActiveByShareTokenHash: vi.fn(async () => null),
+  findByPublication: vi.fn(async () => null),
   findCleanupCandidates: vi.fn(async () => []),
   markCleanupPending: vi.fn(async () => undefined),
   recordCleanupFailure: vi.fn(async () => undefined),
@@ -126,4 +127,3 @@ describe("staged artifact writes", () => {
     ).rejects.toMatchObject({ code: "not_found" });
   });
 });
-

@@ -9,6 +9,7 @@ import {
 } from "artifact-protocol";
 
 import type { ArtifactServiceBindings } from "../adapters/cloudflare-bindings";
+import { findSensitiveContent } from "../../../../../scripts/security-patterns.mjs";
 import { ArtifactError } from "./artifact-error";
 import type { ArtifactPolicy, ArtifactUploadInput } from "./artifact-types";
 
@@ -71,6 +72,17 @@ const validateUtf8 = (bytes: Uint8Array, label: string): void => {
     if (text.includes("\0")) throw new TypeError("NUL byte");
   } catch {
     throw new ArtifactError("malformed_upload", `${label} must be valid UTF-8 text`, 400);
+  }
+};
+
+const refuseSensitiveContent = (bytes: Uint8Array, label: string): void => {
+  const finding = findSensitiveContent(new TextDecoder().decode(bytes))[0];
+  if (finding !== undefined) {
+    throw new ArtifactError(
+      "malformed_upload",
+      `${label} may contain sensitive ${finding.label}`,
+      400,
+    );
   }
 };
 
@@ -180,6 +192,11 @@ export const validateArtifactUpload = (
     }
   } else {
     validateUtf8(input.bytes, "Artifact source");
+  }
+
+  refuseSensitiveContent(input.bytes, "Artifact source");
+  if (input.derivedText !== undefined) {
+    refuseSensitiveContent(input.derivedText, "Derived text");
   }
 
   validateExtraction(mimeType, input.extraction, input.derivedText, policy);

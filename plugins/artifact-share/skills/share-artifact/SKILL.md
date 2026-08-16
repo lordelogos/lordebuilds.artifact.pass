@@ -1,11 +1,15 @@
 ---
 name: share-artifact
-description: Share a local Markdown, HTML, or PDF file through Artifact Share when asked to publish or create a temporary link; always return the URL and exact expiry cutoff, and describe PDF text extraction as best effort with possible layout, image, scan, or ordering loss.
+description: Publish one declared final durable artifact when a compatible lifecycle event identifies a Markdown, HTML, or PDF handoff, or when explicitly asked to create a temporary link; return only tool-reported handoff details.
 ---
 
 # Share an artifact
 
 Use the `publish_artifact` MCP tool for the file itself. Never paste the file contents into the model prompt.
+
+Apply this portable lifecycle policy once per session. A final candidate exists only when the agent has produced one durable Markdown, HTML, or PDF artifact as the completed work product and can name its exact path. Ordinary chat, code changes, logs, tests, configuration, scratch files, and intermediate output are not final candidates. If there is no declared artifact, remain quiet: do not call the tool and produce no visible sharing message. An explicit opt-out remains quiet and prevents tool calls for the rest of that task unless the user explicitly opts back in.
+
+When the environment exposes a trusted completion event, it may use that event to apply this same policy automatically. If no such capability exists, automatic triggering is unavailable but sharing is not: use this skill manually when the user asks to publish the final artifact. Do not require ecosystem-specific commands or syntax.
 
 Before calling the tool:
 
@@ -21,3 +25,4 @@ The handoff must include the artifact format, byte size, SHA-256 checksum, exact
 For PDF, describe extraction as best effort: the browser preserves the original PDF, while agent-readable text may lose layout, ordering, images, or scanned content. Do not claim perfect conversion, permanent history, public access, paid features, or support for formats outside the tool schema.
 
 If the tool reports a path, authorization, size, or network error, report that error without trying to bypass workspace roots, redirects, access controls, or file-size limits.
+Never invent a URL or imply publication succeeded after an error. Keep the local artifact available as the truthful fallback.

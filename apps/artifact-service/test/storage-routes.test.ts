@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { reset } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createPayloadCommitment } from "../../../scripts/publication-commitment.mjs";
 
 import { createArtifactApplication } from "../src/server/index";
 import { ARTIFACT_SCHEMA_SQL } from "../src/server/db/schema";
@@ -85,6 +86,33 @@ const digest = async (value: string): Promise<string> =>
     new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))),
     (byte) => byte.toString(16).padStart(2, "0"),
   ).join("");
+
+const idempotentUpload = async (
+  source: string,
+  attempt: string,
+  shareToken: string,
+  overrides: Record<string, unknown> = {},
+) => {
+  const form = new FormData();
+  form.set("file", new File([source], "handoff.md", { type: "text/markdown" }));
+  form.set("expires_in_seconds", "3600");
+  form.set("publication_attempt", attempt);
+  form.set("share_token", shareToken);
+  form.set("payload_commitment", await createPayloadCommitment({
+    bytes: new TextEncoder().encode(source),
+    expiresInSeconds: 3600,
+    filename: "handoff.md",
+    mimeType: "text/markdown",
+  }));
+  return createArtifactApplication({ allowUnauthenticatedUploads: true }).fetch(
+    new Request("http://127.0.0.1:8787/api/artifacts", {
+      method: "POST",
+      headers: { "x-artifact-publisher": "local-publisher-01" },
+      body: form,
+    }),
+    testBindings(overrides),
+  );
+};
 
 describe("private artifact routes", () => {
   beforeEach(async () => {
@@ -239,6 +267,99 @@ describe("private artifact routes", () => {
     expect(response.status).toBe(status);
     expect(await env.ARTIFACT_DB.prepare("SELECT COUNT(*) AS count FROM artifacts").first("count"))
       .toBe(0);
+  });
+
+  it("returns the original URL without a second D1 row or R2 object after a response-loss retry", async () => {
+    const attempt = crypto.randomUUID();
+    const shareToken = "R".repeat(43);
+
+    const first = await idempotentUpload("# Final\n", attempt, shareToken);
+    const second = await idempotentUpload("# Final\n", attempt, shareToken);
+
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(200);
+    const firstBody = await first.json<{ share_url: string }>();
+    const secondBody = await second.json<{ share_url: string }>();
+    expect(secondBody.share_url).toBe(firstBody.share_url);
+    expect(firstBody.share_url).toBe(`http://127.0.0.1:8787/a/${shareToken}`);
+    expect(await env.ARTIFACT_DB.prepare("SELECT COUNT(*) AS count FROM artifacts").first("count"))
+      .toBe(1);
+    expect((await env.ARTIFACTS.list()).objects).toHaveLength(1);
+    const row = await env.ARTIFACT_DB.prepare(
+      "SELECT share_token_hash, publisher_id, publication_attempt, payload_commitment FROM artifacts",
+    ).first<{
+      share_token_hash: string;
+      publisher_id: string;
+      publication_attempt: string;
+      payload_commitment: string;
+    }>();
+    expect(row).toEqual({
+      share_token_hash: await digest(shareToken),
+      publisher_id: `local:${await digest("local-publisher-01")}`,
+      publication_attempt: attempt,
+      payload_commitment: await createPayloadCommitment({
+        bytes: new TextEncoder().encode("# Final\n"),
+        expiresInSeconds: 3600,
+        filename: "handoff.md",
+        mimeType: "text/markdown",
+      }),
+    });
+  });
+
+  it("binds hosted idempotency to the authenticated principal instead of a client header", async () => {
+    await authorizeStorageTestAgent();
+    const source = "# Hosted\n";
+    const form = new FormData();
+    form.set("file", new File([source], "handoff.md", { type: "text/markdown" }));
+    form.set("expires_in_seconds", "3600");
+    form.set("publication_attempt", crypto.randomUUID());
+    form.set("share_token", "V".repeat(43));
+    form.set("payload_commitment", await createPayloadCommitment({
+      bytes: new TextEncoder().encode(source),
+      expiresInSeconds: 3600,
+      filename: "handoff.md",
+      mimeType: "text/markdown",
+    }));
+
+    const response = await createArtifactApplication().fetch(
+      new Request("https://artifacts.example/api/artifacts", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${storageTestAgentToken}`,
+          "x-artifact-publisher": "client-controlled-publisher",
+        },
+        body: form,
+      }),
+      testBindings(),
+    );
+
+    expect(response.status).toBe(201);
+    expect(await env.ARTIFACT_DB.prepare("SELECT publisher_id FROM artifacts").first("publisher_id"))
+      .toBe(`agent:${await digest("00000000-0000-4000-8000-000000000001")}`);
+  });
+
+  it("rejects attempt reuse with a different payload or share token without another write", async () => {
+    const attempt = crypto.randomUUID();
+    expect((await idempotentUpload("# First\n", attempt, "S".repeat(43))).status).toBe(201);
+
+    expect((await idempotentUpload("# Changed\n", attempt, "S".repeat(43))).status).toBe(409);
+    expect((await idempotentUpload("# First\n", attempt, "T".repeat(43))).status).toBe(409);
+    expect(await env.ARTIFACT_DB.prepare("SELECT COUNT(*) AS count FROM artifacts").first("count"))
+      .toBe(1);
+    expect((await env.ARTIFACTS.list()).objects).toHaveLength(1);
+  });
+
+  it("refuses sensitive content before D1 or R2 writes", async () => {
+    const response = await idempotentUpload(
+      `as_${"x".repeat(43)}`,
+      crypto.randomUUID(),
+      "U".repeat(43),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await env.ARTIFACT_DB.prepare("SELECT COUNT(*) AS count FROM artifacts").first("count"))
+      .toBe(0);
+    expect((await env.ARTIFACTS.list()).objects).toHaveLength(0);
   });
 
   it("rejects input over the configured size before storage", async () => {

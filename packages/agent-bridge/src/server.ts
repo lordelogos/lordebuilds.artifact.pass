@@ -1,4 +1,4 @@
-import { delimiter } from "node:path";
+import { delimiter, resolve } from "node:path";
 
 import { McpServer } from "@modelcontextprotocol/server";
 import { serveStdio, type StdioServerHandle } from "@modelcontextprotocol/server/stdio";
@@ -18,6 +18,11 @@ import {
 import { publishArtifact } from "./tools/publish-artifact";
 import { readArtifact } from "./tools/read-artifact";
 import {
+  FilePublicationJournal,
+  MemoryPublicationJournal,
+  type PublicationJournal,
+} from "./state/publication-journal";
+import {
   publishArtifactInputSchema,
   publishArtifactOutputSchema,
   readArtifactInputSchema,
@@ -33,6 +38,8 @@ export interface BridgeConfiguration {
   readonly osStore?: CredentialStore;
   readonly fetch?: typeof globalThis.fetch;
   readonly logger?: RedactingLogger;
+  readonly publicationJournal?: PublicationJournal;
+  readonly publicationStatePath?: string;
 }
 
 const errorResult = (error: unknown) => ({
@@ -51,6 +58,11 @@ export const createBridgeServer = (configuration: BridgeConfiguration): McpServe
     { capabilities: { tools: {} } },
   );
   const logger = configuration.logger ?? createRedactingLogger();
+  const publicationJournal = configuration.publicationJournal ?? (
+    configuration.publicationStatePath === undefined
+      ? new MemoryPublicationJournal()
+      : new FilePublicationJournal(configuration.publicationStatePath)
+  );
 
   server.registerTool("publish_artifact", {
     title: "Publish Artifact",
@@ -60,7 +72,7 @@ export const createBridgeServer = (configuration: BridgeConfiguration): McpServe
     annotations: {
       readOnlyHint: false,
       destructiveHint: false,
-      idempotentHint: false,
+      idempotentHint: true,
       openWorldHint: true,
     },
   }, async ({ path, expires_in_seconds: expiresInSeconds }) => {
@@ -77,6 +89,7 @@ export const createBridgeServer = (configuration: BridgeConfiguration): McpServe
         workspaceRoots: configuration.workspaceRoots,
         ...(token === undefined ? {} : { token }),
         openDevelopment: configuration.openDevelopment === true,
+        journal: publicationJournal,
         ...(configuration.fetch === undefined ? {} : { fetch: configuration.fetch }),
       });
       return {
@@ -128,9 +141,10 @@ export const createBridgeServer = (configuration: BridgeConfiguration): McpServe
 export const configurationFromEnvironment = (
   environment: Readonly<Record<string, string | undefined>> = process.env,
 ): BridgeConfiguration => {
+  const localConfigPath = defaultLocalConfigPath(environment);
   const localSettings = environment.ARTIFACT_SHARE_BASE_URL === undefined ||
       environment.ARTIFACT_SHARE_WORKSPACE_ROOTS === undefined
-    ? readLocalBridgeSettingsSync(defaultLocalConfigPath(environment))
+    ? readLocalBridgeSettingsSync(localConfigPath)
     : undefined;
   const baseUrlValue = environment.ARTIFACT_SHARE_BASE_URL ?? localSettings?.base_url;
   if (baseUrlValue === undefined) throw new Error("ARTIFACT_SHARE_BASE_URL is required");
@@ -150,12 +164,17 @@ export const configurationFromEnvironment = (
     localSettings?.open_development === true
   );
   const headless = environment.ARTIFACT_SHARE_TOKEN !== undefined;
+  const publicationStatePathValue = environment.ARTIFACT_SHARE_STATE_PATH;
+  const publicationStatePath = publicationStatePathValue === undefined
+    ? `${localConfigPath}.publication-state`
+    : resolve(publicationStatePathValue);
   return {
     baseUrl: assertDeploymentOrigin(new URL(baseUrlValue), { openDevelopment }),
     workspaceRoots,
     openDevelopment,
     headless,
     environmentStore,
+    publicationStatePath,
     ...(headless ? {} : { osStore: new OsCredentialStore() }),
   };
 };

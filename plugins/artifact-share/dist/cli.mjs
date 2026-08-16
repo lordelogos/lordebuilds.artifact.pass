@@ -39652,7 +39652,7 @@ async function extractImages$1(data, pageNumber) {
     for (let i2 = 0; i2 < operatorList.fnArray.length; i2++) {
       if (operatorList.fnArray[i2] !== OPS.paintImageXObject) continue;
       const imageKey = operatorList.argsArray[i2][0];
-      const image = await new Promise((resolve3) => (imageKey.startsWith("g_") ? page.commonObjs : page.objs).get(imageKey, resolve3));
+      const image = await new Promise((resolve4) => (imageKey.startsWith("g_") ? page.commonObjs : page.objs).get(imageKey, resolve4));
       if (!image || !image.data || !image.width || !image.height) continue;
       const { width, height, data: data2 } = image;
       const calculatedChannels = data2.length / (width * height);
@@ -39697,8 +39697,8 @@ async function renderPageAsImage$1(data, pageNumber, options = {}) {
         const buffer = await canvas.encode("png");
         return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
       }
-      const blob = await new Promise((resolve3) => {
-        canvas.toBlob(resolve3);
+      const blob = await new Promise((resolve4) => {
+        canvas.toBlob(resolve4);
       });
       if (!blob) throw new Error("Failed to encode canvas to a PNG blob.");
       return await blob.arrayBuffer();
@@ -39899,7 +39899,7 @@ var init_dist = __esm({
 });
 
 // src/server.ts
-import { delimiter } from "node:path";
+import { delimiter, resolve as resolve3 } from "node:path";
 
 // ../../node_modules/.pnpm/@modelcontextprotocol+server@2.0.0/node_modules/@modelcontextprotocol/server/dist/chunk-Br0eD_fh.mjs
 var __create = Object.create;
@@ -58815,14 +58815,14 @@ function inputRequiredRoundsExceededMessage(method, maxRounds) {
   return `Multi-round-trip request '${method}' still required input after ${maxRounds} rounds (inputRequired.maxRounds)`;
 }
 function sleep(ms2, signal) {
-  return new Promise((resolve3, reject) => {
+  return new Promise((resolve4, reject) => {
     if (signal?.aborted) {
       reject(signal.reason instanceof SdkError ? signal.reason : new SdkError(SdkErrorCode.RequestTimeout, String(signal.reason)));
       return;
     }
     const timer = setTimeout(() => {
       signal?.removeEventListener("abort", onAbort);
-      resolve3();
+      resolve4();
     }, ms2);
     const onAbort = () => {
       clearTimeout(timer);
@@ -59616,7 +59616,7 @@ var Protocol = class {
     const flowStartedAt = Date.now();
     let onAbort;
     let cleanupMessageId;
-    return new Promise((resolve3, reject) => {
+    return new Promise((resolve4, reject) => {
       const earlyReject = (error51) => {
         reject(error51);
       };
@@ -59684,7 +59684,7 @@ var Protocol = class {
         }
         if (decoded.kind === "invalid") return reject(decoded.error);
         if (decoded.kind === "input_required") {
-          if (options?.allowInputRequired === true) return resolve3(manualInputRequiredValue(decoded));
+          if (options?.allowInputRequired === true) return resolve4(manualInputRequiredValue(decoded));
           const flow = {
             codec: codec2,
             request,
@@ -59696,11 +59696,11 @@ var Protocol = class {
               params
             }, resultSchema, legOptions)
           };
-          return resolve3(this._resolveNonCompleteResult(decoded, flow));
+          return resolve4(this._resolveNonCompleteResult(decoded, flow));
         }
         const result = decoded.result;
         validateStandardSchema(resultSchema, result).then((parseResult) => {
-          if (parseResult.success) resolve3(parseResult.data);
+          if (parseResult.success) resolve4(parseResult.data);
           else reject(new SdkError(SdkErrorCode.InvalidResult, `Invalid result for ${request.method}: ${parseResult.error}`));
         }, reject);
       });
@@ -62612,7 +62612,7 @@ var require_compile = /* @__PURE__ */ __commonJSMin(((exports) => {
     ref = (0, resolve_1.resolveUrl)(this.opts.uriResolver, baseId, ref);
     const schOrFunc = root.refs[ref];
     if (schOrFunc) return schOrFunc;
-    let _sch = resolve3.call(this, root, ref);
+    let _sch = resolve4.call(this, root, ref);
     if (_sch === void 0) {
       const schema = (_a4 = root.localRefs) === null || _a4 === void 0 ? void 0 : _a4[ref];
       const { schemaId } = this.opts;
@@ -62638,7 +62638,7 @@ var require_compile = /* @__PURE__ */ __commonJSMin(((exports) => {
   function sameSchemaEnv(s1, s2) {
     return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
   }
-  function resolve3(root, ref) {
+  function resolve4(root, ref) {
     let sch;
     while (typeof (sch = this.refs[ref]) == "string") ref = sch;
     return sch || this.schemas[ref] || resolveSchema.call(this, root, ref);
@@ -63088,7 +63088,7 @@ var require_fast_uri = /* @__PURE__ */ __commonJSMin(((exports, module) => {
     else if (typeof uri === "object") uri = parse3(serialize(uri, options), options);
     return uri;
   }
-  function resolve3(baseURI, relativeURI, options) {
+  function resolve4(baseURI, relativeURI, options) {
     const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
     const resolved = resolveComponent(parse3(baseURI, schemelessOptions), parse3(relativeURI, schemelessOptions), schemelessOptions, true);
     schemelessOptions.skipEscape = true;
@@ -63262,7 +63262,7 @@ var require_fast_uri = /* @__PURE__ */ __commonJSMin(((exports, module) => {
   const fastUri = {
     SCHEMES,
     normalize,
-    resolve: resolve3,
+    resolve: resolve4,
     resolveComponent,
     equal,
     serialize,
@@ -68635,7 +68635,7 @@ var StdioServerTransport = class {
   }
   send(message) {
     if (this._closed) return Promise.reject(/* @__PURE__ */ new Error("StdioServerTransport is closed"));
-    return new Promise((resolve3, reject) => {
+    return new Promise((resolve4, reject) => {
       const json2 = serializeMessage(message);
       let settled = false;
       const onError = (error51) => {
@@ -68650,14 +68650,14 @@ var StdioServerTransport = class {
         settled = true;
         this._stdout.off("error", onError);
         this._stdout.off("drain", onDrain);
-        resolve3();
+        resolve4();
       };
       this._stdout.once("error", onError);
       if (this._stdout.write(json2)) {
         if (settled) return;
         settled = true;
         this._stdout.off("error", onError);
-        resolve3();
+        resolve4();
       } else if (!settled) this._stdout.once("drain", onDrain);
     });
   }
@@ -68711,14 +68711,14 @@ var StdioConnectionChannel = class {
   */
   async whenRequestsAnswered(timeoutMs) {
     if (this._closed || this._pendingRequests.size === 0) return true;
-    return await new Promise((resolve3) => {
+    return await new Promise((resolve4) => {
       const waiter = () => {
         clearTimeout(timer);
-        resolve3(true);
+        resolve4(true);
       };
       const timer = setTimeout(() => {
         this._drainWaiters = this._drainWaiters.filter((pending) => pending !== waiter);
-        resolve3(false);
+        resolve4(false);
       }, timeoutMs);
       this._drainWaiters.push(waiter);
     });
@@ -69067,7 +69067,7 @@ var CredentialStoreCommandError = class extends Error {
   }
   status;
 };
-var defaultRunner = async (executable, args, options = {}) => new Promise((resolve3, reject) => {
+var defaultRunner = async (executable, args, options = {}) => new Promise((resolve4, reject) => {
   const child = spawn(executable, [...args], {
     stdio: ["pipe", "pipe", "pipe"],
     windowsHide: true
@@ -69088,7 +69088,7 @@ var defaultRunner = async (executable, args, options = {}) => new Promise((resol
   child.stderr.on("data", (chunk) => capture(stderr, chunk));
   child.once("error", reject);
   child.once("close", (code) => {
-    if (code === 0) resolve3({ stdout: Buffer.concat(stdout).toString("utf8") });
+    if (code === 0) resolve4({ stdout: Buffer.concat(stdout).toString("utf8") });
     else reject(new CredentialStoreCommandError(code));
   });
   child.stdin.end(options.input);
@@ -69595,6 +69595,247 @@ var extractPdfInNode = async (request) => {
   return complexLayout && result.metadata.status === "best_effort" ? { ...result, qualityWarnings: ["layout_may_be_degraded"] } : result;
 };
 
+// ../../scripts/publication-commitment.mjs
+var bytesToHex = (bytes) => Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+var digest = async (bytes) => bytesToHex(new Uint8Array(
+  await crypto.subtle.digest("SHA-256", bytes)
+));
+var sourceSha256 = async (bytes) => digest(new Uint8Array(bytes));
+var createPayloadCommitmentFromSourceHash = async ({
+  derivedHash = null,
+  expiresInSeconds,
+  extraction = { status: "not_applicable" },
+  filename,
+  mimeType,
+  sourceHash
+}) => {
+  return digest(new TextEncoder().encode(JSON.stringify([
+    "artifact-share-upload-v2",
+    filename,
+    mimeType,
+    expiresInSeconds,
+    sourceHash,
+    [
+      extraction.status,
+      extraction.extractor ?? null,
+      extraction.extractor_version ?? null,
+      extraction.page_count ?? null,
+      extraction.reason ?? null
+    ],
+    derivedHash
+  ])));
+};
+var createPayloadCommitment = async ({ bytes, derivedBytes, ...metadata }) => createPayloadCommitmentFromSourceHash({
+  ...metadata,
+  derivedHash: derivedBytes === void 0 ? null : await sourceSha256(derivedBytes),
+  sourceHash: await sourceSha256(bytes)
+});
+
+// ../../scripts/security-patterns.mjs
+var tokenPrefixes = ["cfut_", "as_"];
+var sharePath = "\\/a\\/";
+var contentPatterns = [
+  {
+    label: "Cloudflare user token",
+    pattern: new RegExp(`\\b${tokenPrefixes[0]}[A-Za-z0-9_-]{20,}\\b`, "gu")
+  },
+  {
+    label: "Artifact Share agent token",
+    pattern: new RegExp(`\\b${tokenPrefixes[1]}[A-Za-z0-9_-]{32,}\\b`, "gu")
+  },
+  {
+    label: "Artifact Share capability URL",
+    pattern: new RegExp(`https:\\/\\/[A-Za-z0-9.-]+(?::\\d+)?${sharePath}[A-Za-z0-9_-]{32,256}`, "gu")
+  },
+  {
+    label: "private key",
+    pattern: new RegExp(`-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE ${"KEY"}-----`, "gu")
+  }
+];
+var sensitivePathSegments = [
+  /^\.env(?:\.(?!example(?:\.|$))[^/]+)?$/iu,
+  /^\.ssh$/iu,
+  /^\.aws$/iu,
+  /^\.gnupg$/iu,
+  /^(?:id_rsa|id_ed25519|credentials|secrets?)$/iu
+];
+var findSensitiveContent = (source) => {
+  const findings = [];
+  for (const { label, pattern } of contentPatterns) {
+    pattern.lastIndex = 0;
+    for (const match of source.matchAll(pattern)) {
+      findings.push({ label, index: match.index ?? 0 });
+    }
+  }
+  return findings;
+};
+var findSensitivePath = (path) => {
+  const normalized = path.replaceAll("\\", "/");
+  const segments = normalized.split("/").filter(Boolean);
+  return segments.find(
+    (segment) => sensitivePathSegments.some((pattern) => pattern.test(segment))
+  ) ?? null;
+};
+
+// src/state/publication-journal.ts
+import { randomBytes, randomUUID } from "node:crypto";
+import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { dirname as dirname2 } from "node:path";
+var commitmentPattern = /^[a-f0-9]{64}$/u;
+var publisherPattern = /^[A-Za-z0-9_-]{16,128}$/u;
+var attemptPattern = /^[0-9a-f]{8}-[0-9a-f-]{27,45}$/u;
+var tokenPattern = /^[A-Za-z0-9_-]{43}$/u;
+var maximumPendingEntries = 32;
+var remember = (entries, payloadCommitment, entry) => {
+  entries.delete(payloadCommitment);
+  entries.set(payloadCommitment, entry);
+  while (entries.size > maximumPendingEntries) {
+    const oldest = entries.keys().next().value;
+    if (oldest === void 0) break;
+    entries.delete(oldest);
+  }
+};
+var opaqueToken = () => randomBytes(32).toString("base64url");
+var publisherId = () => `local_${randomBytes(18).toString("base64url")}`;
+var emptyState = () => ({
+  version: 1,
+  publisher_id: publisherId(),
+  pending: {}
+});
+var validateState = (value) => {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Artifact Share publication state is malformed");
+  }
+  const candidate = value;
+  if (candidate.version !== 1 || typeof candidate.publisher_id !== "string" || !publisherPattern.test(candidate.publisher_id) || candidate.pending === null || typeof candidate.pending !== "object" || Array.isArray(candidate.pending)) {
+    throw new Error("Artifact Share publication state is malformed");
+  }
+  const entries = Object.entries(candidate.pending);
+  if (entries.length > maximumPendingEntries) {
+    throw new Error("Artifact Share publication state exceeds its bounded capacity");
+  }
+  const pending = {};
+  for (const [commitment, raw] of entries) {
+    if (!commitmentPattern.test(commitment) || raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+      throw new Error("Artifact Share publication state is malformed");
+    }
+    const entry = raw;
+    if (typeof entry.attempt_id !== "string" || !attemptPattern.test(entry.attempt_id) || typeof entry.share_token !== "string" || !tokenPattern.test(entry.share_token) || typeof entry.updated_at !== "number" || !Number.isSafeInteger(entry.updated_at)) {
+      throw new Error("Artifact Share publication state is malformed");
+    }
+    pending[commitment] = {
+      attempt_id: entry.attempt_id,
+      share_token: entry.share_token,
+      updated_at: entry.updated_at
+    };
+  }
+  return { version: 1, publisher_id: candidate.publisher_id, pending };
+};
+var MemoryPublicationJournal = class {
+  publisher = publisherId();
+  pending = /* @__PURE__ */ new Map();
+  async prepare(payloadCommitment) {
+    const existing = this.pending.get(payloadCommitment);
+    const entry = existing ?? {
+      attempt_id: randomUUID(),
+      share_token: opaqueToken(),
+      updated_at: Date.now()
+    };
+    this.pending.set(payloadCommitment, entry);
+    return {
+      publisherId: this.publisher,
+      attemptId: entry.attempt_id,
+      shareToken: entry.share_token
+    };
+  }
+  async acknowledge(payloadCommitment, attemptId) {
+    if (this.pending.get(payloadCommitment)?.attempt_id !== attemptId) return;
+  }
+};
+var FilePublicationJournal = class {
+  constructor(path) {
+    this.path = path;
+  }
+  path;
+  operation = Promise.resolve();
+  acknowledged = /* @__PURE__ */ new Map();
+  serialized(operation) {
+    const next = this.operation.then(operation, operation);
+    this.operation = next.catch(() => void 0);
+    return next;
+  }
+  async load() {
+    try {
+      const source = await readFile(this.path, "utf8");
+      if (Buffer.byteLength(source) > 32 * 1024) {
+        throw new Error("Artifact Share publication state is too large");
+      }
+      return validateState(JSON.parse(source));
+    } catch (error51) {
+      if (error51.code === "ENOENT") return emptyState();
+      throw error51;
+    }
+  }
+  async save(state) {
+    await mkdir(dirname2(this.path), { recursive: true, mode: 448 });
+    const temporary = `${this.path}.${process.pid}.${randomUUID()}.tmp`;
+    await writeFile(temporary, `${JSON.stringify(state)}
+`, { mode: 384, flag: "wx" });
+    try {
+      await rename(temporary, this.path);
+    } catch (error51) {
+      await rm(temporary, { force: true });
+      throw error51;
+    }
+    await chmod(this.path, 384);
+  }
+  prepare(payloadCommitment) {
+    if (!commitmentPattern.test(payloadCommitment)) {
+      return Promise.reject(new Error("Artifact payload commitment is malformed"));
+    }
+    return this.serialized(async () => {
+      const acknowledged = this.acknowledged.get(payloadCommitment);
+      if (acknowledged !== void 0) {
+        return {
+          publisherId: (await this.load()).publisher_id,
+          attemptId: acknowledged.attempt_id,
+          shareToken: acknowledged.share_token
+        };
+      }
+      const state = await this.load();
+      const existing = state.pending[payloadCommitment];
+      const entry = existing ?? {
+        attempt_id: randomUUID(),
+        share_token: opaqueToken(),
+        updated_at: Date.now()
+      };
+      if (existing === void 0) {
+        const pendingEntries = Object.entries(state.pending).sort((left, right) => left[1].updated_at - right[1].updated_at).slice(-(maximumPendingEntries - 1));
+        await this.save({
+          ...state,
+          pending: Object.fromEntries([...pendingEntries, [payloadCommitment, entry]])
+        });
+      }
+      return {
+        publisherId: state.publisher_id,
+        attemptId: entry.attempt_id,
+        shareToken: entry.share_token
+      };
+    });
+  }
+  acknowledge(payloadCommitment, attemptId) {
+    return this.serialized(async () => {
+      const state = await this.load();
+      const acknowledged = state.pending[payloadCommitment];
+      if (acknowledged?.attempt_id !== attemptId) return;
+      remember(this.acknowledged, payloadCommitment, acknowledged);
+      const pending = { ...state.pending };
+      delete pending[payloadCommitment];
+      await this.save({ ...state, pending });
+    });
+  }
+};
+
 // src/tools/publish-artifact.ts
 var authorizePublishDependencies = (dependencies) => {
   const token = dependencies.token?.trim();
@@ -69651,10 +69892,16 @@ var validateBytes = (bytes, mimeType) => {
     throw new Error("Text artifacts must contain valid UTF-8");
   }
 };
+var assertSafeContent = (bytes, label = "Artifact content") => {
+  const finding = findSensitiveContent(new TextDecoder().decode(bytes))[0];
+  if (finding !== void 0) {
+    throw new Error(`${label} may contain sensitive ${finding.label}`);
+  }
+};
 var addExtraction = async (form, mimeType, bytes, extractPdf) => {
   if (mimeType !== "application/pdf") {
     form.set("extraction_status", "not_applicable");
-    return;
+    return { metadata: { status: "not_applicable" } };
   }
   let result;
   try {
@@ -69662,7 +69909,12 @@ var addExtraction = async (form, mimeType, bytes, extractPdf) => {
   } catch {
     form.set("extraction_status", "unavailable");
     form.set("extraction_reason", "Embedded PDF text extraction was unavailable.");
-    return;
+    return {
+      metadata: {
+        status: "unavailable",
+        reason: "Embedded PDF text extraction was unavailable."
+      }
+    };
   }
   form.set("extraction_status", result.metadata.status);
   if (result.metadata.extractor !== void 0) form.set("extractor", result.metadata.extractor);
@@ -69673,17 +69925,24 @@ var addExtraction = async (form, mimeType, bytes, extractPdf) => {
     form.set("page_count", String(result.metadata.page_count));
     const warning = result.qualityWarnings?.includes("layout_may_be_degraded") === true ? "[Extraction quality note: column or table layout may be degraded.]\n\n" : "";
     const derivedText = `${warning}${pdfPagesToText(result.pages)}`;
-    form.set("derived_text", new File([derivedText], `${basename("artifact.pdf")}.txt`, {
+    const derivedBytes = new TextEncoder().encode(derivedText);
+    form.set("derived_text", new File([derivedBytes], `${basename("artifact.pdf")}.txt`, {
       type: "text/plain;charset=utf-8"
     }));
+    return { metadata: result.metadata, derivedBytes };
   } else if (result.metadata.reason !== void 0) {
     form.set("extraction_reason", result.metadata.reason);
   }
+  return { metadata: result.metadata };
 };
 var publishArtifact = async (input, dependencies) => {
   const authorizedDependencies = authorizePublishDependencies(dependencies);
   const operations = authorizedDependencies.fileOperations ?? nodeFileOperations;
   const path = await resolveApprovedPath(input.path, authorizedDependencies.workspaceRoots, operations);
+  const sensitiveSegment = findSensitivePath(path);
+  if (sensitiveSegment !== null) {
+    throw new Error(`Artifact path contains a sensitive segment: ${sensitiveSegment}`);
+  }
   const mimeType = mimeByExtension[extname(path).toLowerCase()];
   if (mimeType === void 0) throw new Error("Artifact type is not supported");
   const file2 = await operations.open(path);
@@ -69694,20 +69953,38 @@ var publishArtifact = async (input, dependencies) => {
     const bytes = new Uint8Array(await file2.readFile());
     assertUnchanged(before, await file2.stat());
     validateBytes(bytes, mimeType);
+    assertSafeContent(bytes);
     const form = new FormData();
     form.set("file", new File([bytes], basename(path), { type: mimeType }));
     form.set("expires_in_seconds", String(input.expiresInSeconds));
-    await addExtraction(
+    const extraction = await addExtraction(
       form,
       mimeType,
       bytes,
       authorizedDependencies.extractPdf ?? (async (pdfBytes) => extractPdfInNode({ bytes: pdfBytes }))
     );
+    if (extraction.derivedBytes !== void 0) {
+      assertSafeContent(extraction.derivedBytes, "Derived PDF text");
+    }
     assertUnchanged(before, await file2.stat());
+    const payloadCommitment = await createPayloadCommitment({
+      bytes,
+      ...extraction.derivedBytes === void 0 ? {} : { derivedBytes: extraction.derivedBytes },
+      expiresInSeconds: input.expiresInSeconds,
+      extraction: extraction.metadata,
+      filename: basename(path),
+      mimeType
+    });
+    const journal = authorizedDependencies.journal ?? new MemoryPublicationJournal();
+    const publication = await journal.prepare(payloadCommitment);
+    form.set("publication_attempt", publication.attemptId);
+    form.set("share_token", publication.shareToken);
+    form.set("payload_commitment", payloadCommitment);
     const baseUrl = assertDeploymentOrigin(authorizedDependencies.baseUrl, {
       openDevelopment: authorizedDependencies.openDevelopment
     });
     const headers = new Headers();
+    headers.set("x-artifact-publisher", publication.publisherId);
     if (authorizedDependencies.token !== void 0) {
       headers.set("authorization", `Bearer ${authorizedDependencies.token}`);
     }
@@ -69726,6 +70003,7 @@ var publishArtifact = async (input, dependencies) => {
     if (shareUrl.origin !== baseUrl.origin || shareUrl.username !== "" || shareUrl.password !== "" || shareUrl.search !== "" || shareUrl.hash !== "" || !/^\/a\/[A-Za-z0-9_-]{32,256}$/u.test(shareUrl.pathname)) {
       throw new Error("Artifact Share returned a foreign share origin");
     }
+    await journal.acknowledge(payloadCommitment, publication.attemptId);
     return result;
   } finally {
     await file2.close();
@@ -69902,8 +70180,8 @@ var sha256Schema2 = external_exports.string().regex(/^[a-f0-9]{64}$/u);
 var opaqueCursorSchema = external_exports.string().regex(/^[A-Za-z0-9_-]{16,256}$/u);
 var publishArtifactInputSchema = external_exports.object({
   path: external_exports.string().min(1).describe("Absolute or workspace-relative local file path"),
-  expires_in_seconds: external_exports.number().int().positive().describe(
-    "Deployment expiry preset in seconds. Default setup presets: 900, 1800, 3600, 43200, 86400; a rejection reports the deployment's allowed values."
+  expires_in_seconds: external_exports.number().int().positive().default(3600).describe(
+    "Deployment expiry preset in seconds. Defaults to one hour (3600). Default setup presets: 900, 1800, 3600, 43200, 86400; a rejection reports the deployment's allowed values."
   )
 });
 var publishArtifactOutputSchema = external_exports.object({
@@ -69967,6 +70245,7 @@ var createBridgeServer = (configuration) => {
     { capabilities: { tools: {} } }
   );
   const logger = configuration.logger ?? createRedactingLogger();
+  const publicationJournal = configuration.publicationJournal ?? (configuration.publicationStatePath === void 0 ? new MemoryPublicationJournal() : new FilePublicationJournal(configuration.publicationStatePath));
   server.registerTool("publish_artifact", {
     title: "Publish Artifact",
     description: "Publish one approved local Markdown, HTML, or PDF file without placing its bytes in model context.",
@@ -69975,7 +70254,7 @@ var createBridgeServer = (configuration) => {
     annotations: {
       readOnlyHint: false,
       destructiveHint: false,
-      idempotentHint: false,
+      idempotentHint: true,
       openWorldHint: true
     }
   }, async ({ path, expires_in_seconds: expiresInSeconds }) => {
@@ -69990,6 +70269,7 @@ var createBridgeServer = (configuration) => {
         workspaceRoots: configuration.workspaceRoots,
         ...token === void 0 ? {} : { token },
         openDevelopment: configuration.openDevelopment === true,
+        journal: publicationJournal,
         ...configuration.fetch === void 0 ? {} : { fetch: configuration.fetch }
       });
       return {
@@ -70036,7 +70316,8 @@ var createBridgeServer = (configuration) => {
   return server;
 };
 var configurationFromEnvironment = (environment = process.env) => {
-  const localSettings = environment.ARTIFACT_SHARE_BASE_URL === void 0 || environment.ARTIFACT_SHARE_WORKSPACE_ROOTS === void 0 ? readLocalBridgeSettingsSync(defaultLocalConfigPath(environment)) : void 0;
+  const localConfigPath = defaultLocalConfigPath(environment);
+  const localSettings = environment.ARTIFACT_SHARE_BASE_URL === void 0 || environment.ARTIFACT_SHARE_WORKSPACE_ROOTS === void 0 ? readLocalBridgeSettingsSync(localConfigPath) : void 0;
   const baseUrlValue = environment.ARTIFACT_SHARE_BASE_URL ?? localSettings?.base_url;
   if (baseUrlValue === void 0) throw new Error("ARTIFACT_SHARE_BASE_URL is required");
   const rootsValue = environment.ARTIFACT_SHARE_WORKSPACE_ROOTS;
@@ -70049,12 +70330,15 @@ var configurationFromEnvironment = (environment = process.env) => {
   }
   const openDevelopment = openDevelopmentValue === "1" || openDevelopmentValue === void 0 && environment.ARTIFACT_SHARE_BASE_URL === void 0 && localSettings?.open_development === true;
   const headless = environment.ARTIFACT_SHARE_TOKEN !== void 0;
+  const publicationStatePathValue = environment.ARTIFACT_SHARE_STATE_PATH;
+  const publicationStatePath = publicationStatePathValue === void 0 ? `${localConfigPath}.publication-state` : resolve3(publicationStatePathValue);
   return {
     baseUrl: assertDeploymentOrigin(new URL(baseUrlValue), { openDevelopment }),
     workspaceRoots,
     openDevelopment,
     headless,
     environmentStore,
+    publicationStatePath,
     ...headless ? {} : { osStore: new OsCredentialStore() }
   };
 };

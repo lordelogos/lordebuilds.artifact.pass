@@ -3,6 +3,7 @@ import {
   artifactManifestSchema,
   type ArtifactManifest,
 } from "artifact-protocol";
+import { createPayloadCommitmentFromSourceHash } from "../../../../../scripts/publication-commitment.mjs";
 
 import { ArtifactError } from "./artifact-error";
 import type { ArtifactRepository } from "./artifact-repository";
@@ -42,6 +43,38 @@ export const artifactRecordToManifest = (artifact: ArtifactRecord): ArtifactMani
 const notFound = (): ArtifactError =>
   new ArtifactError("not_found", "Artifact is unavailable", 404);
 
+interface PublicationRetry {
+  readonly publisherId: string;
+  readonly publicationAttempt: string;
+  readonly payloadCommitment: string;
+  readonly shareToken: string;
+}
+
+const publicationRetryFromInput = (input: ArtifactUploadInput): PublicationRetry | undefined => {
+  if (
+    input.publisherId !== undefined &&
+    input.publicationAttempt !== undefined &&
+    input.payloadCommitment !== undefined &&
+    input.shareToken !== undefined
+  ) {
+    return {
+      publisherId: input.publisherId,
+      publicationAttempt: input.publicationAttempt,
+      payloadCommitment: input.payloadCommitment,
+      shareToken: input.shareToken,
+    };
+  }
+  if (
+    input.publisherId !== undefined ||
+    input.publicationAttempt !== undefined ||
+    input.payloadCommitment !== undefined ||
+    input.shareToken !== undefined
+  ) {
+    throw new ArtifactError("malformed_upload", "Publication retry fields must be complete", 400);
+  }
+  return undefined;
+};
+
 export class ArtifactApplicationService {
   private readonly now: () => number;
   private readonly createId: () => string;
@@ -55,10 +88,37 @@ export class ArtifactApplicationService {
 
   public async create(input: ArtifactUploadInput): Promise<CreatedArtifact> {
     const mimeType = validateArtifactUpload(input, this.options.policy);
-    const id = this.createId();
-    const shareToken = this.createToken();
-    const shareTokenHash = await hashShareToken(shareToken);
+    const publication = publicationRetryFromInput(input);
     const checksum = await sha256(input.bytes);
+    if (publication !== undefined) {
+      if (
+        !/^[A-Za-z0-9:_-]{8,255}$/u.test(publication.publisherId) ||
+        !/^[0-9a-f]{8}-[0-9a-f-]{27,45}$/u.test(publication.publicationAttempt) ||
+        !/^[a-f0-9]{64}$/u.test(publication.payloadCommitment) ||
+        !/^[A-Za-z0-9_-]{43}$/u.test(publication.shareToken)
+      ) {
+        throw new ArtifactError("malformed_upload", "Publication retry fields are malformed", 400);
+      }
+      const expectedCommitment = await createPayloadCommitmentFromSourceHash({
+        derivedHash: input.derivedText === undefined ? null : await sha256(input.derivedText),
+        expiresInSeconds: input.expiresInSeconds,
+        extraction: input.extraction,
+        filename: input.filename,
+        mimeType,
+        sourceHash: checksum,
+      });
+      if (expectedCommitment !== publication.payloadCommitment) {
+        throw new ArtifactError("malformed_upload", "Payload commitment does not match the upload", 400);
+      }
+      const existing = await this.options.repository.findByPublication(
+        publication.publisherId,
+        publication.publicationAttempt,
+      );
+      if (existing !== null) return this.recoverPublication(existing, publication);
+    }
+    const id = this.createId();
+    const shareToken = publication?.shareToken ?? this.createToken();
+    const shareTokenHash = await hashShareToken(shareToken);
     const createdAt = this.now();
     const objectKey = `artifacts/${id}/source`;
     const derivedObjectKey =
@@ -73,6 +133,9 @@ export class ArtifactApplicationService {
       byteSize: input.bytes.byteLength,
       sha256: checksum,
       shareTokenHash,
+      publisherId: publication?.publisherId ?? null,
+      publicationAttempt: publication?.publicationAttempt ?? null,
+      payloadCommitment: publication?.payloadCommitment ?? null,
       createdAt,
       expiresAt: createdAt + input.expiresInSeconds * 1000,
       extraction: input.extraction,
@@ -80,7 +143,18 @@ export class ArtifactApplicationService {
       lastCleanupError: null,
     };
 
-    await this.options.repository.insertStaging(staged);
+    try {
+      await this.options.repository.insertStaging(staged);
+    } catch (error) {
+      if (publication !== undefined) {
+        const raced = await this.options.repository.findByPublication(
+          publication.publisherId,
+          publication.publicationAttempt,
+        );
+        if (raced !== null) return this.recoverPublication(raced, publication);
+      }
+      throw error;
+    }
     try {
       await this.options.objectStore.put(objectKey, input.bytes, mimeType);
       if (input.derivedText !== undefined && derivedObjectKey !== null) {
@@ -107,6 +181,30 @@ export class ArtifactApplicationService {
     return {
       manifest: artifactRecordToManifest({ ...staged, status: "active" }),
       shareToken,
+      created: true,
+    };
+  }
+
+  private async recoverPublication(
+    existing: ArtifactRecord,
+    publication: PublicationRetry,
+  ): Promise<CreatedArtifact> {
+    if (
+      existing.status !== "active" ||
+      this.now() >= existing.expiresAt ||
+      existing.payloadCommitment !== publication.payloadCommitment ||
+      existing.shareTokenHash !== await hashShareToken(publication.shareToken)
+    ) {
+      throw new ArtifactError(
+        "malformed_upload",
+        "Publication attempt conflicts with an existing artifact",
+        409,
+      );
+    }
+    return {
+      manifest: artifactRecordToManifest(existing),
+      shareToken: publication.shareToken,
+      created: false,
     };
   }
 

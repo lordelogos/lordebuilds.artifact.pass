@@ -6,8 +6,9 @@ import migration1 from "../migrations/0001-artifacts.sql?raw";
 import migration2 from "../migrations/0002-identity.sql?raw";
 import migration3 from "../migrations/0003-request-rate-limits.sql?raw";
 import migration4 from "../migrations/0004-device-token-replay.sql?raw";
+import migration5 from "../migrations/0005-publication-idempotency.sql?raw";
 
-const migrations = [migration1, migration2, migration3, migration4] as const;
+const migrations = [migration1, migration2, migration3, migration4, migration5] as const;
 
 describe("deployment migrations", () => {
   beforeEach(async () => reset());
@@ -32,5 +33,14 @@ describe("deployment migrations", () => {
       "PRAGMA table_info(device_authorizations)",
     ).all<{ readonly name: string }>();
     expect(deviceColumns.results.map((row) => row.name)).toContain("agent_token_id");
+
+    const artifactColumns = await env.ARTIFACT_DB.prepare(
+      "PRAGMA table_info(artifacts)",
+    ).all<{ readonly name: string }>();
+    expect(artifactColumns.results.map((row) => row.name)).toEqual(expect.arrayContaining([
+      "publisher_id",
+      "publication_attempt",
+      "payload_commitment",
+    ]));
   });
 });

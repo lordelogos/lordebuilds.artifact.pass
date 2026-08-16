@@ -1,9 +1,11 @@
-import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { FilePublicationJournal } from "../src/state/publication-journal";
+import { publishArtifactInputSchema } from "../src/tool-contract";
 import { publishArtifact } from "../src/tools/publish-artifact";
 
 const createdDirectories: string[] = [];
@@ -24,6 +26,13 @@ afterEach(async () => {
 });
 
 describe("publish_artifact", () => {
+  it("defaults publication to one hour when the caller omits an expiry", () => {
+    expect(publishArtifactInputSchema.parse({ path: "final.md" })).toEqual({
+      path: "final.md",
+      expires_in_seconds: 3600,
+    });
+  });
+
   it("rejects production publishing without a token before opening or dispatching", async () => {
     const fetch = vi.fn<typeof globalThis.fetch>();
     const realpath = vi.fn(async (value: string) => value);
@@ -137,6 +146,63 @@ describe("publish_artifact", () => {
     expect(dependencies.fetch).not.toHaveBeenCalled();
   });
 
+  it.each([
+    [".env/report.md", "# otherwise safe"],
+    ["report.md", `agent token: as_${"x".repeat(43)}`],
+    ["report.md", `-----BEGIN ${"PRIVATE KEY"}-----\nnot-a-real-key`],
+  ])("refuses sensitive path or content %s before dispatch", async (relativePath, source) => {
+    const root = await workspace();
+    const path = join(root, relativePath);
+    await mkdir(join(path, ".."), { recursive: true });
+    await writeFile(path, source);
+    const fetch = vi.fn<typeof globalThis.fetch>();
+
+    await expect(publishArtifact({ path, expiresInSeconds: 3600 }, {
+      baseUrl: new URL("https://artifacts.example.test"),
+      fetch,
+      token: agentToken,
+      workspaceRoots: [root],
+      journal: new FilePublicationJournal(join(root, "private-state.json")),
+    })).rejects.toThrow(/sensitive|secret|credential|private key/iu);
+
+    expect(fetch).not.toHaveBeenCalled();
+    await expect(readFile(join(root, "private-state.json"), "utf8")).rejects.toThrow();
+  });
+
+  it("allows benign redacted examples and sensitive-looking near misses", async () => {
+    const root = await workspace();
+    const path = join(root, ".env.example.md");
+    const source = [
+      "# Setup notes",
+      "ARTIFACT_SHARE_TOKEN=as_<redacted>",
+      "https://artifacts.example.test/a/<token>",
+      "-----BEGIN PUBLIC KEY-----",
+    ].join("\n");
+    await writeFile(path, source);
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response(JSON.stringify({
+      protocol_version: 1,
+      manifest: {
+        protocol_version: 1,
+        artifact_id: "018f1f52-cbf1-7a5e-b66e-9ac829614b53",
+        filename: ".env.example.md",
+        mime_type: "text/markdown",
+        byte_size: Buffer.byteLength(source),
+        sha256: "a".repeat(64),
+        created_at: "2026-08-16T00:00:00.000Z",
+        expires_at: "2026-08-16T01:00:00.000Z",
+        extraction: { status: "not_applicable" },
+      },
+      share_url: shareUrl,
+    }), { status: 201, headers: { "content-type": "application/json" } }));
+
+    await expect(publishArtifact({ path, expiresInSeconds: 3600 }, {
+      baseUrl: new URL("https://artifacts.example.test"),
+      fetch,
+      token: agentToken,
+      workspaceRoots: [root],
+    })).resolves.toMatchObject({ share_url: shareUrl });
+  });
+
   it("rejects unsupported and signature-mismatched files", async () => {
     const root = await workspace();
     const unsupported = join(root, "notes.txt");
@@ -246,6 +312,34 @@ describe("publish_artifact", () => {
     expect(form.get("derived_text")).toBeNull();
   });
 
+  it("refuses sensitive extracted PDF text before journal or network access", async () => {
+    const root = await workspace();
+    const path = join(root, "sensitive-report.pdf");
+    await writeFile(path, "%PDF-safe-binary-wrapper");
+    const journalPath = join(root, "private-state.json");
+    const fetch = vi.fn<typeof globalThis.fetch>();
+
+    await expect(publishArtifact({ path, expiresInSeconds: 3600 }, {
+      baseUrl: new URL("https://artifacts.example.test"),
+      fetch,
+      token: agentToken,
+      workspaceRoots: [root],
+      journal: new FilePublicationJournal(journalPath),
+      extractPdf: async () => ({
+        metadata: {
+          status: "best_effort",
+          extractor: "fixture",
+          extractor_version: "1",
+          page_count: 1,
+        },
+        pages: [{ page: 1, text: `as_${"x".repeat(43)}` }],
+      }),
+    })).rejects.toThrow(/Derived PDF text.*sensitive/iu);
+
+    expect(fetch).not.toHaveBeenCalled();
+    await expect(readFile(journalPath, "utf8")).rejects.toThrow();
+  });
+
   it("rejects a file changed between validation and upload", async () => {
     const root = await workspace();
     const path = join(root, "changing.md");
@@ -324,5 +418,79 @@ describe("publish_artifact", () => {
         }),
       },
     })).resolves.toMatchObject({ share_url: shareUrl });
+  });
+
+  it("recovers the original publication after a committed response is lost and the bridge restarts", async () => {
+    const root = await workspace();
+    const path = join(root, "final.md");
+    const journalPath = join(root, "bridge-state.json");
+    await writeFile(path, "# Final handoff\n");
+    let committed: {
+      attempt: string;
+      token: string;
+      commitment: string;
+      publisher: string;
+    } | undefined;
+    const fetch = vi.fn<typeof globalThis.fetch>(async (_input, init) => {
+      const form = init?.body as FormData;
+      const current = {
+        attempt: String(form.get("publication_attempt")),
+        token: String(form.get("share_token")),
+        commitment: String(form.get("payload_commitment")),
+        publisher: new Headers(init?.headers).get("x-artifact-publisher") ?? "",
+      };
+      if (committed === undefined) {
+        committed = current;
+        throw new TypeError("connection closed after commit");
+      }
+      expect(current).toEqual(committed);
+      return new Response(JSON.stringify({
+        protocol_version: 1,
+        manifest: {
+          protocol_version: 1,
+          artifact_id: "018f1f52-cbf1-7a5e-b66e-9ac829614b53",
+          filename: "final.md",
+          mime_type: "text/markdown",
+          byte_size: 16,
+          sha256: "a".repeat(64),
+          created_at: "2026-08-16T00:00:00.000Z",
+          expires_at: "2026-08-16T01:00:00.000Z",
+          extraction: { status: "not_applicable" },
+        },
+        share_url: `https://artifacts.example.test/a/${committed.token}`,
+      }), { status: 201, headers: { "content-type": "application/json" } });
+    });
+
+    await expect(publishArtifact({ path, expiresInSeconds: 3600 }, {
+      baseUrl: new URL("https://artifacts.example.test"),
+      fetch,
+      token: agentToken,
+      workspaceRoots: [root],
+      journal: new FilePublicationJournal(journalPath),
+    })).rejects.toThrow("connection closed after commit");
+
+    expect((await stat(journalPath)).mode & 0o777).toBe(0o600);
+    const recoveredJournal = new FilePublicationJournal(journalPath);
+    await expect(publishArtifact({ path, expiresInSeconds: 3600 }, {
+      baseUrl: new URL("https://artifacts.example.test"),
+      fetch,
+      token: agentToken,
+      workspaceRoots: [root],
+      journal: recoveredJournal,
+    })).resolves.toMatchObject({
+      share_url: `https://artifacts.example.test/a/${committed?.token}`,
+    });
+    await expect(publishArtifact({ path, expiresInSeconds: 3600 }, {
+      baseUrl: new URL("https://artifacts.example.test"),
+      fetch,
+      token: agentToken,
+      workspaceRoots: [root],
+      journal: recoveredJournal,
+    })).resolves.toMatchObject({
+      share_url: `https://artifacts.example.test/a/${committed?.token}`,
+    });
+
+    expect(fetch).toHaveBeenCalledTimes(3);
+    await expect(readFile(journalPath, "utf8")).resolves.not.toContain(committed?.token ?? "missing");
   });
 });

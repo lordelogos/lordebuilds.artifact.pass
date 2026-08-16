@@ -21,6 +21,12 @@ export {
   type LocalBridgeSettings,
 } from "./config/local-config";
 export {
+  FilePublicationJournal,
+  MemoryPublicationJournal,
+  type PublicationAttempt,
+  type PublicationJournal,
+} from "./state/publication-journal";
+export {
   createRedactingLogger,
   redactSensitiveText,
   type RedactingLogger,

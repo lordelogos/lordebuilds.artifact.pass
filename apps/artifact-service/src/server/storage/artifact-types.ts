@@ -16,6 +16,9 @@ export interface ArtifactRecord {
   readonly byteSize: number;
   readonly sha256: string;
   readonly shareTokenHash: string;
+  readonly publisherId: string | null;
+  readonly publicationAttempt: string | null;
+  readonly payloadCommitment: string | null;
   readonly createdAt: number;
   readonly expiresAt: number;
   readonly extraction: ExtractionMetadata;
@@ -34,11 +37,16 @@ export interface ArtifactUploadInput {
   readonly expiresInSeconds: number;
   readonly extraction: ExtractionMetadata;
   readonly derivedText?: Uint8Array;
+  readonly publisherId?: string;
+  readonly publicationAttempt?: string;
+  readonly payloadCommitment?: string;
+  readonly shareToken?: string;
 }
 
 export interface CreatedArtifact {
   readonly manifest: ArtifactManifest;
   readonly shareToken: string;
+  readonly created: boolean;
 }
 
 export interface ArtifactPolicy {
@@ -47,4 +55,3 @@ export interface ArtifactPolicy {
   readonly maximumExpirySeconds: number;
   readonly maximumSourceChunkBytes: number;
 }
-

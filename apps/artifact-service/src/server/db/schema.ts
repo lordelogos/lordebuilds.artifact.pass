@@ -12,6 +12,9 @@ export const artifacts = sqliteTable(
     byteSize: integer("byte_size").notNull(),
     sha256: text("sha256").notNull(),
     shareTokenHash: text("share_token_hash").notNull(),
+    publisherId: text("publisher_id"),
+    publicationAttempt: text("publication_attempt"),
+    payloadCommitment: text("payload_commitment"),
     createdAt: integer("created_at").notNull(),
     expiresAt: integer("expires_at").notNull(),
     extractionStatus: text("extraction_status").notNull(),
@@ -25,6 +28,10 @@ export const artifacts = sqliteTable(
   (table) => [
     uniqueIndex("artifacts_object_key_unique").on(table.objectKey),
     uniqueIndex("artifacts_share_token_hash_unique").on(table.shareTokenHash),
+    uniqueIndex("artifacts_publisher_attempt_unique").on(
+      table.publisherId,
+      table.publicationAttempt,
+    ),
     index("artifacts_status_expires_at_idx").on(table.status, table.expiresAt),
   ],
 );
@@ -80,8 +87,9 @@ export const requestRateLimits = sqliteTable("request_rate_limits", {
 });
 
 export const ARTIFACT_SCHEMA_SQL = [
-  "CREATE TABLE IF NOT EXISTS artifacts (id TEXT PRIMARY KEY NOT NULL, status TEXT NOT NULL CHECK (status IN ('staging', 'active', 'cleanup_pending')), object_key TEXT NOT NULL UNIQUE, derived_object_key TEXT, filename TEXT NOT NULL, mime_type TEXT NOT NULL, byte_size INTEGER NOT NULL CHECK (byte_size >= 0), sha256 TEXT NOT NULL, share_token_hash TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, extraction_status TEXT NOT NULL, extractor TEXT, extractor_version TEXT, page_count INTEGER, extraction_reason TEXT, cleanup_attempts INTEGER NOT NULL DEFAULT 0, last_cleanup_error TEXT);",
+  "CREATE TABLE IF NOT EXISTS artifacts (id TEXT PRIMARY KEY NOT NULL, status TEXT NOT NULL CHECK (status IN ('staging', 'active', 'cleanup_pending')), object_key TEXT NOT NULL UNIQUE, derived_object_key TEXT, filename TEXT NOT NULL, mime_type TEXT NOT NULL, byte_size INTEGER NOT NULL CHECK (byte_size >= 0), sha256 TEXT NOT NULL, share_token_hash TEXT NOT NULL UNIQUE, publisher_id TEXT, publication_attempt TEXT, payload_commitment TEXT, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, extraction_status TEXT NOT NULL, extractor TEXT, extractor_version TEXT, page_count INTEGER, extraction_reason TEXT, cleanup_attempts INTEGER NOT NULL DEFAULT 0, last_cleanup_error TEXT);",
   "CREATE INDEX IF NOT EXISTS artifacts_status_expires_at_idx ON artifacts (status, expires_at);",
+  "CREATE UNIQUE INDEX IF NOT EXISTS artifacts_publisher_attempt_unique ON artifacts (publisher_id, publication_attempt) WHERE publisher_id IS NOT NULL AND publication_attempt IS NOT NULL;",
   "CREATE TABLE IF NOT EXISTS device_authorizations (id TEXT PRIMARY KEY NOT NULL, device_code_hash TEXT NOT NULL UNIQUE, user_code_hash TEXT NOT NULL UNIQUE, code_challenge TEXT NOT NULL, status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'consumed')), created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, next_poll_at INTEGER NOT NULL, poll_attempts INTEGER NOT NULL DEFAULT 0 CHECK (poll_attempts >= 0), identity_subject TEXT, identity_email TEXT, approved_at INTEGER, consumed_at INTEGER, agent_token_id TEXT);",
   "CREATE INDEX IF NOT EXISTS device_authorizations_expires_at_idx ON device_authorizations (expires_at);",
   "CREATE TABLE IF NOT EXISTS agent_tokens (id TEXT PRIMARY KEY NOT NULL, token_hash TEXT NOT NULL UNIQUE, identity_subject TEXT NOT NULL, identity_email TEXT NOT NULL, scope TEXT NOT NULL CHECK (scope = 'artifact:create'), created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, revoked_at INTEGER);",
