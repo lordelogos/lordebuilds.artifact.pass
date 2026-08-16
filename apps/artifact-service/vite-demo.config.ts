@@ -6,14 +6,16 @@ export default defineConfig({
   plugins: [
     react(),
     cloudflare({
-      configPath: "./wrangler-demo.jsonc",
-      persistState: { path: ".wrangler/demo-state" },
+      configPath: process.env.ARTIFACT_SHARE_DEMO_CONFIG_PATH ?? "./wrangler-demo.jsonc",
+      persistState: {
+        path: process.env.ARTIFACT_SHARE_DEMO_STATE_PATH ?? ".wrangler/demo-state",
+      },
     }),
   ],
   server: {
-    host: "0.0.0.0",
-    port: 8787,
+    host: process.env.ARTIFACT_SHARE_DEMO_HOST ?? "0.0.0.0",
+    port: Number(process.env.ARTIFACT_SHARE_DEMO_PORT ?? "8787"),
     strictPort: true,
-    open: "/upload",
+    open: process.env.ARTIFACT_SHARE_DEMO_NO_OPEN === "1" ? false : "/upload",
   },
 });
