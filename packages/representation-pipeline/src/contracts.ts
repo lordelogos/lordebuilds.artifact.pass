@@ -13,7 +13,10 @@ export interface PdfPageText {
 export interface PdfExtractionResult {
   readonly metadata: Exclude<ExtractionMetadata, { status: "not_applicable" }>;
   readonly pages: readonly PdfPageText[];
+  readonly qualityWarnings?: readonly PdfQualityWarning[];
 }
+
+export type PdfQualityWarning = "layout_may_be_degraded";
 
 export interface PdfRepresentationAdapter {
   readonly runtime: "browser" | "node";

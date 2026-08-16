@@ -1,0 +1,54 @@
+import { dirname, delimiter } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { Client } from "@modelcontextprotocol/client";
+import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
+import { describe, expect, it } from "vitest";
+
+describe("built stdio bridge", () => {
+  it("negotiates MCP v2, exposes exactly two tools, and invokes a safety boundary", async () => {
+    const bridgePath = fileURLToPath(new URL("../dist/cli.mjs", import.meta.url));
+    const agentToken = `as_${"t".repeat(43)}`;
+    const shareToken = "s".repeat(32);
+    const transport = new StdioClientTransport({
+      command: process.execPath,
+      args: [bridgePath],
+      cwd: dirname(bridgePath),
+      env: {
+        ARTIFACT_SHARE_BASE_URL: "https://artifacts.example.test",
+        ARTIFACT_SHARE_TOKEN: agentToken,
+        ARTIFACT_SHARE_WORKSPACE_ROOTS: [process.cwd()].join(delimiter),
+      },
+      stderr: "pipe",
+    });
+    const stderr: string[] = [];
+    transport.stderr?.on("data", (chunk) => stderr.push(String(chunk)));
+    const client = new Client({ name: "agent-bridge-smoke", version: "0.0.0" });
+
+    try {
+      await client.connect(transport);
+      const listed = await client.listTools();
+      expect(listed.tools.map((tool) => tool.name).sort()).toEqual([
+        "publish_artifact",
+        "read_artifact",
+      ]);
+
+      const result = await client.callTool({
+        name: "read_artifact",
+        arguments: {
+          share_url: `https://foreign.example/a/${shareToken}`,
+        },
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content).toEqual(expect.arrayContaining([
+        expect.objectContaining({ type: "text" }),
+      ]));
+    } finally {
+      await client.close();
+    }
+
+    const controlledLogs = stderr.join("");
+    expect(controlledLogs).not.toContain(agentToken);
+    expect(controlledLogs).not.toContain(shareToken);
+  });
+});

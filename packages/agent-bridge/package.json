@@ -1,0 +1,34 @@
+{
+  "name": "agent-bridge",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "bin": {
+    "artifact-share-bridge": "dist/cli.mjs"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "esbuild src/cli.ts --bundle --platform=node --format=esm --outfile=dist/cli.mjs --banner:js='#!/usr/bin/env node'",
+    "test": "pnpm build && vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/core": "2.0.0",
+    "@modelcontextprotocol/server": "2.0.0",
+    "artifact-protocol": "workspace:*",
+    "representation-pipeline": "workspace:*",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "2.0.0",
+    "@types/node": "^24.10.14",
+    "esbuild": "^0.27.4",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}
