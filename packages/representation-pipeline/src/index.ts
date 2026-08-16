@@ -1,4 +1,5 @@
 export { createBrowserPdfAdapter } from "./browser-adapter";
+export { createPdfExtractionResult, pdfPagesToText } from "./pdf-text";
 export type {
   PdfAdapterOptions,
   PdfExtractionImplementation,

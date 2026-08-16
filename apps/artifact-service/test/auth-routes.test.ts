@@ -150,6 +150,28 @@ describe("Cloudflare Access assertions", () => {
     expect(uploadSurface.status).toBe(200);
   });
 
+  it("returns deployment-defined upload limits only to an Access-authenticated browser", async () => {
+    const anonymous = await request("/upload/policy");
+    expect(anonymous.status).toBe(404);
+
+    const response = await request(
+      "/upload/policy",
+      { headers: await accessHeaders() },
+      {
+        ALLOWED_EXPIRY_SECONDS: "900,3600",
+        MAX_EXPIRY_SECONDS: "3600",
+        MAX_ARTIFACT_BYTES: "1048576",
+      },
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toContain("no-store");
+    await expect(response.json()).resolves.toMatchObject({
+      supported_mime_types: ["text/html", "text/markdown", "application/pdf"],
+      max_artifact_bytes: 1_048_576,
+      expiry: { maximum_seconds: 3600, allowed_seconds: [900, 3600] },
+    });
+  });
+
   it.each([
     ["missing", async () => undefined],
     ["wrong audience", async () => accessToken({ aud: "someone-else" })],
@@ -286,7 +308,7 @@ describe("route credential matrix", () => {
     const agent = await createAgentToken();
     const accessUpload = await request("/api/artifacts", {
       method: "POST",
-      headers: await accessHeaders(),
+      headers: { origin: "https://artifacts.example", ...(await accessHeaders()) },
       body: markdownUpload(),
     });
     expect(accessUpload.status).toBe(201);
@@ -310,6 +332,17 @@ describe("route credential matrix", () => {
     ).toBe(404);
     expect((await request("/api/artifacts", { headers: { authorization: `Bearer ${agent.access_token}` } })).status).toBe(404);
     expect((await request("/a/not-a-share-token", { headers: await accessHeaders() })).status).toBe(404);
+  });
+
+  it("rejects a cross-origin Access-authenticated browser upload", async () => {
+    const response = await request("/api/artifacts", {
+      method: "POST",
+      headers: { origin: "https://attacker.example", ...(await accessHeaders()) },
+      body: markdownUpload(),
+    });
+    expect(response.status).toBe(404);
+    expect(await env.ARTIFACT_DB.prepare("SELECT COUNT(*) AS count FROM artifacts").first("count"))
+      .toBe(0);
   });
 
   it("keeps browser approval inaccessible to agents and public share tokens", async () => {

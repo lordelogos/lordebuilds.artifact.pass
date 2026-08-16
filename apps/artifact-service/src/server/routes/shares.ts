@@ -15,6 +15,11 @@ import {
 } from "../storage/artifact-service";
 import { ArtifactError } from "../storage/artifact-error";
 import type { ArtifactRecord, ArtifactPolicy } from "../storage/artifact-types";
+import { renderSharePage, type ShareRepresentation } from "../../web/routes/share-page";
+import {
+  renderSafeHtmlPreview,
+  renderSafeMarkdown,
+} from "../../web/viewers/content-sanitizer";
 
 type ServiceFactory = (bindings: ArtifactServiceBindings) => ArtifactApplicationService;
 type PolicyFactory = (bindings: ArtifactServiceBindings) => ArtifactPolicy;
@@ -93,13 +98,101 @@ const parseRange = (
 const disposition = (filename: string): string =>
   `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`;
 
-const viewer = (artifact: ArtifactRecord, shareToken: string): string => {
-  const filename = artifact.filename
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${filename}</title></head><body><main><h1>${filename}</h1><p>${artifact.mimeType}</p><a href="/a/${shareToken}/raw">Open exact source</a></main></body></html>`;
+const createNonce = (): string => {
+  const bytes = crypto.getRandomValues(new Uint8Array(18));
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+};
+
+const viewerHeaders = (nonce: string) => ({
+  ...PUBLIC_RESPONSE_HEADERS,
+  "Content-Security-Policy": [
+    "default-src 'none'",
+    `style-src 'nonce-${nonce}'`,
+    `script-src 'nonce-${nonce}'`,
+    "frame-src 'self'",
+    "connect-src 'none'",
+    "img-src data:",
+    "font-src 'none'",
+    "object-src 'none'",
+    "base-uri 'none'",
+    "form-action 'none'",
+    "frame-ancestors 'none'",
+  ].join("; "),
+  "Content-Type": "text/html; charset=utf-8",
+});
+
+const representationFor = async (
+  service: ArtifactApplicationService,
+  artifact: ArtifactRecord,
+  sharePath: string,
+  nonce: string,
+): Promise<ShareRepresentation> => {
+  if (artifact.mimeType === "application/pdf") {
+    return { kind: "pdf", sourceUrl: `${sharePath}/content` };
+  }
+  const object = await service.getSource(artifact);
+  const source = new TextDecoder("utf-8", { fatal: true }).decode(await object.arrayBuffer());
+  return artifact.mimeType === "text/markdown"
+    ? { kind: "markdown", html: renderSafeMarkdown(source) }
+    : { kind: "html", source: renderSafeHtmlPreview(source, nonce) };
+};
+
+type SourceDisposition = "attachment" | "inline";
+
+const sourceResponse = async (
+  service: ArtifactApplicationService,
+  artifact: ArtifactRecord,
+  rangeHeader: string | undefined,
+  responseDisposition: SourceDisposition,
+): Promise<Response> => {
+  if (artifact.mimeType === "application/pdf" && rangeHeader !== undefined) {
+    let range: ReturnType<typeof parseRange>;
+    try {
+      range = parseRange(rangeHeader, artifact.byteSize);
+    } catch (error) {
+      if (error instanceof ArtifactError && error.status === 416) {
+        return new Response(JSON.stringify({
+          protocol_version: PROTOCOL_VERSION,
+          error: { code: "malformed_upload", message: "Range is not satisfiable" },
+        }), {
+          status: 416,
+          headers: {
+            ...PUBLIC_RESPONSE_HEADERS,
+            "Content-Type": "application/json; charset=utf-8",
+            "Content-Range": `bytes */${artifact.byteSize}`,
+          },
+        });
+      }
+      throw error;
+    }
+    const object = await service.getSource(artifact, range);
+    return new Response(object.body, {
+      status: 206,
+      headers: {
+        ...PUBLIC_RESPONSE_HEADERS,
+        "Accept-Ranges": "bytes",
+        "Content-Range": `bytes ${range.offset}-${range.end}/${artifact.byteSize}`,
+        "Content-Length": String(range.length),
+        "Content-Type": artifact.mimeType,
+        "Content-Disposition": `${responseDisposition}; filename*=UTF-8''${encodeURIComponent(artifact.filename)}`,
+      },
+    });
+  }
+
+  const object = await service.getSource(artifact);
+  return new Response(object.body, {
+    headers: {
+      ...PUBLIC_RESPONSE_HEADERS,
+      ...(artifact.mimeType === "application/pdf" ? { "Accept-Ranges": "bytes" } : {}),
+      "Content-Length": String(artifact.byteSize),
+      "Content-Type": artifact.mimeType === "application/pdf"
+        ? artifact.mimeType
+        : "text/plain; charset=utf-8",
+      "Content-Disposition": `${responseDisposition}; filename*=UTF-8''${encodeURIComponent(artifact.filename)}`,
+    },
+  });
 };
 
 export const createSharesRouter = (
@@ -112,11 +205,16 @@ export const createSharesRouter = (
   router.use("/:shareToken", requirePublicCapability());
 
   router.get("/:shareToken", async (context) => {
-    const artifact = await createService(context.env).resolve(context.get("shareToken"));
-    return context.html(viewer(artifact, context.get("shareToken")), 200, {
-      ...PUBLIC_RESPONSE_HEADERS,
-      "Content-Type": "text/html; charset=utf-8",
-    });
+    const service = createService(context.env);
+    const artifact = await service.resolve(context.get("shareToken"));
+    const sharePath = `/a/${context.get("shareToken")}`;
+    const nonce = createNonce();
+    return context.html(renderSharePage({
+      manifest: artifactRecordToManifest(artifact),
+      nonce,
+      representation: await representationFor(service, artifact, sharePath, nonce),
+      sharePath,
+    }), 200, viewerHeaders(nonce));
   });
 
   router.get("/:shareToken/manifest", async (context) => {
@@ -190,54 +288,16 @@ export const createSharesRouter = (
   router.get("/:shareToken/raw", async (context) => {
     const service = createService(context.env);
     const artifact = await service.resolve(context.get("shareToken"));
-    const rangeHeader = context.req.header("range");
-    if (artifact.mimeType === "application/pdf" && rangeHeader !== undefined) {
-      let range: ReturnType<typeof parseRange>;
-      try {
-        range = parseRange(rangeHeader, artifact.byteSize);
-      } catch (error) {
-        if (error instanceof ArtifactError && error.status === 416) {
-          return new Response(JSON.stringify({
-            protocol_version: PROTOCOL_VERSION,
-            error: { code: "malformed_upload", message: "Range is not satisfiable" },
-          }), {
-            status: 416,
-            headers: {
-              ...PUBLIC_RESPONSE_HEADERS,
-              "Content-Type": "application/json; charset=utf-8",
-              "Content-Range": `bytes */${artifact.byteSize}`,
-            },
-          });
-        }
-        throw error;
-      }
-      const object = await service.getSource(artifact, range);
-      return new Response(object.body, {
-        status: 206,
-        headers: {
-          ...PUBLIC_RESPONSE_HEADERS,
-          "Accept-Ranges": "bytes",
-          "Content-Range": `bytes ${range.offset}-${range.end}/${artifact.byteSize}`,
-          "Content-Length": String(range.length),
-          "Content-Type": artifact.mimeType,
-          "Content-Disposition": disposition(artifact.filename),
-        },
-      });
-    }
+    return sourceResponse(service, artifact, context.req.header("range"), "attachment");
+  });
 
-    const object = await service.getSource(artifact);
-    return new Response(object.body, {
-      headers: {
-        ...PUBLIC_RESPONSE_HEADERS,
-        ...(artifact.mimeType === "application/pdf" ? { "Accept-Ranges": "bytes" } : {}),
-        "Content-Length": String(artifact.byteSize),
-        "Content-Type":
-          artifact.mimeType === "application/pdf"
-            ? artifact.mimeType
-            : "text/plain; charset=utf-8",
-        "Content-Disposition": disposition(artifact.filename),
-      },
-    });
+  router.get("/:shareToken/content", async (context) => {
+    const service = createService(context.env);
+    const artifact = await service.resolve(context.get("shareToken"));
+    if (artifact.mimeType !== "application/pdf") {
+      throw new ArtifactError("not_found", "Artifact is unavailable", 404);
+    }
+    return sourceResponse(service, artifact, context.req.header("range"), "inline");
   });
 
   return router;

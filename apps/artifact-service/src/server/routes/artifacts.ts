@@ -57,6 +57,12 @@ export const createArtifactsRouter = (
   const router = new Hono<ArtifactHonoEnvironment>();
 
   router.post("/", requireUploader(authorizationOptions), async (context) => {
+    if (context.req.header("cf-access-jwt-assertion") !== undefined) {
+      const origin = context.req.header("origin");
+      if (origin !== new URL(context.req.url).origin) {
+        throw new ArtifactError("not_found", "Route is unavailable", 404);
+      }
+    }
     const form = await context.req.formData().catch(() => {
       throw new ArtifactError("malformed_upload", "Expected a multipart upload", 400);
     });

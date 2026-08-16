@@ -1,4 +1,9 @@
-import { PROTOCOL_VERSION } from "artifact-protocol";
+import {
+  PROTOCOL_MAX_SOURCE_CHUNK_BYTES,
+  PROTOCOL_VERSION,
+  SUPPORTED_MIME_TYPES,
+  protocolLimitsSchema,
+} from "artifact-protocol";
 import { Hono } from "hono";
 import type { JWTVerifyGetKey } from "jose";
 
@@ -49,11 +54,26 @@ export const createArtifactApplication = (options: ArtifactApplicationOptions = 
     }),
   );
 
+  app.get("/upload/policy", requireAccess(authorizationOptions), (context) => {
+    const policy = artifactPolicyFromBindings(context.env);
+    return context.json(protocolLimitsSchema.parse({
+      protocol_version: PROTOCOL_VERSION,
+      supported_mime_types: SUPPORTED_MIME_TYPES,
+      max_artifact_bytes: policy.maximumArtifactBytes,
+      max_source_chunk_bytes: PROTOCOL_MAX_SOURCE_CHUNK_BYTES,
+      expiry: {
+        maximum_seconds: policy.maximumExpirySeconds,
+        allowed_seconds: policy.allowedExpirySeconds,
+      },
+    }), 200, { "Cache-Control": "private, no-store, max-age=0" });
+  });
+
   app.get("/upload", requireAccess(authorizationOptions), (context) => {
     if (context.env.ASSETS === undefined) {
       throw new ArtifactError("not_found", "Route is unavailable", 404);
     }
-    return context.env.ASSETS.fetch(context.req.raw);
+    const assetUrl = new URL("/", context.req.url);
+    return context.env.ASSETS.fetch(new Request(assetUrl, context.req.raw));
   });
 
   app.route(

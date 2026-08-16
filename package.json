@@ -12,6 +12,7 @@
     "dev": "pnpm --dir apps/artifact-service dev",
     "lint": "oxlint --deny-warnings .",
     "test": "vitest run --config vitest.workspace.ts",
+    "test:browser": "playwright test",
     "test:protocol": "pnpm --dir packages/artifact-protocol test",
     "test:worker": "pnpm --dir apps/artifact-service test",
     "typecheck": "pnpm -r --if-present typecheck",
@@ -19,6 +20,7 @@
     "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "oxlint": "^1.78.0",
     "vitest": "^4.1.10"
   }

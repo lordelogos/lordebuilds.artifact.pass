@@ -183,7 +183,7 @@ export const protocolLimitsSchema = z
       z.literal("text/markdown"),
       z.literal("application/pdf"),
     ]),
-    max_artifact_bytes: z.literal(PROTOCOL_MAX_ARTIFACT_BYTES),
+    max_artifact_bytes: z.number().int().positive().max(PROTOCOL_MAX_ARTIFACT_BYTES),
     max_source_chunk_bytes: z.literal(PROTOCOL_MAX_SOURCE_CHUNK_BYTES),
     expiry: expiryPolicySchema,
   })
