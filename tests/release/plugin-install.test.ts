@@ -59,6 +59,10 @@ describe("dual-host plugin package", () => {
     expect(skillText).toContain("exact expiry cutoff");
     expect(skillText).toContain("exact source");
     expect(skillText).toContain("best effort");
+    expect(skillText).toContain("bearer capability");
+    expect(skillText).toContain("next_cursor");
+    expect(skillText).not.toContain("`done`");
+    expect(skillText).not.toContain("supported content type");
     for (const unsupportedClaim of ["permanent history", "paid capabilities", "paid features"]) {
       const matchingLines = skillText.split("\n").filter((line) => line.includes(unsupportedClaim));
       expect(matchingLines.every((line) => line.includes("do not claim"))).toBe(true);

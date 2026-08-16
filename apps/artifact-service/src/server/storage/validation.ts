@@ -148,7 +148,11 @@ export const validateArtifactUpload = (
     throw new ArtifactError("artifact_too_large", "Artifact exceeds the upload limit", 413);
   }
   if (!policy.allowedExpirySeconds.includes(input.expiresInSeconds)) {
-    throw new ArtifactError("invalid_expiry", "Expiration is not allowed by this deployment", 400);
+    throw new ArtifactError(
+      "invalid_expiry",
+      `Expiration must be one of: ${policy.allowedExpirySeconds.join(", ")} seconds`,
+      400,
+    );
   }
   if (input.expiresInSeconds > policy.maximumExpirySeconds) {
     throw new ArtifactError("invalid_expiry", "Expiration exceeds the deployment maximum", 400);

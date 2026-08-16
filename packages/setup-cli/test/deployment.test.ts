@@ -181,7 +181,19 @@ describe("Cloudflare deployment", () => {
         : new Response(null, { status: 302 })),
     });
     expect(result.changed).toEqual(["Worker deployment"]);
+    const rerun = await deployArtifactShare(input, {
+      client: client.client,
+      deploymentRoot: await deploymentRoot(),
+      runner,
+      fetch: vi.fn(async (request) => String(request).endsWith("/health")
+        ? new Response(JSON.stringify({ service: "lordebuilds.artifacts.share", status: "ok" }))
+        : new Response(null, { status: 302 })),
+    });
+    expect(rerun.changed).toEqual(["Worker deployment"]);
     expect(commands.map((args) => args.slice(0, 3))).toEqual([
+      ["d1", "migrations", "apply"],
+      ["r2", "bucket", "lifecycle"],
+      ["deploy", "--config", expect.any(String)],
       ["d1", "migrations", "apply"],
       ["r2", "bucket", "lifecycle"],
       ["deploy", "--config", expect.any(String)],

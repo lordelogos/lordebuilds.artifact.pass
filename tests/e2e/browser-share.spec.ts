@@ -4,6 +4,28 @@ const configured =
   process.env.ARTIFACT_SHARE_E2E_BASE_URL !== undefined &&
   process.env.ARTIFACT_SHARE_E2E_STORAGE_STATE !== undefined;
 
+const createTextPdf = (text: string): Buffer => {
+  const stream = `BT /F1 18 Tf 72 720 Td (${text}) Tj ET`;
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
+  ];
+  let source = "%PDF-1.4\n";
+  const offsets = [0];
+  for (const [index, object] of objects.entries()) {
+    offsets.push(Buffer.byteLength(source));
+    source += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  }
+  const xrefOffset = Buffer.byteLength(source);
+  source += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  source += offsets.slice(1).map((offset) => `${String(offset).padStart(10, "0")} 00000 n \n`).join("");
+  source += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  return Buffer.from(source);
+};
+
 test.describe("authenticated browser sharing", () => {
   test.skip(
     !configured,
@@ -63,7 +85,7 @@ test.describe("authenticated browser sharing", () => {
   });
 
   test("keeps PDF preview, range reads, and exact download distinct", async ({ page }) => {
-    const source = Buffer.from("%PDF-1.7\nlocal-browser-fixture\n%%EOF");
+    const source = createTextPdf("Live browser PDF fixture");
     await page.goto("/upload");
     await page.locator('input[type="file"]').setInputFiles({
       name: "browser-report.pdf",

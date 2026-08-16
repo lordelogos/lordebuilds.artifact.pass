@@ -5,6 +5,7 @@ dist/
 coverage/
 playwright-report/
 test-results/
+release/
 .auth/
 .wrangler/
 .dev.vars

@@ -4,6 +4,7 @@ export {
   responseError,
 } from "./http/safe-fetch";
 export {
+  CredentialStoreCommandError,
   EnvironmentCredentialStore,
   OsCredentialStore,
   resolveCredential,

@@ -6,6 +6,7 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite",
+    "preview:test": "vite --host 127.0.0.1 --port 4173",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "types:worker": "wrangler types"

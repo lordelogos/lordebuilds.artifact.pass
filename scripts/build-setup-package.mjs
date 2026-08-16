@@ -34,3 +34,21 @@ await writeFile(
   resolve(deploymentRoot, "wrangler-template.json"),
   `${JSON.stringify(workerConfiguration, null, 2)}\n`,
 );
+
+const marketplaceRoot = resolve(outputRoot, "marketplace");
+await mkdir(resolve(marketplaceRoot, ".agents/plugins"), { recursive: true });
+await mkdir(resolve(marketplaceRoot, ".claude-plugin"), { recursive: true });
+await mkdir(resolve(marketplaceRoot, "plugins"), { recursive: true });
+await cp(
+  resolve(repositoryRoot, ".agents/plugins/marketplace.json"),
+  resolve(marketplaceRoot, ".agents/plugins/marketplace.json"),
+);
+await cp(
+  resolve(repositoryRoot, ".claude-plugin/marketplace.json"),
+  resolve(marketplaceRoot, ".claude-plugin/marketplace.json"),
+);
+await cp(
+  resolve(repositoryRoot, "plugins/artifact-share"),
+  resolve(marketplaceRoot, "plugins/artifact-share"),
+  { recursive: true },
+);

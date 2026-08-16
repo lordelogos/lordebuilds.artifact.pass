@@ -69059,6 +69059,14 @@ function toError(value) {
 
 // src/auth/credential-store.ts
 import { spawn } from "node:child_process";
+var CredentialStoreCommandError = class extends Error {
+  constructor(status) {
+    super(`Credential store command failed with status ${status ?? "unknown"}`);
+    this.status = status;
+    this.name = "CredentialStoreCommandError";
+  }
+  status;
+};
 var defaultRunner = async (executable, args, options = {}) => new Promise((resolve3, reject) => {
   const child = spawn(executable, [...args], {
     stdio: ["pipe", "pipe", "pipe"],
@@ -69081,7 +69089,7 @@ var defaultRunner = async (executable, args, options = {}) => new Promise((resol
   child.once("error", reject);
   child.once("close", (code) => {
     if (code === 0) resolve3({ stdout: Buffer.concat(stdout).toString("utf8") });
-    else reject(new Error(`Credential store command failed with status ${code ?? "unknown"}`));
+    else reject(new CredentialStoreCommandError(code));
   });
   child.stdin.end(options.input);
 });
@@ -69135,8 +69143,11 @@ var OsCredentialStore = class {
       ]);
       const value = result.stdout.trim();
       return value.length === 0 ? null : value;
-    } catch {
-      return null;
+    } catch (error51) {
+      if (this.platform === "darwin" && error51 instanceof CredentialStoreCommandError && error51.status === 44) {
+        return null;
+      }
+      throw error51;
     }
   }
   async set(value) {
@@ -69166,7 +69177,9 @@ var OsCredentialStore = class {
         this.service,
         "-a",
         this.account
-      ]).catch(() => void 0);
+      ]).catch((error51) => {
+        if (!(error51 instanceof CredentialStoreCommandError && error51.status === 44)) throw error51;
+      });
       return;
     }
     await this.runner("secret-tool", [
@@ -69175,7 +69188,7 @@ var OsCredentialStore = class {
       this.service,
       "account",
       this.account
-    ]).catch(() => void 0);
+    ]);
   }
 };
 var resolveCredential = async (options) => {
@@ -69439,7 +69452,8 @@ var responseError = async (response) => {
   const body = await response.clone().json().catch(() => void 0);
   const parsed = artifactErrorSchema.safeParse(body);
   if (parsed.success) {
-    return new Error(`Artifact Share request failed: ${parsed.data.error.code}`);
+    const detail = parsed.data.error.code === "invalid_expiry" ? ` (${parsed.data.error.message})` : "";
+    return new Error(`Artifact Share request failed: ${parsed.data.error.code}${detail}`);
   }
   return new Error(`Artifact Share request failed with status ${response.status}`);
 };
@@ -69618,7 +69632,14 @@ var addExtraction = async (form, mimeType, bytes, extractPdf) => {
     form.set("extraction_status", "not_applicable");
     return;
   }
-  const result = await extractPdf(bytes);
+  let result;
+  try {
+    result = await extractPdf(bytes);
+  } catch {
+    form.set("extraction_status", "unavailable");
+    form.set("extraction_reason", "Embedded PDF text extraction was unavailable.");
+    return;
+  }
   form.set("extraction_status", result.metadata.status);
   if (result.metadata.extractor !== void 0) form.set("extractor", result.metadata.extractor);
   if (result.metadata.extractor_version !== void 0) {
@@ -69668,7 +69689,6 @@ var publishArtifact = async (input, dependencies) => {
         body: form
       }
     );
-    assertUnchanged(before, await file2.stat());
     if (!response.ok) throw await responseError(response);
     const result = uploadResponseSchema.parse(await response.json());
     const shareUrl = new URL(result.share_url);
@@ -69682,7 +69702,6 @@ var publishArtifact = async (input, dependencies) => {
 };
 
 // src/tools/read-artifact.ts
-import { createHash } from "node:crypto";
 var sharePathPattern = /^\/a\/([A-Za-z0-9_-]{32,256})$/u;
 var cursorPattern = /^[A-Za-z0-9_-]{16,256}$/u;
 var parseShareUrl = (value, baseUrl) => {
@@ -69723,23 +69742,44 @@ var readDerived = async (manifest, shareBase, input, fetchImplementation, maximu
   if (manifest.mime_type !== "application/pdf" || manifest.extraction.status !== "best_effort") {
     throw new Error("Artifact does not have an extracted PDF representation");
   }
-  const response = await fetchWithoutRedirects(fetchImplementation, new URL(`${shareBase.pathname}/derived`, shareBase));
+  const offset = decodeDerivedCursor(input.cursor, manifest.artifact_id);
+  if (!Number.isSafeInteger(offset) || offset < 0 || offset > PROTOCOL_MAX_ARTIFACT_BYTES) {
+    throw new Error("Artifact source cursor is invalid");
+  }
+  const response = await fetchWithoutRedirects(
+    fetchImplementation,
+    new URL(`${shareBase.pathname}/derived`, shareBase),
+    { headers: { Range: `bytes=${offset}-${offset + maximumBytes - 1}` } }
+  );
   if (!response.ok) throw await responseError(response);
+  if (response.status !== 206) throw new Error("Artifact Share ignored the derived text range");
+  const contentRange = /^bytes (\d+)-(\d+)\/(\d+)$/u.exec(response.headers.get("content-range") ?? "");
+  const sha256 = response.headers.get("x-artifact-sha256") ?? "";
+  if (contentRange === null || !/^[a-f0-9]{64}$/u.test(sha256)) {
+    throw new Error("Artifact Share returned malformed derived text metadata");
+  }
+  const responseOffset = Number(contentRange[1]);
+  const responseEnd = Number(contentRange[2]);
+  const totalSize = Number(contentRange[3]);
+  if (responseOffset !== offset || !Number.isSafeInteger(responseEnd) || responseEnd < responseOffset || !Number.isSafeInteger(totalSize) || totalSize <= 0 || totalSize > PROTOCOL_MAX_ARTIFACT_BYTES) {
+    throw new Error("Artifact Share returned inconsistent derived text metadata");
+  }
   const bytes = new Uint8Array(await response.arrayBuffer());
+  if (bytes.byteLength !== responseEnd - responseOffset + 1 || bytes.byteLength > maximumBytes) {
+    throw new Error("Artifact Share returned an invalid derived text range");
+  }
   try {
     new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   } catch {
     throw new Error("Artifact Share returned malformed derived text");
   }
-  const offset = decodeDerivedCursor(input.cursor, manifest.artifact_id);
-  if (!Number.isSafeInteger(offset) || offset < 0 || offset > bytes.byteLength) {
+  if (offset > totalSize) {
     throw new Error("Artifact source cursor is invalid");
   }
-  const chunk = bytes.subarray(offset, Math.min(bytes.byteLength, offset + maximumBytes));
-  const nextOffset = offset + chunk.byteLength;
+  const nextOffset = offset + bytes.byteLength;
   let text;
   try {
-    text = new TextDecoder("utf-8", { fatal: true }).decode(chunk);
+    text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   } catch {
     text = void 0;
   }
@@ -69748,12 +69788,12 @@ var readDerived = async (manifest, shareBase, input, fetchImplementation, maximu
     representation: "derived",
     encoding: "base64",
     byte_offset: offset,
-    byte_length: chunk.byteLength,
-    total_size: bytes.byteLength,
-    sha256: createHash("sha256").update(bytes).digest("hex"),
-    data: Buffer.from(chunk).toString("base64"),
+    byte_length: bytes.byteLength,
+    total_size: totalSize,
+    sha256,
+    data: Buffer.from(bytes).toString("base64"),
     ...text === void 0 ? {} : { text },
-    next_cursor: nextOffset < bytes.byteLength ? Buffer.from(`${manifest.artifact_id}:derived:${nextOffset}`).toString("base64url") : null,
+    next_cursor: nextOffset < totalSize ? Buffer.from(`${manifest.artifact_id}:derived:${nextOffset}`).toString("base64url") : null,
     exact_source_url: new URL(`${shareBase.pathname}/raw`, shareBase).toString()
   };
 };
@@ -69842,7 +69882,9 @@ var createBridgeServer = (configuration) => {
     description: "Publish one approved local Markdown, HTML, or PDF file without placing its bytes in model context.",
     inputSchema: external_exports.object({
       path: external_exports.string().min(1).describe("Absolute or workspace-relative local file path"),
-      expires_in_seconds: external_exports.number().int().positive().describe("Deployment-allowed expiration preset")
+      expires_in_seconds: external_exports.number().int().positive().describe(
+        "Deployment expiry preset in seconds. Default setup presets: 900, 1800, 3600, 43200, 86400; a rejection reports the deployment's allowed values."
+      )
     }),
     annotations: {
       readOnlyHint: false,

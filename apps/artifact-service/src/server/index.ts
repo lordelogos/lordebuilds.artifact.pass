@@ -10,6 +10,7 @@ import type { JWTVerifyGetKey } from "jose";
 import type { ArtifactServiceBindings } from "./adapters/cloudflare-bindings";
 import { AgentTokenRepository } from "./auth/agent-token";
 import { expireArtifacts } from "./jobs/expire-artifacts";
+import { expireIdentityState } from "./jobs/expire-identity-state";
 import {
   requireAccess,
   requireAgent,
@@ -80,6 +81,11 @@ export const createArtifactApplication = (options: ArtifactApplicationOptions = 
     "/api/artifacts",
     createArtifactsRouter((bindings) => createService(bindings, options), authorizationOptions),
   );
+  app.use("/upload/artifacts", requireAccess(authorizationOptions));
+  app.route(
+    "/upload/artifacts",
+    createArtifactsRouter((bindings) => createService(bindings, options), authorizationOptions),
+  );
   app.delete("/api/connection", requireAgent(authorizationOptions), async (context) => {
     const revoked = await new AgentTokenRepository(
       context.env.ARTIFACT_DB,
@@ -126,10 +132,12 @@ const application = createArtifactApplication();
 export default {
   fetch: (request, env, executionContext) => application.fetch(request, env, executionContext),
   scheduled: async (_controller, env) => {
+    const now = Date.now();
     await expireArtifacts({
       repository: new D1ArtifactRepository(env.ARTIFACT_DB),
       objectStore: new R2ArtifactObjectStore(env.ARTIFACTS),
-      now: Date.now(),
+      now,
     });
+    await expireIdentityState(env.ARTIFACT_DB, now);
   },
 } satisfies ExportedHandler<ArtifactServiceBindings>;

@@ -45,6 +45,7 @@ export const deviceAuthorizations = sqliteTable(
     identityEmail: text("identity_email"),
     approvedAt: integer("approved_at"),
     consumedAt: integer("consumed_at"),
+    agentTokenId: text("agent_token_id"),
   },
   (table) => [
     uniqueIndex("device_authorizations_device_code_hash_unique").on(table.deviceCodeHash),
@@ -71,11 +72,20 @@ export const agentTokens = sqliteTable(
   ],
 );
 
+export const requestRateLimits = sqliteTable("request_rate_limits", {
+  bucketKey: text("bucket_key").primaryKey(),
+  windowStart: integer("window_start").notNull(),
+  requestCount: integer("request_count").notNull(),
+  expiresAt: integer("expires_at").notNull(),
+});
+
 export const ARTIFACT_SCHEMA_SQL = [
   "CREATE TABLE IF NOT EXISTS artifacts (id TEXT PRIMARY KEY NOT NULL, status TEXT NOT NULL CHECK (status IN ('staging', 'active', 'cleanup_pending')), object_key TEXT NOT NULL UNIQUE, derived_object_key TEXT, filename TEXT NOT NULL, mime_type TEXT NOT NULL, byte_size INTEGER NOT NULL CHECK (byte_size >= 0), sha256 TEXT NOT NULL, share_token_hash TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, extraction_status TEXT NOT NULL, extractor TEXT, extractor_version TEXT, page_count INTEGER, extraction_reason TEXT, cleanup_attempts INTEGER NOT NULL DEFAULT 0, last_cleanup_error TEXT);",
   "CREATE INDEX IF NOT EXISTS artifacts_status_expires_at_idx ON artifacts (status, expires_at);",
-  "CREATE TABLE IF NOT EXISTS device_authorizations (id TEXT PRIMARY KEY NOT NULL, device_code_hash TEXT NOT NULL UNIQUE, user_code_hash TEXT NOT NULL UNIQUE, code_challenge TEXT NOT NULL, status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'consumed')), created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, next_poll_at INTEGER NOT NULL, poll_attempts INTEGER NOT NULL DEFAULT 0 CHECK (poll_attempts >= 0), identity_subject TEXT, identity_email TEXT, approved_at INTEGER, consumed_at INTEGER);",
+  "CREATE TABLE IF NOT EXISTS device_authorizations (id TEXT PRIMARY KEY NOT NULL, device_code_hash TEXT NOT NULL UNIQUE, user_code_hash TEXT NOT NULL UNIQUE, code_challenge TEXT NOT NULL, status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'consumed')), created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, next_poll_at INTEGER NOT NULL, poll_attempts INTEGER NOT NULL DEFAULT 0 CHECK (poll_attempts >= 0), identity_subject TEXT, identity_email TEXT, approved_at INTEGER, consumed_at INTEGER, agent_token_id TEXT);",
   "CREATE INDEX IF NOT EXISTS device_authorizations_expires_at_idx ON device_authorizations (expires_at);",
   "CREATE TABLE IF NOT EXISTS agent_tokens (id TEXT PRIMARY KEY NOT NULL, token_hash TEXT NOT NULL UNIQUE, identity_subject TEXT NOT NULL, identity_email TEXT NOT NULL, scope TEXT NOT NULL CHECK (scope = 'artifact:create'), created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, revoked_at INTEGER);",
   "CREATE INDEX IF NOT EXISTS agent_tokens_expires_at_idx ON agent_tokens (expires_at);",
+  "CREATE TABLE IF NOT EXISTS request_rate_limits (bucket_key TEXT PRIMARY KEY NOT NULL, window_start INTEGER NOT NULL, request_count INTEGER NOT NULL CHECK (request_count >= 0), expires_at INTEGER NOT NULL);",
+  "CREATE INDEX IF NOT EXISTS request_rate_limits_expires_at_idx ON request_rate_limits (expires_at);",
 ].join("\n");

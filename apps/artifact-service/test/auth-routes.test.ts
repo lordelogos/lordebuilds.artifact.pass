@@ -305,7 +305,13 @@ describe("device authorization", () => {
     });
     expect(stored?.token_hash).not.toContain(token.access_token);
 
-    expect((await exchangeDeviceFlow(device.device_code, verifier)).status).toBe(409);
+    const replay = await exchangeDeviceFlow(device.device_code, verifier);
+    expect(replay.status).toBe(409);
+    expect(
+      await env.ARTIFACT_DB.prepare(
+        "SELECT COUNT(*) AS count FROM agent_tokens WHERE revoked_at IS NOT NULL",
+      ).first("count"),
+    ).toBe(1);
   });
 
   it("rejects interception without the PKCE verifier without consuming approval", async () => {
@@ -330,12 +336,35 @@ describe("device authorization", () => {
     vi.advanceTimersByTime((device.expires_in + 1) * 1000);
     expect((await exchangeDeviceFlow(device.device_code, verifier)).status).toBe(410);
   });
+
+  it("rate-limits public device authorization creation by source", async () => {
+    const responses: Response[] = [];
+    for (let index = 0; index < 11; index += 1) {
+      const verifier = verifierFor(`rate limit verifier ${String(index).padStart(2, "0")} with enough entropy`);
+      responses.push(await request("/connect/device", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "cf-connecting-ip": "203.0.113.20",
+        },
+        body: JSON.stringify({
+          code_challenge: await challengeFor(verifier),
+          code_challenge_method: "S256",
+        }),
+      }));
+    }
+    expect(responses.slice(0, 10).every((response) => response.status === 201)).toBe(true);
+    expect(responses[10]?.status).toBe(429);
+    expect(await env.ARTIFACT_DB.prepare(
+      "SELECT COUNT(*) AS count FROM device_authorizations",
+    ).first("count")).toBe(10);
+  });
 });
 
 describe("route credential matrix", () => {
   it("lets Access and scoped agents create, while anonymous and public capabilities cannot", async () => {
     const agent = await createAgentToken();
-    const accessUpload = await request("/api/artifacts", {
+    const accessUpload = await request("/upload/artifacts", {
       method: "POST",
       headers: { origin: "https://artifacts.example", ...(await accessHeaders()) },
       body: markdownUpload(),
@@ -348,6 +377,15 @@ describe("route credential matrix", () => {
       body: markdownUpload(),
     });
     expect(agentUpload.status).toBe(201);
+    expect(
+      (
+        await request("/upload/artifacts", {
+          method: "POST",
+          headers: { authorization: `Bearer ${agent.access_token}` },
+          body: markdownUpload(),
+        })
+      ).status,
+    ).toBe(404);
 
     expect((await request("/api/artifacts", { method: "POST", body: markdownUpload() })).status).toBe(404);
     expect(
@@ -364,7 +402,7 @@ describe("route credential matrix", () => {
   });
 
   it("rejects a cross-origin Access-authenticated browser upload", async () => {
-    const response = await request("/api/artifacts", {
+    const response = await request("/upload/artifacts", {
       method: "POST",
       headers: { origin: "https://attacker.example", ...(await accessHeaders()) },
       body: markdownUpload(),

@@ -77,6 +77,7 @@ describe("read_artifact", () => {
 
   it("returns page-separated PDF derived text with exact-source metadata", async () => {
     const derived = "--- Page 1 ---\nBorn digital text";
+    const derivedSha256 = createHash("sha256").update(derived).digest("hex");
     const fetch = vi.fn<typeof globalThis.fetch>()
       .mockResolvedValueOnce(Response.json(pdfManifest({
         status: "best_effort",
@@ -85,7 +86,12 @@ describe("read_artifact", () => {
         page_count: 1,
       })))
       .mockResolvedValueOnce(new Response(derived, {
-        headers: { "content-type": "text/plain;charset=utf-8" },
+        status: 206,
+        headers: {
+          "content-type": "text/plain;charset=utf-8",
+          "content-range": `bytes 0-${Buffer.byteLength(derived) - 1}/${Buffer.byteLength(derived)}`,
+          "x-artifact-sha256": derivedSha256,
+        },
       }));
 
     const result = await readArtifact({ shareUrl }, {
@@ -98,6 +104,56 @@ describe("read_artifact", () => {
     expect(result.manifest.extraction.status).toBe("best_effort");
     expect(result.exact_source_url).toBe(`${shareUrl}/raw`);
     expect(Buffer.from(result.data, "base64").toString("utf8")).toBe(derived);
+    expect(fetch.mock.calls[1]?.[1]).toMatchObject({ headers: { Range: "bytes=0-65535" } });
+  });
+
+  it("reconstructs derived PDF text without downloading the whole object per chunk", async () => {
+    const derived = new TextEncoder().encode("derived page text\n".repeat(12_000));
+    const derivedSha256 = createHash("sha256").update(derived).digest("hex");
+    const metadata = pdfManifest({
+      status: "best_effort",
+      extractor: "pdfjs-dist",
+      extractor_version: "6.2.108",
+      page_count: 12,
+    });
+    let transferred = 0;
+    const fetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/manifest")) return Response.json(metadata);
+      const range = /^bytes=(\d+)-(\d+)$/u.exec(new Headers(init?.headers).get("range") ?? "");
+      expect(range).not.toBeNull();
+      const start = Number(range?.[1]);
+      const requestedEnd = Number(range?.[2]);
+      const end = Math.min(requestedEnd, derived.byteLength - 1);
+      const chunk = derived.subarray(start, end + 1);
+      transferred += chunk.byteLength;
+      return new Response(chunk, {
+        status: 206,
+        headers: {
+          "content-range": `bytes ${start}-${end}/${derived.byteLength}`,
+          "x-artifact-sha256": derivedSha256,
+        },
+      });
+    });
+
+    const chunks: Uint8Array[] = [];
+    let cursor: string | undefined;
+    do {
+      const result = await readArtifact({
+        shareUrl,
+        maxBytes: 32_768,
+        ...(cursor === undefined ? {} : { cursor }),
+      }, {
+        baseUrl: new URL("https://artifacts.example.test"),
+        fetch,
+      });
+      chunks.push(Buffer.from(result.data, "base64"));
+      cursor = result.next_cursor ?? undefined;
+      expect(result.sha256).toBe(derivedSha256);
+    } while (cursor !== undefined);
+
+    expect(Buffer.concat(chunks)).toEqual(Buffer.from(derived));
+    expect(transferred).toBe(derived.byteLength);
   });
 
   it("returns honest metadata and an exact PDF resource when extraction is unavailable", async () => {

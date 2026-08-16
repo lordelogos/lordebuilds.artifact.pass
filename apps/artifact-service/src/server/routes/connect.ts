@@ -26,6 +26,7 @@ interface DeviceAuthorizationRow {
   poll_attempts: number;
   identity_subject: string | null;
   identity_email: string | null;
+  agent_token_id: string | null;
 }
 
 const RESPONSE_HEADERS = {
@@ -33,6 +34,39 @@ const RESPONSE_HEADERS = {
   "Referrer-Policy": "no-referrer",
   "X-Content-Type-Options": "nosniff",
 } as const;
+const DEVICE_RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
+const DEVICE_RATE_LIMIT_REQUESTS = 10;
+
+const consumeDeviceRateLimit = async (
+  database: D1Database,
+  source: string,
+  timestamp: number,
+): Promise<void> => {
+  const bucketKey = await sha256(`device:${source}`);
+  const row = await database.prepare(
+    `INSERT INTO request_rate_limits (bucket_key, window_start, request_count, expires_at)
+     VALUES (?, ?, 1, ?)
+     ON CONFLICT(bucket_key) DO UPDATE SET
+       window_start = CASE
+         WHEN request_rate_limits.expires_at <= excluded.window_start THEN excluded.window_start
+         ELSE request_rate_limits.window_start
+       END,
+       request_count = CASE
+         WHEN request_rate_limits.expires_at <= excluded.window_start THEN 1
+         ELSE request_rate_limits.request_count + 1
+       END,
+       expires_at = CASE
+         WHEN request_rate_limits.expires_at <= excluded.window_start THEN excluded.expires_at
+         ELSE request_rate_limits.expires_at
+       END
+     RETURNING request_count`,
+  )
+    .bind(bucketKey, timestamp, timestamp + DEVICE_RATE_LIMIT_WINDOW_MS)
+    .first<{ readonly request_count: number }>();
+  if (row === null || row.request_count > DEVICE_RATE_LIMIT_REQUESTS) {
+    throw new ArtifactError("forbidden", "Too many device authorization requests", 429);
+  }
+};
 
 const parseJson = async (request: Request): Promise<Record<string, unknown>> => {
   const value = await request.json().catch(() => null);
@@ -139,9 +173,14 @@ export const createConnectRouter = (options: AuthorizationOptions = {}) => {
     if (body.code_challenge_method !== "S256") {
       throw new ArtifactError("malformed_upload", "code_challenge_method must be S256", 400);
     }
+    const createdAt = now();
+    await consumeDeviceRateLimit(
+      context.env.ARTIFACT_DB,
+      context.req.header("cf-connecting-ip") ?? "unknown",
+      createdAt,
+    );
     const deviceCode = createOpaqueToken();
     const userCode = createUserCode();
-    const createdAt = now();
     const expiresAt = createdAt + DEVICE_CODE_LIFETIME_MS;
     await context.env.ARTIFACT_DB.prepare(
       `INSERT INTO device_authorizations (
@@ -239,6 +278,14 @@ export const createConnectRouter = (options: AuthorizationOptions = {}) => {
       throw new ArtifactError("forbidden", "PKCE verification failed", 400);
     }
     if (authorization.status === "consumed") {
+      if (authorization.agent_token_id === null) {
+        throw new ArtifactError("internal_error", "Consumed authorization has no token", 500);
+      }
+      await context.env.ARTIFACT_DB.prepare(
+        "UPDATE agent_tokens SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL",
+      )
+        .bind(currentTime, authorization.agent_token_id)
+        .run();
       throw new ArtifactError("forbidden", "Authorization was already consumed", 409);
     }
     if (authorization.status === "pending") {
@@ -274,7 +321,14 @@ export const createConnectRouter = (options: AuthorizationOptions = {}) => {
     const tokenHash = await sha256(plaintextToken);
     const tokenId = crypto.randomUUID();
     const expiresAt = currentTime + AGENT_TOKEN_LIFETIME_MS;
-    const results = await context.env.ARTIFACT_DB.batch([
+    const statements = [
+      context.env.ARTIFACT_DB
+        .prepare(
+          `UPDATE device_authorizations
+           SET status = 'consumed', consumed_at = ?, agent_token_id = ?
+           WHERE id = ? AND status = 'approved' AND agent_token_id IS NULL`,
+        )
+        .bind(currentTime, tokenId, authorization.id),
       context.env.ARTIFACT_DB
         .prepare(
           `INSERT INTO agent_tokens (
@@ -282,7 +336,7 @@ export const createConnectRouter = (options: AuthorizationOptions = {}) => {
           )
           SELECT ?, ?, identity_subject, identity_email, ?, ?, ?
           FROM device_authorizations
-          WHERE id = ? AND status = 'approved' AND expires_at > ?`,
+          WHERE id = ? AND status = 'consumed' AND agent_token_id = ? AND expires_at > ?`,
         )
         .bind(
           tokenId,
@@ -291,16 +345,12 @@ export const createConnectRouter = (options: AuthorizationOptions = {}) => {
           currentTime,
           expiresAt,
           authorization.id,
+          tokenId,
           currentTime,
         ),
-      context.env.ARTIFACT_DB
-        .prepare(
-          `UPDATE device_authorizations SET status = 'consumed', consumed_at = ?
-           WHERE id = ? AND status = 'approved'`,
-        )
-        .bind(currentTime, authorization.id),
-    ]);
-    if (results[0]?.meta.changes !== 1 || results[1]?.meta.changes !== 1) {
+    ];
+    const results = await context.env.ARTIFACT_DB.batch(statements);
+    if (results.some((result) => result.meta.changes !== 1)) {
       throw new ArtifactError("forbidden", "Authorization was already consumed", 409);
     }
 

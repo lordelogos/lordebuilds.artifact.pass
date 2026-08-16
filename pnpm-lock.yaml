@@ -153,9 +153,6 @@ importers:
 
   packages/setup-cli:
     dependencies:
-      agent-bridge:
-        specifier: workspace:*
-        version: link:../agent-bridge
       wrangler:
         specifier: 4.123.0
         version: 4.123.0
@@ -163,6 +160,9 @@ importers:
       '@types/node':
         specifier: ^24.10.14
         version: 24.13.3
+      agent-bridge:
+        specifier: workspace:*
+        version: link:../agent-bridge
       artifact-service:
         specifier: workspace:*
         version: link:../../apps/artifact-service

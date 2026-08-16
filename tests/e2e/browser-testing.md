@@ -8,9 +8,9 @@ The Playwright flow is the replacement verification for the real browser and Clo
 2. Save an authenticated Cloudflare Access browser session outside the repository:
    `pnpm exec playwright codegen --save-storage=/tmp/artifact-share-access.json https://artifacts-dev.example.com/upload`
 3. Complete Access login, confirm the upload page appears, then close the codegen browser.
-4. Run:
-   `ARTIFACT_SHARE_E2E_BASE_URL=https://artifacts-dev.example.com ARTIFACT_SHARE_E2E_STORAGE_STATE=/tmp/artifact-share-access.json pnpm test:browser`
+4. Retrieve a disposable scoped agent token from the operating-system credential store without printing it or saving it in the repository.
+5. Run the command in [operations](../../docs/operations.md#live-release-gate).
 
-The suite uploads all three formats, reads the public bearer link, verifies clipboard behavior, checks that hostile HTML makes no external request or same-origin escape, checks PDF range and download responses, and confirms dashboard/history/settings routes do not exist. The storage-state file contains live Access credentials; never place it in the repository, logs, or a model prompt. Delete it when verification is complete.
+The live suite uploads all three formats, reads the public bearer link, verifies clipboard behavior, checks that hostile HTML makes no external request or same-origin escape, checks PDF range and download responses, confirms dashboard/history/settings routes do not exist, and performs one large exact-source handoff between two independent clients. The storage-state file and agent token contain live credentials; never place either in the repository, logs, traces, or a model prompt. Delete the storage state and disconnect the disposable token when verification is complete.
 
-For a local visual pass without an Access bypass, build the app, serve `apps/artifact-service/dist/client`, and set `ARTIFACT_SHARE_PREVIEW_URL` to that static origin. The preview suite changes the browser pathname before the production client starts and mocks only browser network responses. It captures desktop/mobile screenshots and runs the production PDF extraction Web Worker against a born-digital fixture; it does not exercise or alter Worker authorization.
+`pnpm test:browser` starts the local Vite client automatically. The preview suite changes the browser pathname before the production client starts and mocks only browser network responses. It captures desktop/mobile screenshots and runs the production PDF extraction Web Worker against born-digital and image-only fixtures; it does not exercise or alter Worker authorization. Set `ARTIFACT_SHARE_PREVIEW_URL` only when testing another static client origin.

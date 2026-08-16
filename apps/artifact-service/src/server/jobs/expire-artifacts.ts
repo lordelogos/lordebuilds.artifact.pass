@@ -19,23 +19,32 @@ export const expireArtifacts = async (options: {
   );
   let deleted = 0;
   let failed = 0;
+  let nextIndex = 0;
 
-  for (const artifact of candidates) {
-    try {
-      await options.repository.markCleanupPending(artifact.id);
-      await options.objectStore.delete(artifact.objectKey);
-      if (artifact.derivedObjectKey !== null) {
-        await options.objectStore.delete(artifact.derivedObjectKey);
+  const worker = async (): Promise<void> => {
+    while (nextIndex < candidates.length) {
+      const artifact = candidates[nextIndex];
+      nextIndex += 1;
+      if (artifact === undefined) return;
+      try {
+        await options.repository.markCleanupPending(artifact.id);
+        await options.objectStore.delete(artifact.objectKey);
+        if (artifact.derivedObjectKey !== null) {
+          await options.objectStore.delete(artifact.derivedObjectKey);
+        }
+        await options.repository.delete(artifact.id);
+        deleted += 1;
+      } catch (error) {
+        failed += 1;
+        const message = error instanceof Error ? error.message : "Unknown cleanup failure";
+        await options.repository.recordCleanupFailure(artifact.id, message).catch(() => undefined);
       }
-      await options.repository.delete(artifact.id);
-      deleted += 1;
-    } catch (error) {
-      failed += 1;
-      const message = error instanceof Error ? error.message : "Unknown cleanup failure";
-      await options.repository.recordCleanupFailure(artifact.id, message).catch(() => undefined);
     }
-  }
+  };
+  await Promise.all(Array.from(
+    { length: Math.min(5, candidates.length) },
+    async () => worker(),
+  ));
 
   return { scanned: candidates.length, deleted, failed };
 };
-

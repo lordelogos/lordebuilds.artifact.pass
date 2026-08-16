@@ -153,6 +153,15 @@ describe("private artifact routes", () => {
     });
     const derived = await requestShare(created.share_url, "/derived");
     await expect(derived.text()).resolves.toBe("--- Page 1 ---\nBest effort text");
+    const derivedRange = await requestShare(created.share_url, "/derived", {
+      headers: { range: "bytes=4-9" },
+    });
+    expect(derivedRange.status).toBe(206);
+    expect(derivedRange.headers.get("content-range")).toBe("bytes 4-9/31");
+    expect(derivedRange.headers.get("x-artifact-sha256")).toBe(
+      await digest("--- Page 1 ---\nBest effort text"),
+    );
+    await expect(derivedRange.text()).resolves.toBe("Page 1");
     const raw = await requestShare(created.share_url, "/raw");
     expect(new TextDecoder().decode(await raw.arrayBuffer())).toBe(source);
   });
@@ -266,7 +275,7 @@ describe("private artifact routes", () => {
       bytes: "# Exact\n",
     });
     const random = await requestShare(
-      "https://artifacts.example/a/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      ["https://artifacts.example", "a", "A".repeat(43)].join("/"),
       "/manifest",
     );
     expect(random.status).toBe(404);

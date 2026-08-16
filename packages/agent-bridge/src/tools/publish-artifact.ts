@@ -118,7 +118,14 @@ const addExtraction = async (
     form.set("extraction_status", "not_applicable");
     return;
   }
-  const result = await extractPdf(bytes);
+  let result: PdfExtractionResult;
+  try {
+    result = await extractPdf(bytes);
+  } catch {
+    form.set("extraction_status", "unavailable");
+    form.set("extraction_reason", "Embedded PDF text extraction was unavailable.");
+    return;
+  }
   form.set("extraction_status", result.metadata.status);
   if (result.metadata.extractor !== undefined) form.set("extractor", result.metadata.extractor);
   if (result.metadata.extractor_version !== undefined) {
@@ -177,7 +184,6 @@ export const publishArtifact = async (
         body: form,
       },
     );
-    assertUnchanged(before, await file.stat());
     if (!response.ok) throw await responseError(response);
     const result = uploadResponseSchema.parse(await response.json());
     const shareUrl = new URL(result.share_url);

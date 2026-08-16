@@ -1,6 +1,6 @@
 {
   "name": "artifact-share",
-  "version": "0.1.0",
+  "version": "0.1.0-rc.1",
   "displayName": "Artifact Share",
   "description": "Share local Markdown, HTML, and PDF artifacts through a private temporary link.",
   "longDescription": "Publishes a file from an explicitly allowed workspace through Artifact Share and reads supported shared artifacts in bounded chunks.",

@@ -1,4 +1,4 @@
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
@@ -76,6 +76,13 @@ describe("host connection", () => {
     ]);
   });
 
+  it("rejects malformed host CLI output before changing plugin state", async () => {
+    const runner: ProcessRunner = vi.fn(async () => ({ stdout: "{}", stderr: "" }));
+    await expect(installPluginForHosts(["codex"], "/trusted/repository", runner))
+      .rejects.toThrow("unexpected marketplace list");
+    expect(runner).toHaveBeenCalledTimes(1);
+  });
+
   it("completes pending device authorization without exposing the token in the browser URL", async () => {
     const opened: string[] = [];
     const responses = [
@@ -99,8 +106,40 @@ describe("host connection", () => {
     expect(opened[0]).not.toContain(result.accessToken);
   });
 
+  it("retries the same device exchange after a lost token response", async () => {
+    const responses: Array<Response | Error> = [
+      new Response(JSON.stringify({
+        device_code: "d".repeat(43),
+        user_code: "u".repeat(12),
+        verification_uri: "https://artifacts.example.test/connect/approve",
+        expires_in: 600,
+        interval: 1,
+      }), { status: 201 }),
+      new TypeError("connection reset after server response"),
+      new Response(JSON.stringify({
+        protocol_version: 1,
+        error: { code: "forbidden", message: "Authorization was already consumed" },
+      }), { status: 409 }),
+    ];
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => {
+      const response = responses.shift() ?? new Response(null, { status: 500 });
+      if (response instanceof Error) throw response;
+      return response;
+    });
+
+    await expect(completeDeviceFlow("https://artifacts.example.test", {
+      fetch,
+      openBrowser: async () => undefined,
+      wait: async () => undefined,
+    })).rejects.toThrow("forbidden");
+    expect(fetch).toHaveBeenCalledTimes(3);
+    const firstExchange = JSON.parse(String(fetch.mock.calls[1]?.[1]?.body)) as Record<string, string>;
+    const retryExchange = JSON.parse(String(fetch.mock.calls[2]?.[1]?.body)) as Record<string, string>;
+    expect(retryExchange).toEqual(firstExchange);
+  });
+
   it("does not store a token when connection is interrupted", async () => {
-    const store = { get: vi.fn(), set: vi.fn(), delete: vi.fn() };
+    const store = { get: vi.fn().mockResolvedValue(null), set: vi.fn(), delete: vi.fn() };
     await expect(connectHost({
       baseUrl: "https://artifacts.example.test",
       workspaceRoots: [process.cwd()],
@@ -125,7 +164,7 @@ describe("host connection", () => {
   it("stores the token only in the credential store and writes non-secret bridge settings", async () => {
     const root = await mkdtemp(resolve(tmpdir(), "artifact-share-connect-test-"));
     const configPath = resolve(root, "config.json");
-    const store = { get: vi.fn(), set: vi.fn(), delete: vi.fn() };
+    const store = { get: vi.fn().mockResolvedValue(null), set: vi.fn(), delete: vi.fn() };
     const token = `as_${"t".repeat(43)}`;
     const result = await connectHost({
       baseUrl: "https://artifacts.example.test",
@@ -164,5 +203,98 @@ describe("host connection", () => {
       fetch: vi.fn(async () => { order.push("revoke"); return new Response(null, { status: 204 }); }),
     });
     expect(order).toEqual(["revoke", "delete"]);
+  });
+
+  it("fails closed when the credential store cannot be read", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    await expect(disconnectHost("https://artifacts.example.test", {
+      credentialStore: {
+        get: async () => { throw new Error("credential store unavailable"); },
+        set: vi.fn(),
+        delete: vi.fn(),
+      },
+      fetch,
+    })).rejects.toThrow("credential store unavailable");
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("revokes a newly issued token when local persistence fails", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifact-share-persistence-test-"));
+    const token = `as_${"n".repeat(43)}`;
+    const store = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn(),
+      delete: vi.fn().mockResolvedValue(undefined),
+    };
+    const fetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : input.toString());
+      if (url.pathname === "/health") {
+        return new Response(JSON.stringify({ service: "lordebuilds.artifacts.share", status: "ok" }));
+      }
+      expect(init?.headers).toEqual({ Authorization: `Bearer ${token}` });
+      return new Response(null, { status: 204 });
+    });
+
+    await expect(connectHost({
+      baseUrl: "https://artifacts.example.test",
+      workspaceRoots: [process.cwd()],
+      hosts: ["codex"],
+      marketplaceSource: "/trusted/repository",
+      configPath: resolve(root, "config.json"),
+    }, {
+      runner: runnerFor(["codex"]),
+      credentialStore: store,
+      deviceFlow: vi.fn(async () => ({ accessToken: token, expiresIn: 3600 })),
+      deviceFlowDependencies: { openBrowser: async () => undefined, fetch },
+      writeSettings: vi.fn(async () => { throw new Error("config write failed"); }),
+    })).rejects.toThrow();
+
+    expect(fetch).toHaveBeenCalledWith(
+      new URL("https://artifacts.example.test/api/connection"),
+      expect.objectContaining({ method: "DELETE" }),
+    );
+    expect(store.set).not.toHaveBeenCalled();
+  });
+
+  it("rolls a reconnect back if the previous token cannot be revoked", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifact-share-reconnect-test-"));
+    const configPath = resolve(root, "config.json");
+    const previousToken = `as_${"o".repeat(43)}`;
+    const nextToken = `as_${"n".repeat(43)}`;
+    await writeFile(configPath, JSON.stringify({
+      version: 1,
+      base_url: "https://old-artifacts.example.test/",
+      workspace_roots: [root],
+    }));
+    let storedToken = previousToken;
+    const store = {
+      get: vi.fn(async () => storedToken),
+      set: vi.fn(async (value: string) => { storedToken = value; }),
+      delete: vi.fn(async () => { storedToken = ""; }),
+    };
+    const fetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : input.toString());
+      if (url.pathname === "/health") {
+        return new Response(JSON.stringify({ service: "lordebuilds.artifacts.share", status: "ok" }));
+      }
+      const authorization = new Headers(init?.headers).get("authorization");
+      return new Response(null, { status: authorization === `Bearer ${previousToken}` ? 500 : 204 });
+    });
+
+    await expect(connectHost({
+      baseUrl: "https://new-artifacts.example.test",
+      workspaceRoots: [root],
+      hosts: ["codex"],
+      marketplaceSource: "/trusted/repository",
+      configPath,
+    }, {
+      runner: runnerFor(["codex"]),
+      credentialStore: store,
+      deviceFlow: vi.fn(async () => ({ accessToken: nextToken, expiresIn: 3600 })),
+      deviceFlowDependencies: { openBrowser: async () => undefined, fetch },
+    })).rejects.toThrow("Could not revoke");
+
+    expect(storedToken).toBe(previousToken);
+    expect(await readFile(configPath, "utf8")).toContain("https://old-artifacts.example.test/");
   });
 });

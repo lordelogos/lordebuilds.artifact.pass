@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-const previewUrl = process.env.ARTIFACT_SHARE_PREVIEW_URL;
+const previewUrl = process.env.ARTIFACT_SHARE_PREVIEW_URL ?? "http://127.0.0.1:4173";
 
 const shareToken = "S".repeat(43);
 
@@ -16,7 +16,7 @@ const mockUploadService = async (page: Page, onUpload?: (body: string) => void) 
       expiry: { maximum_seconds: 86_400, allowed_seconds: [900, 1800, 3600, 43_200, 86_400] },
     }),
   }));
-  await page.route("**/api/artifacts", async (route) => {
+  await page.route("**/upload/artifacts", async (route) => {
     const requestBody = route.request().postData() ?? "";
     onUpload?.(requestBody);
     const extraction = requestBody.includes("unavailable")
@@ -77,11 +77,9 @@ const createTextPdf = (text: string | null): Buffer => {
 };
 
 test.describe("local upload page preview", () => {
-  test.skip(previewUrl === undefined, "Set ARTIFACT_SHARE_PREVIEW_URL to a built local client.");
-
   test("renders the desktop and mobile upload surface", async ({ page }) => {
     await mockUploadService(page);
-    await page.goto(previewUrl ?? "about:blank");
+    await page.goto(previewUrl);
     await expect(page.getByRole("heading", { name: /Share the work/ })).toBeVisible();
     await expect(page.getByText("Drop one artifact here")).toBeVisible();
     await page.screenshot({ path: "test-results/u4-upload-desktop.png", fullPage: true });
@@ -95,7 +93,7 @@ test.describe("local upload page preview", () => {
     await mockUploadService(page, (body) => {
       multipartBody = body;
     });
-    await page.goto(previewUrl ?? "about:blank");
+    await page.goto(previewUrl);
     await page.locator('input[type="file"]').setInputFiles({
       name: "browser-report.pdf",
       mimeType: "application/pdf",
@@ -112,7 +110,7 @@ test.describe("local upload page preview", () => {
     await mockUploadService(page, (body) => {
       multipartBody = body;
     });
-    await page.goto(previewUrl ?? "about:blank");
+    await page.goto(previewUrl);
     await page.locator('input[type="file"]').setInputFiles({
       name: "image-only-report.pdf",
       mimeType: "application/pdf",

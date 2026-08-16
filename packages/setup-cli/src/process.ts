@@ -18,6 +18,7 @@ export interface RunOptions {
   readonly cwd?: string;
   readonly env?: Readonly<Record<string, string | undefined>>;
   readonly input?: string;
+  readonly timeoutMilliseconds?: number;
 }
 
 export interface RunResult {
@@ -43,19 +44,34 @@ export const runProcess: ProcessRunner = async (command, args, options = {}) =>
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
     let outputSize = 0;
+    let settled = false;
+    const timeoutMilliseconds = options.timeoutMilliseconds ?? 10 * 60 * 1000;
+    let timeout: ReturnType<typeof setTimeout>;
+    const finishWithError = (error: Error): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      child.kill();
+      reject(error);
+    };
+    timeout = setTimeout(() => {
+      finishWithError(new Error(`${command} timed out after ${timeoutMilliseconds}ms`));
+    }, timeoutMilliseconds);
     const capture = (target: Buffer[], chunk: Buffer): void => {
       outputSize += chunk.byteLength;
       if (outputSize > 1024 * 1024) {
-        child.kill();
-        reject(new Error(`${command} produced excessive output`));
+        finishWithError(new Error(`${command} produced excessive output`));
         return;
       }
       target.push(chunk);
     };
     child.stdout.on("data", (chunk: Buffer) => capture(stdout, chunk));
     child.stderr.on("data", (chunk: Buffer) => capture(stderr, chunk));
-    child.once("error", reject);
+    child.once("error", (error) => finishWithError(error));
     child.once("close", (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
       const result = {
         stdout: Buffer.concat(stdout).toString("utf8"),
         stderr: Buffer.concat(stderr).toString("utf8"),

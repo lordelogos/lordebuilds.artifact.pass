@@ -1,6 +1,6 @@
 {
   "name": "lordebuilds.artifacts.share",
-  "version": "0.0.0",
+  "version": "0.1.0-rc.1",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.11.0",
@@ -13,13 +13,20 @@
     "lint": "oxlint --deny-warnings .",
     "plugin:build": "pnpm --dir packages/agent-bridge build && node scripts/build-plugin.mjs",
     "plugin:check": "node scripts/build-plugin.mjs --check",
+    "release:packages": "node scripts/inspect-release-packages.mjs",
+    "release:build": "node scripts/build-release-artifacts.mjs",
+    "release:check": "pnpm security:secrets && pnpm check && pnpm security:licenses && pnpm security:audit && pnpm release:packages",
+    "security:audit": "pnpm audit --prod --audit-level high",
+    "security:licenses": "node scripts/audit-licenses.mjs",
+    "security:secrets": "node scripts/scan-secrets.mjs",
     "test": "vitest run --config vitest.workspace.ts",
     "test:browser": "playwright test",
+    "test:browser:live": "playwright test tests/e2e/browser-share.spec.ts tests/e2e/end-to-end-handoff.spec.ts",
     "test:protocol": "pnpm --dir packages/artifact-protocol test",
     "test:worker": "pnpm --dir apps/artifact-service test",
     "typecheck": "pnpm -r --if-present typecheck",
     "types:worker": "pnpm --dir apps/artifact-service types:worker",
-    "check": "pnpm plugin:build && pnpm lint && pnpm typecheck && pnpm test && pnpm build"
+    "check": "pnpm --dir packages/agent-bridge build && pnpm plugin:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",

@@ -1,6 +1,5 @@
-import { createHash } from "node:crypto";
-
 import {
+  PROTOCOL_MAX_ARTIFACT_BYTES,
   PROTOCOL_MAX_SOURCE_CHUNK_BYTES,
   artifactManifestSchema,
   sourceChunkSchema,
@@ -92,23 +91,51 @@ const readDerived = async (
   if (manifest.mime_type !== "application/pdf" || manifest.extraction.status !== "best_effort") {
     throw new Error("Artifact does not have an extracted PDF representation");
   }
-  const response = await fetchWithoutRedirects(fetchImplementation, new URL(`${shareBase.pathname}/derived`, shareBase));
+  const offset = decodeDerivedCursor(input.cursor, manifest.artifact_id);
+  if (!Number.isSafeInteger(offset) || offset < 0 || offset > PROTOCOL_MAX_ARTIFACT_BYTES) {
+    throw new Error("Artifact source cursor is invalid");
+  }
+  const response = await fetchWithoutRedirects(
+    fetchImplementation,
+    new URL(`${shareBase.pathname}/derived`, shareBase),
+    { headers: { Range: `bytes=${offset}-${offset + maximumBytes - 1}` } },
+  );
   if (!response.ok) throw await responseError(response);
+  if (response.status !== 206) throw new Error("Artifact Share ignored the derived text range");
+  const contentRange = /^bytes (\d+)-(\d+)\/(\d+)$/u.exec(response.headers.get("content-range") ?? "");
+  const sha256 = response.headers.get("x-artifact-sha256") ?? "";
+  if (contentRange === null || !/^[a-f0-9]{64}$/u.test(sha256)) {
+    throw new Error("Artifact Share returned malformed derived text metadata");
+  }
+  const responseOffset = Number(contentRange[1]);
+  const responseEnd = Number(contentRange[2]);
+  const totalSize = Number(contentRange[3]);
+  if (
+    responseOffset !== offset ||
+    !Number.isSafeInteger(responseEnd) ||
+    responseEnd < responseOffset ||
+    !Number.isSafeInteger(totalSize) ||
+    totalSize <= 0 ||
+    totalSize > PROTOCOL_MAX_ARTIFACT_BYTES
+  ) {
+    throw new Error("Artifact Share returned inconsistent derived text metadata");
+  }
   const bytes = new Uint8Array(await response.arrayBuffer());
+  if (bytes.byteLength !== responseEnd - responseOffset + 1 || bytes.byteLength > maximumBytes) {
+    throw new Error("Artifact Share returned an invalid derived text range");
+  }
   try {
     new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   } catch {
     throw new Error("Artifact Share returned malformed derived text");
   }
-  const offset = decodeDerivedCursor(input.cursor, manifest.artifact_id);
-  if (!Number.isSafeInteger(offset) || offset < 0 || offset > bytes.byteLength) {
+  if (offset > totalSize) {
     throw new Error("Artifact source cursor is invalid");
   }
-  const chunk = bytes.subarray(offset, Math.min(bytes.byteLength, offset + maximumBytes));
-  const nextOffset = offset + chunk.byteLength;
+  const nextOffset = offset + bytes.byteLength;
   let text: string | undefined;
   try {
-    text = new TextDecoder("utf-8", { fatal: true }).decode(chunk);
+    text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   } catch {
     text = undefined;
   }
@@ -117,12 +144,12 @@ const readDerived = async (
     representation: "derived",
     encoding: "base64",
     byte_offset: offset,
-    byte_length: chunk.byteLength,
-    total_size: bytes.byteLength,
-    sha256: createHash("sha256").update(bytes).digest("hex"),
-    data: Buffer.from(chunk).toString("base64"),
+    byte_length: bytes.byteLength,
+    total_size: totalSize,
+    sha256,
+    data: Buffer.from(bytes).toString("base64"),
     ...(text === undefined ? {} : { text }),
-    next_cursor: nextOffset < bytes.byteLength
+    next_cursor: nextOffset < totalSize
       ? Buffer.from(`${manifest.artifact_id}:derived:${nextOffset}`).toString("base64url")
       : null,
     exact_source_url: new URL(`${shareBase.pathname}/raw`, shareBase).toString(),

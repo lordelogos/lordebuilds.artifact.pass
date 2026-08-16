@@ -20,7 +20,43 @@ export const detectHosts = async (runner: ProcessRunner = runProcess): Promise<r
   ];
 };
 
-const parseJson = <T>(value: string): T => JSON.parse(value) as T;
+const parseJson = (value: string, label: string): unknown => {
+  try {
+    return JSON.parse(value);
+  } catch {
+    throw new Error(`${label} returned malformed JSON`);
+  }
+};
+
+const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const namedEntries = (value: unknown, label: string): readonly { readonly name: string }[] => {
+  if (!Array.isArray(value) || !value.every((item) => isRecord(item) && typeof item.name === "string")) {
+    throw new Error(`${label} returned an unexpected marketplace list`);
+  }
+  return value as readonly { readonly name: string }[];
+};
+
+const codexPluginEntries = (value: unknown): readonly { readonly pluginId: string }[] => {
+  if (!isRecord(value) || !Array.isArray(value.installed) ||
+      !value.installed.every((item) => isRecord(item) && typeof item.pluginId === "string")) {
+    throw new Error("Codex returned an unexpected plugin list");
+  }
+  return value.installed as readonly { readonly pluginId: string }[];
+};
+
+const claudePluginEntries = (
+  value: unknown,
+): readonly { readonly id: string; readonly scope?: string }[] => {
+  if (!Array.isArray(value) || !value.every((item) =>
+    isRecord(item) && typeof item.id === "string" &&
+    (item.scope === undefined || typeof item.scope === "string")
+  )) {
+    throw new Error("Claude returned an unexpected plugin list");
+  }
+  return value as readonly { readonly id: string; readonly scope?: string }[];
+};
 
 export const installPluginForHosts = async (
   hosts: readonly AgentHost[],
@@ -28,31 +64,37 @@ export const installPluginForHosts = async (
   runner: ProcessRunner = runProcess,
 ): Promise<void> => {
   if (hosts.includes("codex")) {
-    const marketplaces = parseJson<{ readonly marketplaces: readonly { readonly name: string }[] }>(
+    const marketplaceResponse = parseJson(
       (await runner("codex", ["plugin", "marketplace", "list", "--json"])).stdout,
+      "Codex",
     );
-    if (!marketplaces.marketplaces.some((marketplace) => marketplace.name === "lordebuilds-artifacts")) {
+    if (!isRecord(marketplaceResponse)) throw new Error("Codex returned an unexpected marketplace list");
+    const marketplaces = namedEntries(marketplaceResponse.marketplaces, "Codex");
+    if (!marketplaces.some((marketplace) => marketplace.name === "lordebuilds-artifacts")) {
       await runner("codex", ["plugin", "marketplace", "add", marketplaceSource, "--json"]);
     }
-    const plugins = parseJson<{ readonly installed: readonly { readonly pluginId: string }[] }>(
+    const plugins = codexPluginEntries(parseJson(
       (await runner("codex", ["plugin", "list", "--json"])).stdout,
-    );
-    if (plugins.installed.some((plugin) => plugin.pluginId === "artifact-share@lordebuilds-artifacts")) {
+      "Codex",
+    ));
+    if (plugins.some((plugin) => plugin.pluginId === "artifact-share@lordebuilds-artifacts")) {
       await runner("codex", ["plugin", "remove", "artifact-share@lordebuilds-artifacts"]);
     }
     await runner("codex", ["plugin", "add", "artifact-share@lordebuilds-artifacts", "--json"]);
   }
 
   if (hosts.includes("claude")) {
-    const marketplaces = parseJson<readonly { readonly name: string }[]>(
+    const marketplaces = namedEntries(parseJson(
       (await runner("claude", ["plugin", "marketplace", "list", "--json"])).stdout,
-    );
+      "Claude",
+    ), "Claude");
     if (!marketplaces.some((marketplace) => marketplace.name === "lordebuilds-artifacts")) {
       await runner("claude", ["plugin", "marketplace", "add", marketplaceSource]);
     }
-    const plugins = parseJson<readonly { readonly id: string; readonly scope?: string }[]>(
+    const plugins = claudePluginEntries(parseJson(
       (await runner("claude", ["plugin", "list", "--json"])).stdout,
-    );
+      "Claude",
+    ));
     for (const plugin of plugins.filter((candidate) => candidate.id === "artifact-share@lordebuilds-artifacts")) {
       await runner("claude", [
         "plugin", "uninstall", "artifact-share@lordebuilds-artifacts", "--scope", plugin.scope ?? "user",

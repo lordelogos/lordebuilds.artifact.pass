@@ -226,6 +226,7 @@ export const artifactErrorSchema = z
 export type ArtifactManifest = z.infer<typeof artifactManifestSchema>;
 export type ExpiryPolicy = z.infer<typeof expiryPolicySchema>;
 export type ExtractionMetadata = z.infer<typeof extractionMetadataSchema>;
+export type ProtocolLimits = z.infer<typeof protocolLimitsSchema>;
 export type SourceChunk = z.infer<typeof sourceChunkSchema>;
 export type SupportedMimeType = z.infer<typeof supportedMimeTypeSchema>;
 export type UploadResponse = z.infer<typeof uploadResponseSchema>;

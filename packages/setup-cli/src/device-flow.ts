@@ -55,15 +55,21 @@ export const completeDeviceFlow = async (
   while (Date.now() < deadline) {
     if (dependencies.signal?.aborted === true) throw new Error("Connection was interrupted");
     await (dependencies.wait ?? wait)(interval * 1000);
-    const tokenResponse = await fetchWithoutRedirects(
-      fetchImplementation,
-      new URL("/connect/token", origin),
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ device_code: device.device_code, code_verifier: verifier }),
-      },
-    );
+    let tokenResponse: Response;
+    try {
+      tokenResponse = await fetchWithoutRedirects(
+        fetchImplementation,
+        new URL("/connect/token", origin),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ device_code: device.device_code, code_verifier: verifier }),
+        },
+      );
+    } catch (error) {
+      if (!(error instanceof TypeError)) throw error;
+      continue;
+    }
     if (tokenResponse.status === 202) {
       const pending = await tokenResponse.json() as { readonly interval?: number };
       interval = pending.interval ?? interval;

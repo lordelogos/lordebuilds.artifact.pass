@@ -10,6 +10,13 @@ export interface CommandResult {
   readonly stdout: string;
 }
 
+export class CredentialStoreCommandError extends Error {
+  public constructor(public readonly status: number | null) {
+    super(`Credential store command failed with status ${status ?? "unknown"}`);
+    this.name = "CredentialStoreCommandError";
+  }
+}
+
 export type CommandRunner = (
   executable: string,
   args: readonly string[],
@@ -39,7 +46,7 @@ const defaultRunner: CommandRunner = async (executable, args, options = {}) =>
     child.once("error", reject);
     child.once("close", (code) => {
       if (code === 0) resolve({ stdout: Buffer.concat(stdout).toString("utf8") });
-      else reject(new Error(`Credential store command failed with status ${code ?? "unknown"}`));
+      else reject(new CredentialStoreCommandError(code));
     });
     child.stdin.end(options.input);
   });
@@ -98,8 +105,11 @@ export class OsCredentialStore implements CredentialStore {
         ]);
       const value = result.stdout.trim();
       return value.length === 0 ? null : value;
-    } catch {
-      return null;
+    } catch (error) {
+      if (this.platform === "darwin" && error instanceof CredentialStoreCommandError && error.status === 44) {
+        return null;
+      }
+      throw error;
     }
   }
 
@@ -121,12 +131,14 @@ export class OsCredentialStore implements CredentialStore {
     if (this.platform === "darwin") {
       await this.runner("/usr/bin/security", [
         "delete-generic-password", "-s", this.service, "-a", this.account,
-      ]).catch(() => undefined);
+      ]).catch((error: unknown) => {
+        if (!(error instanceof CredentialStoreCommandError && error.status === 44)) throw error;
+      });
       return;
     }
     await this.runner("secret-tool", [
       "clear", "service", this.service, "account", this.account,
-    ]).catch(() => undefined);
+    ]);
   }
 }
 

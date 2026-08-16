@@ -158,6 +158,44 @@ describe("publish_artifact", () => {
     );
   });
 
+  it("publishes exact PDF bytes when optional extraction fails", async () => {
+    const root = await workspace();
+    const path = join(root, "encrypted-report.pdf");
+    const bytes = new TextEncoder().encode("%PDF-exact-encrypted-source");
+    await writeFile(path, bytes);
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response(JSON.stringify({
+      protocol_version: 1,
+      manifest: {
+        protocol_version: 1,
+        artifact_id: "018f1f52-cbf1-7a5e-b66e-9ac829614b53",
+        filename: "encrypted-report.pdf",
+        mime_type: "application/pdf",
+        byte_size: bytes.byteLength,
+        sha256: "a".repeat(64),
+        created_at: "2026-08-16T00:00:00.000Z",
+        expires_at: "2026-08-16T00:30:00.000Z",
+        extraction: { status: "unavailable", reason: "Embedded PDF text extraction was unavailable." },
+      },
+      share_url: shareUrl,
+    }), { status: 201, headers: { "content-type": "application/json" } }));
+
+    await expect(publishArtifact({ path, expiresInSeconds: 1800 }, {
+      baseUrl: new URL("https://artifacts.example.test"),
+      fetch,
+      token: agentToken,
+      workspaceRoots: [root],
+      extractPdf: async () => {
+        throw new Error("encrypted PDF");
+      },
+    })).resolves.toMatchObject({ share_url: shareUrl });
+
+    const form = fetch.mock.calls[0]?.[1]?.body as FormData;
+    expect(new Uint8Array(await (form.get("file") as File).arrayBuffer())).toEqual(bytes);
+    expect(form.get("extraction_status")).toBe("unavailable");
+    expect(form.get("extraction_reason")).not.toContain("encrypted PDF");
+    expect(form.get("derived_text")).toBeNull();
+  });
+
   it("rejects a file changed between validation and upload", async () => {
     const root = await workspace();
     const path = join(root, "changing.md");
@@ -189,5 +227,52 @@ describe("publish_artifact", () => {
         }),
       },
     })).rejects.toThrow(/changed/u);
+  });
+
+  it("preserves a successful share result if the local file changes after dispatch", async () => {
+    const source = "# stable upload snapshot";
+    let changedAfterDispatch = false;
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => {
+      changedAfterDispatch = true;
+      return new Response(JSON.stringify({
+        protocol_version: 1,
+        manifest: {
+          protocol_version: 1,
+          artifact_id: "018f1f52-cbf1-7a5e-b66e-9ac829614b53",
+          filename: "snapshot.md",
+          mime_type: "text/markdown",
+          byte_size: Buffer.byteLength(source),
+          sha256: "a".repeat(64),
+          created_at: "2026-08-16T00:00:00.000Z",
+          expires_at: "2026-08-16T00:30:00.000Z",
+          extraction: { status: "not_applicable" },
+        },
+        share_url: shareUrl,
+      }), { status: 201, headers: { "content-type": "application/json" } });
+    });
+    const stableStat = {
+      dev: 1,
+      ino: 2,
+      mode: 0o100644,
+      size: Buffer.byteLength(source),
+      mtimeMs: 1,
+      ctimeMs: 1,
+      isFile: () => true,
+    };
+
+    await expect(publishArtifact({ path: "snapshot.md", expiresInSeconds: 900 }, {
+      baseUrl: new URL("https://artifacts.example.test"),
+      fetch,
+      token: agentToken,
+      workspaceRoots: ["."],
+      fileOperations: {
+        realpath: async (value) => value,
+        open: async () => ({
+          readFile: async () => Buffer.from(source),
+          stat: async () => changedAfterDispatch ? { ...stableStat, mtimeMs: 2 } : stableStat,
+          close: async () => undefined,
+        }),
+      },
+    })).resolves.toMatchObject({ share_url: shareUrl });
   });
 });

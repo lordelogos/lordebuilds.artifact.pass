@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createRedactingLogger } from "../src/logging/redacting-logger";
 import {
+  CredentialStoreCommandError,
   EnvironmentCredentialStore,
   OsCredentialStore,
   resolveCredential,
@@ -33,6 +34,21 @@ describe("credential and logging boundaries", () => {
     expect(runner).toHaveBeenCalledTimes(1);
     expect(runner.mock.calls[0]?.[1]).not.toContain(token);
     expect(runner.mock.calls[0]?.[2]).toEqual({ input: token });
+  });
+
+  it("distinguishes a missing macOS credential from a credential-store outage", async () => {
+    const missing = new OsCredentialStore({
+      platform: "darwin",
+      runner: vi.fn().mockRejectedValue(new CredentialStoreCommandError(44)),
+    });
+    await expect(missing.get()).resolves.toBeNull();
+
+    const unavailable = new OsCredentialStore({
+      platform: "darwin",
+      runner: vi.fn().mockRejectedValue(new Error("Keychain is unavailable")),
+    });
+    await expect(unavailable.get()).rejects.toThrow("Keychain is unavailable");
+    await expect(unavailable.delete()).rejects.toThrow("Keychain is unavailable");
   });
 
   it("redacts bearer tokens, share URLs, and content from controlled logs", () => {

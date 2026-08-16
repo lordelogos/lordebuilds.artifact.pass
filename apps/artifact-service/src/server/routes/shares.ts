@@ -275,12 +275,37 @@ export const createSharesRouter = (
   router.get("/:shareToken/derived", async (context) => {
     const service = createService(context.env);
     const artifact = await service.resolve(context.get("shareToken"));
-    const object = await service.getDerived(artifact);
+    const metadata = await service.getDerived(artifact);
+    const sha256 = metadata.metadata?.sha256;
+    if (sha256 === undefined || !/^[a-f0-9]{64}$/u.test(sha256)) {
+      throw new ArtifactError("internal_error", "Derived representation metadata is unavailable", 500);
+    }
+    const rangeHeader = context.req.header("range");
+    if (rangeHeader === undefined) {
+      return new Response(metadata.body, {
+        headers: {
+          ...PUBLIC_RESPONSE_HEADERS,
+          "Accept-Ranges": "bytes",
+          "Content-Length": String(metadata.size),
+          "Content-Type": "text/plain; charset=utf-8",
+          "Content-Disposition": disposition(`${artifact.filename}.txt`),
+          "X-Artifact-Sha256": sha256,
+        },
+      });
+    }
+    await metadata.body?.cancel().catch(() => undefined);
+    const range = parseRange(rangeHeader, metadata.size);
+    const object = await service.getDerived(artifact, range);
     return new Response(object.body, {
+      status: 206,
       headers: {
         ...PUBLIC_RESPONSE_HEADERS,
+        "Accept-Ranges": "bytes",
+        "Content-Range": `bytes ${range.offset}-${range.end}/${metadata.size}`,
+        "Content-Length": String(range.length),
         "Content-Type": "text/plain; charset=utf-8",
         "Content-Disposition": disposition(`${artifact.filename}.txt`),
+        "X-Artifact-Sha256": sha256,
       },
     });
   });

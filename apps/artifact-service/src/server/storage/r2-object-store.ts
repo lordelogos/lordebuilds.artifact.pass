@@ -1,11 +1,17 @@
 export interface StoredObject {
   readonly size: number;
   readonly body: ReadableStream<Uint8Array> | null;
+  readonly metadata?: Readonly<Record<string, string>>;
   arrayBuffer(): Promise<ArrayBuffer>;
 }
 
 export interface ArtifactObjectStore {
-  put(key: string, bytes: Uint8Array, contentType: string): Promise<void>;
+  put(
+    key: string,
+    bytes: Uint8Array,
+    contentType: string,
+    metadata?: Readonly<Record<string, string>>,
+  ): Promise<void>;
   get(
     key: string,
     range?: { readonly offset: number; readonly length: number },
@@ -16,8 +22,16 @@ export interface ArtifactObjectStore {
 export class R2ArtifactObjectStore implements ArtifactObjectStore {
   public constructor(private readonly bucket: R2Bucket) {}
 
-  public async put(key: string, bytes: Uint8Array, contentType: string): Promise<void> {
-    await this.bucket.put(key, bytes, { httpMetadata: { contentType } });
+  public async put(
+    key: string,
+    bytes: Uint8Array,
+    contentType: string,
+    metadata?: Readonly<Record<string, string>>,
+  ): Promise<void> {
+    await this.bucket.put(key, bytes, {
+      httpMetadata: { contentType },
+      ...(metadata === undefined ? {} : { customMetadata: { ...metadata } }),
+    });
   }
 
   public async get(
@@ -29,6 +43,7 @@ export class R2ArtifactObjectStore implements ArtifactObjectStore {
     return {
       size: object.size,
       body: object.body,
+      ...(object.customMetadata === undefined ? {} : { metadata: object.customMetadata }),
       arrayBuffer: () => object.arrayBuffer(),
     };
   }
@@ -37,4 +52,3 @@ export class R2ArtifactObjectStore implements ArtifactObjectStore {
     await this.bucket.delete(key);
   }
 }
-

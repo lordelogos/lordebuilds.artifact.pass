@@ -1,9 +1,10 @@
 import {
-  PROTOCOL_MAX_ARTIFACT_BYTES,
   SUPPORTED_MIME_TYPES,
-  type ArtifactManifest,
-  type ExpiryPolicy,
+  protocolLimitsSchema,
+  uploadResponseSchema,
   type ExtractionMetadata,
+  type ProtocolLimits,
+  type UploadResponse,
 } from "artifact-protocol";
 import { useEffect, useMemo, useState } from "react";
 
@@ -12,16 +13,8 @@ import { FileDrop } from "../components/file-drop";
 
 type UploadStage = "idle" | "validating" | "extracting" | "uploading" | "complete";
 
-interface UploadPolicy {
-  readonly supported_mime_types: readonly string[];
-  readonly max_artifact_bytes: number;
-  readonly expiry: ExpiryPolicy;
-}
-
-interface UploadResult {
-  readonly share_url: string;
-  readonly manifest: ArtifactManifest;
-}
+type UploadPolicy = ProtocolLimits;
+type UploadResult = UploadResponse;
 
 const extensionByMime = {
   "text/html": new Set(["html", "htm"]),
@@ -43,12 +36,13 @@ export const validateBrowserFile = async (
   if (!extensionByMime[mimeType].has(extension)) {
     return "The filename extension does not match the file type.";
   }
-  const bytes = new Uint8Array(await file.arrayBuffer());
   if (mimeType === "application/pdf") {
+    const bytes = new Uint8Array(await file.slice(0, 5).arrayBuffer());
     if (new TextDecoder().decode(bytes.slice(0, 5)) !== "%PDF-") {
       return "This file does not contain a valid PDF signature.";
     }
   } else {
+    const bytes = new Uint8Array(await file.arrayBuffer());
     try {
       const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
       if (text.includes("\0")) return "Text artifacts cannot contain null bytes.";
@@ -87,7 +81,7 @@ const uploadWithProgress = (
     }
 
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", "/api/artifacts");
+    xhr.open("POST", "/upload/artifacts");
     xhr.withCredentials = true;
     xhr.upload.addEventListener("progress", (event) => {
       if (event.lengthComputable) onProgress(Math.round((event.loaded / event.total) * 100));
@@ -110,14 +104,12 @@ const uploadWithProgress = (
         reject(new Error(message));
         return;
       }
-      if (
-        typeof body !== "object" || body === null || !("share_url" in body) ||
-        typeof body.share_url !== "string" || !("manifest" in body)
-      ) {
+      const parsed = uploadResponseSchema.safeParse(body);
+      if (!parsed.success) {
         reject(new Error("The service returned an incomplete share result."));
         return;
       }
-      resolve(body as UploadResult);
+      resolve(parsed.data);
     });
     xhr.addEventListener("error", () => reject(new Error("The upload connection failed.")));
     xhr.send(form);
@@ -137,14 +129,14 @@ export function UploadPage() {
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<UploadResult | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [copiedShareUrl, setCopiedShareUrl] = useState<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
     fetch("/upload/policy", { credentials: "same-origin", signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) throw new Error("The upload policy is unavailable.");
-        return response.json() as Promise<UploadPolicy>;
+        return protocolLimitsSchema.parse(await response.json());
       })
       .then((nextPolicy) => {
         setPolicy(nextPolicy);
@@ -165,12 +157,13 @@ export function UploadPage() {
   );
 
   const chooseFile = async (nextFile: File) => {
+    if (policy === null) return;
     setResult(null);
-    setCopied(false);
+    setCopiedShareUrl(null);
     setStage("validating");
     const validationError = await validateBrowserFile(
       nextFile,
-      policy?.max_artifact_bytes ?? PROTOCOL_MAX_ARTIFACT_BYTES,
+      policy.max_artifact_bytes,
     );
     setError(validationError);
     setFile(validationError === null ? nextFile : null);
@@ -209,9 +202,10 @@ export function UploadPage() {
 
   const copyShareUrl = async () => {
     if (result === null) return;
+    const shareUrl = result.share_url;
     try {
-      await navigator.clipboard.writeText(result.share_url);
-      setCopied(true);
+      await navigator.clipboard.writeText(shareUrl);
+      setCopiedShareUrl(shareUrl);
     } catch {
       setError("Copy was blocked. Select the link and copy it manually.");
     }
@@ -241,7 +235,7 @@ export function UploadPage() {
             void publish();
           }}
         >
-          <FileDrop disabled={busy} file={file} onFile={(nextFile) => void chooseFile(nextFile)} />
+          <FileDrop disabled={busy || policy === null} file={file} onFile={(nextFile) => void chooseFile(nextFile)} />
 
           {policy === null ? (
             <p className="policy-note">Reading this deployment’s limits…</p>
@@ -282,7 +276,7 @@ export function UploadPage() {
               <div className="share-link-row">
                 <input aria-label="Share URL" readOnly value={result.share_url} onFocus={(event) => event.currentTarget.select()} />
                 <button className="primary-button" type="button" onClick={() => void copyShareUrl()}>
-                  {copied ? "Copied" : "Copy link"}
+                  {copiedShareUrl === result.share_url ? "Copied" : "Copy link"}
                 </button>
               </div>
               <p className="cutoff">

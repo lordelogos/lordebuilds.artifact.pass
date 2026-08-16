@@ -52,7 +52,9 @@ export const createBridgeServer = (configuration: BridgeConfiguration): McpServe
     description: "Publish one approved local Markdown, HTML, or PDF file without placing its bytes in model context.",
     inputSchema: z.object({
       path: z.string().min(1).describe("Absolute or workspace-relative local file path"),
-      expires_in_seconds: z.number().int().positive().describe("Deployment-allowed expiration preset"),
+      expires_in_seconds: z.number().int().positive().describe(
+        "Deployment expiry preset in seconds. Default setup presets: 900, 1800, 3600, 43200, 86400; a rejection reports the deployment's allowed values.",
+      ),
     }),
     annotations: {
       readOnlyHint: false,

@@ -6,10 +6,7 @@ export const disconnectHost = async (
 ): Promise<void> => {
   const store = options.credentialStore ?? new OsCredentialStore();
   const token = await store.get();
-  if (token === null) {
-    await store.delete();
-    return;
-  }
+  if (token === null) return;
   const origin = assertSafeDeploymentOrigin(new URL(baseUrl));
   const response = await (options.fetch ?? globalThis.fetch)(new URL("/api/connection", origin), {
     method: "DELETE",

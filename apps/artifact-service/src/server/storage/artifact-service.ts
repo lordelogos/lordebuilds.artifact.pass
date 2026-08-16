@@ -84,10 +84,12 @@ export class ArtifactApplicationService {
     try {
       await this.options.objectStore.put(objectKey, input.bytes, mimeType);
       if (input.derivedText !== undefined && derivedObjectKey !== null) {
+        const derivedSha256 = await sha256(input.derivedText);
         await this.options.objectStore.put(
           derivedObjectKey,
           input.derivedText,
           "text/plain; charset=utf-8",
+          { sha256: derivedSha256 },
         );
       }
       await this.options.repository.activate(id);
@@ -127,12 +129,14 @@ export class ArtifactApplicationService {
     throw notFound();
   }
 
-  public async getDerived(artifact: ArtifactRecord): Promise<StoredObject> {
+  public async getDerived(
+    artifact: ArtifactRecord,
+    range?: { readonly offset: number; readonly length: number },
+  ): Promise<StoredObject> {
     if (artifact.derivedObjectKey === null) throw notFound();
-    const object = await this.options.objectStore.get(artifact.derivedObjectKey);
+    const object = await this.options.objectStore.get(artifact.derivedObjectKey, range);
     if (object !== null) return object;
     await this.options.repository.markCleanupPending(artifact.id).catch(() => undefined);
     throw notFound();
   }
 }
-

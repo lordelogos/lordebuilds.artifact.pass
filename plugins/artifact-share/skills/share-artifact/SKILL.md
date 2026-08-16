@@ -14,7 +14,7 @@ Before calling the tool:
 3. Confirm the file type is Markdown, HTML, or PDF. Explain that other formats are not supported instead of implying they will work.
 4. Use the user's requested expiry only when it is one of the tool's supported values. Otherwise ask them to choose a supported duration.
 
-Call `publish_artifact` with the exact path, supported content type, and expiry. On success, return both the share URL and the exact expiry cutoff reported by the tool. Say that the link is temporary and protected by the configured Artifact Share access policy.
+Call `publish_artifact` with the exact path and a deployment expiry preset. Start with the default setup presets: 900, 1800, 3600, 43200, or 86400 seconds. If the deployment rejects one, use the allowed values in its error. The bridge infers and validates the content type from the filename. On success, return both the share URL and the exact expiry cutoff reported by the tool. Say that the temporary URL is a bearer capability: anyone who has it can read the artifact until expiry.
 
 For PDF, describe extraction as best effort: the browser preserves the original PDF, while agent-readable text may lose layout, ordering, images, or scanned content. Do not claim perfect conversion, permanent history, public access, paid features, or support for formats outside the tool schema.
 

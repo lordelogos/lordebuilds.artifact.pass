@@ -1,17 +1,39 @@
+import { rm } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import {
   OsCredentialStore,
   assertSafeDeploymentOrigin,
   defaultLocalConfigPath,
+  fetchWithoutRedirects,
+  readLocalBridgeSettings,
   writeLocalBridgeSettings,
   type CredentialStore,
+  type LocalBridgeSettings,
 } from "agent-bridge";
 
 import { completeDeviceFlow, type DeviceFlowDependencies } from "../device-flow";
 import { detectHosts, installPluginForHosts, type AgentHost } from "../hosts";
 import type { ProcessRunner } from "../process";
 import { runProcess } from "../process";
+
+const isMissingFile = (error: unknown): boolean =>
+  error instanceof Error && "code" in error && error.code === "ENOENT";
+
+const revokeToken = async (
+  origin: URL,
+  token: string,
+  fetchImplementation: typeof globalThis.fetch,
+): Promise<void> => {
+  const response = await fetchWithoutRedirects(
+    fetchImplementation,
+    new URL("/api/connection", origin),
+    { method: "DELETE", headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (!response.ok && response.status !== 404) {
+    throw new Error(`Could not revoke Artifact Share connection (${response.status})`);
+  }
+};
 
 export interface ConnectInput {
   readonly baseUrl: string;
@@ -26,6 +48,8 @@ export interface ConnectDependencies {
   readonly credentialStore?: CredentialStore;
   readonly deviceFlow?: typeof completeDeviceFlow;
   readonly deviceFlowDependencies: DeviceFlowDependencies;
+  readonly readSettings?: (path: string) => Promise<LocalBridgeSettings>;
+  readonly writeSettings?: typeof writeLocalBridgeSettings;
 }
 
 export const connectHost = async (
@@ -35,9 +59,10 @@ export const connectHost = async (
   const origin = assertSafeDeploymentOrigin(new URL(input.baseUrl));
   const roots = input.workspaceRoots.map((root) => resolve(root));
   if (roots.length === 0) throw new Error("At least one workspace root is required");
-  const health = await (dependencies.deviceFlowDependencies.fetch ?? globalThis.fetch)(
+  const fetchImplementation = dependencies.deviceFlowDependencies.fetch ?? globalThis.fetch;
+  const health = await fetchWithoutRedirects(
+    fetchImplementation,
     new URL("/health", origin),
-    { redirect: "error" },
   );
   const healthBody = await health.clone().json().catch(() => null) as {
     readonly service?: string;
@@ -54,21 +79,55 @@ export const connectHost = async (
   const hosts = input.hosts ?? await detectHosts(runner);
   if (hosts.length === 0) throw new Error("Install Claude Code or Codex before connecting Artifact Share");
   await installPluginForHosts(hosts, input.marketplaceSource, runner);
+  const store = dependencies.credentialStore ?? new OsCredentialStore();
+  const previousToken = await store.get();
+  const configPath = input.configPath ?? defaultLocalConfigPath();
+  const previousSettings = await (dependencies.readSettings ?? readLocalBridgeSettings)(configPath).catch((error: unknown) => {
+    if (isMissingFile(error)) return null;
+    throw error;
+  });
+  if (previousToken !== null && previousSettings === null) {
+    throw new Error("The existing Artifact Share credential has no readable local configuration; disconnect it first");
+  }
   const token = await (dependencies.deviceFlow ?? completeDeviceFlow)(
     origin.toString(),
     dependencies.deviceFlowDependencies,
   );
-  const store = dependencies.credentialStore ?? new OsCredentialStore();
-  await store.set(token.accessToken);
-  const configPath = input.configPath ?? defaultLocalConfigPath();
+  let wroteConfig = false;
   try {
-    await writeLocalBridgeSettings(configPath, {
+    await (dependencies.writeSettings ?? writeLocalBridgeSettings)(configPath, {
       version: 1,
       base_url: origin.toString(),
       workspace_roots: roots,
     });
+    wroteConfig = true;
+    await store.set(token.accessToken);
+    if (previousToken !== null && previousSettings !== null) {
+      await revokeToken(
+        assertSafeDeploymentOrigin(new URL(previousSettings.base_url)),
+        previousToken,
+        fetchImplementation,
+      );
+    }
   } catch (error) {
-    await store.delete();
+    const cleanupErrors: unknown[] = [];
+    await revokeToken(origin, token.accessToken, fetchImplementation).catch((cleanupError: unknown) => {
+      cleanupErrors.push(cleanupError);
+    });
+    if (previousToken === null) {
+      await store.delete().catch((cleanupError: unknown) => cleanupErrors.push(cleanupError));
+    } else {
+      await store.set(previousToken).catch((cleanupError: unknown) => cleanupErrors.push(cleanupError));
+    }
+    if (wroteConfig) {
+      const restoreConfig = previousSettings === null
+        ? rm(configPath, { force: true })
+        : (dependencies.writeSettings ?? writeLocalBridgeSettings)(configPath, previousSettings);
+      await restoreConfig.catch((cleanupError: unknown) => cleanupErrors.push(cleanupError));
+    }
+    if (cleanupErrors.length > 0) {
+      throw new AggregateError([error, ...cleanupErrors], "Artifact Share connection failed and cleanup was incomplete");
+    }
     throw error;
   }
   return { hosts, expiresIn: token.expiresIn, configPath };

@@ -12,7 +12,7 @@ import type { AgentHost } from "./hosts";
 import { openBrowser } from "./open-browser";
 
 const deploymentRoot = resolve(dirname(fileURLToPath(import.meta.url)), "deployment");
-const defaultMarketplace = "https://github.com/lordebuilds/lordebuilds.artifacts.share.git";
+const defaultMarketplace = resolve(dirname(fileURLToPath(import.meta.url)), "marketplace");
 
 const values = (args: readonly string[], flag: string): string[] => {
   const result: string[] = [];
@@ -57,7 +57,7 @@ Commands:
   disconnect [<base-url>]
   doctor
 
-Cloudflare credentials are read only from CLOUDFLARE_API_TOKEN and are never persisted.`;
+Cloudflare credentials come from CLOUDFLARE_API_TOKEN or Wrangler OAuth and are never persisted by Artifact Share.`;
 
 const main = async (): Promise<void> => {
   const [command, ...args] = process.argv.slice(2);

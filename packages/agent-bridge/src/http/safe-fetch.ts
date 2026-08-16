@@ -60,7 +60,10 @@ export const responseError = async (response: Response): Promise<Error> => {
   const body: unknown = await response.clone().json().catch(() => undefined);
   const parsed = artifactErrorSchema.safeParse(body);
   if (parsed.success) {
-    return new Error(`Artifact Share request failed: ${parsed.data.error.code}`);
+    const detail = parsed.data.error.code === "invalid_expiry"
+      ? ` (${parsed.data.error.message})`
+      : "";
+    return new Error(`Artifact Share request failed: ${parsed.data.error.code}${detail}`);
   }
   return new Error(`Artifact Share request failed with status ${response.status}`);
 };

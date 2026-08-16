@@ -9,6 +9,11 @@ export default defineConfig({
   fullyParallel: false,
   retries: process.env.CI === undefined ? 0 : 2,
   reporter: [["list"], ["html", { open: "never" }]],
+  webServer: {
+    command: "pnpm --dir apps/artifact-service preview:test",
+    url: "http://127.0.0.1:4173",
+    reuseExistingServer: process.env.CI === undefined,
+  },
   use: {
     ...devices["Desktop Chrome"],
     baseURL,
