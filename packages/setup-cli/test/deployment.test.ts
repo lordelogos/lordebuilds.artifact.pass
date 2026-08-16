@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import { CloudflareApiError, CloudflareClient } from "../src/cloudflare/client";
+import { runDeployCommand } from "../src/commands/deploy";
 import {
   deployArtifactShare,
   describeCloudflareFailure,
@@ -111,7 +112,8 @@ describe("Cloudflare deployment", () => {
   it("turns permission denials into the least-privilege checklist", () => {
     const message = describeCloudflareFailure(new CloudflareApiError("forbidden", 403));
     expect(message).toContain("Workers Scripts Write");
-    expect(message).toContain("Access Apps and Policies Write");
+    expect(message).toContain("Access: Apps and Policies Write");
+    expect(message).toContain("Access: Organizations, Identity Providers, and Groups Read");
   });
 
   it("plans a complete deployment without mutations or credentials", async () => {
@@ -122,9 +124,25 @@ describe("Cloudflare deployment", () => {
       runner: vi.fn(),
     });
     expect(result.plan).toHaveLength(7);
+    expect(result.plan[3]).toContain("prepare the Worker configuration");
+    expect(result.plan[4]).toContain("apply D1 migrations");
+    expect(result.plan[5]).toContain("deploy the Worker");
     expect(result.changed).toEqual([]);
     expect(client.requests).toEqual([]);
     expect(result.teamCommand).toContain("connect https://artifacts.example.com");
+  });
+
+  it("runs the command-level dry-run without credentials, processes, or network calls", async () => {
+    const runner = vi.fn();
+    const fetch = vi.fn();
+    const result = await runDeployCommand({ ...input, dryRun: true }, {
+      deploymentRoot: await deploymentRoot(),
+      runner,
+      fetch,
+    });
+    expect(result.changed).toEqual([]);
+    expect(runner).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("rejects missing identity, invalid IDs, and a hostname outside the zone", async () => {

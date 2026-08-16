@@ -19,7 +19,7 @@ Monitor Worker error rate, D1 failures, R2 failures, Access denials, and schedul
 3. Authenticate Wrangler using its OS-keychain option or expose a short-lived API token only to the deployment process.
 4. Deploy with one or more explicit `--allow-email` or `--allow-domain` rules.
 5. Rerun the identical deploy and confirm it reuses resources without duplicates.
-6. Confirm `/health` is public, `/upload` is Access-protected, R2 is private, both D1 migrations are applied, and the R2 lifecycle is present.
+6. Confirm `/health` is public, `/upload` is Access-protected, R2 is private, all five D1 migrations are applied, and the R2 lifecycle is present.
 7. Connect a fresh Codex host and a fresh Claude Code host through the printed team command.
 8. Upload Markdown, hostile HTML, a born-digital PDF, and an image-only PDF; verify safe browser reads and exact downloads.
 9. Run the live two-agent handoff gate below.

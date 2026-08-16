@@ -140,6 +140,7 @@ disposable deployment; see [operations](docs/operations.md).
 - [Architecture](docs/architecture.md)
 - [Security model](docs/security-model.md)
 - [Deployment](docs/deployment.md)
+- [Hosted activation packet](docs/hosted-activation.md)
 - [Agent setup](docs/agent-setup.md)
 - [Operations, upgrade, and rollback](docs/operations.md)
 - [Contributing](CONTRIBUTING.md)

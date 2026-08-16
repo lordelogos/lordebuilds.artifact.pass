@@ -6,7 +6,7 @@ Artifact Share runs in your Cloudflare account on one custom hostname. D1 metada
 
 - Node.js 24 or newer and pnpm.
 - An active Cloudflare zone and a configured Zero Trust organization.
-- A Cloudflare OAuth login or short-lived API token with: Workers Scripts Write, Workers Routes Write, D1 Write, Workers R2 Storage Write, Zone Read, and Access Apps and Policies Write.
+- A Cloudflare OAuth login or short-lived API token with: Workers Scripts Write, Workers Routes Write, D1 Write, Workers R2 Storage Write, Zone Read, Access: Apps and Policies Write, and Access: Organizations, Identity Providers, and Groups Read.
 
 For an interactive deployment, keep Wrangler's OAuth credential encrypted with its key in the operating-system keychain:
 
@@ -36,7 +36,9 @@ node packages/setup-cli/dist/cli.mjs deploy \
   --dry-run
 ```
 
-Remove `--dry-run` to verify permissions, reuse or create D1/R2/Access resources, deploy the Worker and custom domain, apply migrations and lifecycle defense-in-depth, and verify `/health`. Reruns reuse resources with the canonical names and refuse hostname or Access-path collisions.
+Remove `--dry-run` only after approving the hosted run. That is the mutation boundary: the deployer verifies permissions, reuses or creates D1/R2/Access resources, deploys the Worker and custom domain, applies migrations and lifecycle defense-in-depth, and verifies `/health`. Reruns reuse resources with the canonical names and refuse hostname or Access-path collisions.
+
+The complete values, command order, verification, and rollback checklist is in the [hosted activation packet](hosted-activation.md).
 
 ## Connect a developer
 

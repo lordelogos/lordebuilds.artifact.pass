@@ -57,9 +57,9 @@ export const deploymentPlan = (input: DeployInput): readonly string[] => {
     "verify the short-lived Cloudflare API token and selected zone",
     "reuse or create the private D1 database and R2 bucket",
     "reuse or create one path-scoped Access application and allow policy",
-    "build and deploy the Worker with its custom domain and private bindings",
+    "prepare the Worker configuration with its custom domain and private bindings",
     "apply D1 migrations and the R2 cleanup lifecycle",
-    "verify the public health route and protected upload boundary",
+    "deploy the Worker, then verify the public health route and protected upload boundary",
     "print the team connection command without persisting the provisioning token",
   ];
 };
@@ -258,7 +258,7 @@ export const deployArtifactShare = async (
 
 export const describeCloudflareFailure = (error: unknown): string => {
   if (error instanceof CloudflareApiError && error.status === 403) {
-    return "Cloudflare denied a required operation. Verify Workers Scripts Write, D1 Write, R2 Storage Write, Workers Routes Write, Zone Read, and Access Apps and Policies Write on the selected account and zone.";
+    return "Cloudflare denied a required operation. Verify Workers Scripts Write, D1 Write, Workers R2 Storage Write, Workers Routes Write, Zone Read, Access: Apps and Policies Write, and Access: Organizations, Identity Providers, and Groups Read on the selected account and zone.";
   }
   return error instanceof Error ? error.message : "Cloudflare deployment failed";
 };
