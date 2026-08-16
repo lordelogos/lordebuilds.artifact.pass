@@ -125,18 +125,37 @@ describe("safe human viewers", () => {
     const html = await viewer.text();
     expect(html).toContain(`<iframe`);
     expect(html).toContain(`${new URL(created.share_url).pathname}/content`);
+    expect(html).not.toContain("sandbox");
+
+    const fullContent = await fetch(`${created.share_url}/content`, undefined, request);
+    expect(fullContent.status).toBe(200);
+    expect(fullContent.headers.get("content-disposition")).toContain("inline");
+    expect(fullContent.headers.get("content-security-policy")).toContain("frame-ancestors 'self'");
+    expect(fullContent.headers.get("content-security-policy")).not.toContain("sandbox");
 
     const content = await fetch(`${created.share_url}/content`, {
       headers: { range: "bytes=5-9" },
     }, request);
     expect(content.status).toBe(206);
     expect(content.headers.get("content-disposition")).toContain("inline");
+    expect(content.headers.get("content-security-policy")).toContain("frame-ancestors 'self'");
+    expect(content.headers.get("content-security-policy")).not.toContain("sandbox");
     expect(content.headers.get("content-range")).toBe(`bytes 5-9/${source.length}`);
     expect(new TextDecoder().decode(await content.arrayBuffer())).toBe(source.slice(5, 10));
 
     const download = await fetch(`${created.share_url}/raw`, undefined, request);
     expect(download.headers.get("content-disposition")).toContain("attachment");
+    expect(download.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
+    expect(download.headers.get("content-security-policy")).toContain("sandbox");
     expect(new TextDecoder().decode(await download.arrayBuffer())).toBe(source);
+
+    const rangedDownload = await fetch(`${created.share_url}/raw`, {
+      headers: { range: "bytes=5-9" },
+    }, request);
+    expect(rangedDownload.status).toBe(206);
+    expect(rangedDownload.headers.get("content-disposition")).toContain("attachment");
+    expect(rangedDownload.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
+    expect(rangedDownload.headers.get("content-security-policy")).toContain("sandbox");
   });
 
   it("contains an exact-cutoff open-page transition and denies every refresh at expiry", async () => {

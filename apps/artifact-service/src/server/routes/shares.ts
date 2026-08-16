@@ -141,6 +141,16 @@ const representationFor = async (
 
 type SourceDisposition = "attachment" | "inline";
 
+const INLINE_SOURCE_HEADERS = {
+  ...PUBLIC_RESPONSE_HEADERS,
+  "Content-Security-Policy": "default-src 'none'; frame-ancestors 'self'",
+} as const;
+
+const sourceHeaders = (responseDisposition: SourceDisposition) =>
+  responseDisposition === "inline"
+    ? INLINE_SOURCE_HEADERS
+    : PUBLIC_RESPONSE_HEADERS;
+
 const sourceResponse = async (
   service: ArtifactApplicationService,
   artifact: ArtifactRecord,
@@ -171,7 +181,7 @@ const sourceResponse = async (
     return new Response(object.body, {
       status: 206,
       headers: {
-        ...PUBLIC_RESPONSE_HEADERS,
+        ...sourceHeaders(responseDisposition),
         "Accept-Ranges": "bytes",
         "Content-Range": `bytes ${range.offset}-${range.end}/${artifact.byteSize}`,
         "Content-Length": String(range.length),
@@ -184,7 +194,7 @@ const sourceResponse = async (
   const object = await service.getSource(artifact);
   return new Response(object.body, {
     headers: {
-      ...PUBLIC_RESPONSE_HEADERS,
+      ...sourceHeaders(responseDisposition),
       ...(artifact.mimeType === "application/pdf" ? { "Accept-Ranges": "bytes" } : {}),
       "Content-Length": String(artifact.byteSize),
       "Content-Type": artifact.mimeType === "application/pdf"
