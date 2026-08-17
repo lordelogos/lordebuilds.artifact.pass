@@ -12,6 +12,14 @@ const createdDirectories: string[] = [];
 const agentToken = `as_${"t".repeat(43)}`;
 const shareUrl = `https://artifacts.example.test/a/${"s".repeat(32)}`;
 
+const signingKey = async (): Promise<string> => {
+  const pair = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]);
+  const { privateKey } = pair as unknown as {
+    privateKey: Parameters<typeof crypto.subtle.exportKey>[1];
+  };
+  return Buffer.from(await crypto.subtle.exportKey("pkcs8", privateKey)).toString("base64");
+};
+
 const workspace = async (): Promise<string> => {
   const directory = await mkdtemp(join(tmpdir(), "artifact-share-bridge-"));
   createdDirectories.push(directory);
@@ -222,7 +230,7 @@ describe("publish_artifact", () => {
       .rejects.toThrow(/PDF signature/u);
   });
 
-  it("preserves exact PDF bytes and uploads truthful best-effort derived metadata", async () => {
+  it("preserves exact PDF bytes while defaulting an ordinary PDF to human-only", async () => {
     const root = await workspace();
     const path = join(root, "layout report.pdf");
     const bytes = new TextEncoder().encode("%PDF-exact-source");
@@ -238,12 +246,8 @@ describe("publish_artifact", () => {
         sha256: "a".repeat(64),
         created_at: "2026-08-16T00:00:00.000Z",
         expires_at: "2026-08-16T00:30:00.000Z",
-        extraction: {
-          status: "best_effort",
-          extractor: "pdfjs-dist",
-          extractor_version: "6.2.108",
-          page_count: 1,
-        },
+        extraction: { status: "unavailable", reason: "No authenticated canonical PDF source was supplied." },
+        pdf_trust: { status: "human_only", reason: "provenance_missing" },
       },
       share_url: shareUrl,
     }), { status: 201, headers: { "content-type": "application/json" } }));
@@ -253,104 +257,96 @@ describe("publish_artifact", () => {
       fetch,
       token: agentToken,
       workspaceRoots: [root],
-      extractPdf: async () => ({
-        metadata: {
-          status: "best_effort",
-          extractor: "pdfjs-dist",
-          extractor_version: "6.2.108",
-          page_count: 1,
-        },
-        pages: [{ page: 1, text: "Table text" }],
-        safetyCoverage: "complete",
-        qualityWarnings: ["layout_may_be_degraded"],
-      }),
+      extractPdf: vi.fn(async () => { throw new Error("must not extract human PDFs"); }),
     });
 
     const form = fetch.mock.calls[0]?.[1]?.body as FormData;
     expect(new Uint8Array(await (form.get("file") as File).arrayBuffer())).toEqual(bytes);
-    expect(form.get("extraction_status")).toBe("best_effort");
-    expect(form.get("extractor")).toBe("pdfjs-dist");
-    expect(await (form.get("derived_text") as File).text()).toContain(
-      "column or table layout may be degraded",
-    );
+    expect(form.get("extraction_status")).toBe("unavailable");
+    expect(form.get("derived_text")).toBeNull();
+    expect(form.get("pdf_provenance")).toBeNull();
   });
 
-  it("refuses a PDF before journal or network access when its safety extraction fails", async () => {
+  it("publishes a qualified PDF with its signed canonical source", async () => {
+    const root = await workspace();
+    const path = join(root, "verified.pdf");
+    const canonicalSourcePath = join(root, "verified.md");
+    const bytes = new TextEncoder().encode("%PDF-verified-source");
+    await writeFile(path, bytes);
+    await writeFile(canonicalSourcePath, "Verified visible text");
+    const fetch = vi.fn<typeof globalThis.fetch>(async (_input, init) => {
+      const form = init?.body as FormData;
+      const receipt = JSON.parse(String(form.get("pdf_provenance")));
+      return new Response(JSON.stringify({
+        protocol_version: 1,
+        manifest: {
+          protocol_version: 1,
+          artifact_id: "018f1f52-cbf1-7a5e-b66e-9ac829614b53",
+          filename: "verified.pdf",
+          mime_type: "application/pdf",
+          byte_size: bytes.byteLength,
+          sha256: receipt.pdf_sha256,
+          created_at: "2026-08-16T00:00:00.000Z",
+          expires_at: "2026-08-16T00:30:00.000Z",
+          extraction: {
+            status: "best_effort",
+            extractor: "fixture",
+            extractor_version: "1",
+            page_count: 1,
+          },
+          pdf_trust: { status: "controlled", receipt },
+        },
+        share_url: shareUrl,
+      }), { status: 201, headers: { "content-type": "application/json" } });
+    });
+
+    await publishArtifact({ path, canonicalSourcePath, expiresInSeconds: 1800 }, {
+      baseUrl: new URL("https://artifacts.example.test"),
+      fetch,
+      token: agentToken,
+      workspaceRoots: [root],
+      pdfProvenance: { keyId: "test-key", privateKeyPkcs8Base64: await signingKey() },
+      extractPdf: async () => ({
+        metadata: {
+          status: "best_effort",
+          extractor: "fixture",
+          extractor_version: "1",
+          page_count: 1,
+        },
+        pages: [{ page: 1, text: "Verified visible text" }],
+        safetyCoverage: "complete",
+      }),
+    });
+
+    const form = fetch.mock.calls[0]?.[1]?.body as FormData;
+    expect(await (form.get("derived_text") as File).text()).toBe("Verified visible text");
+    expect(JSON.parse(String(form.get("pdf_provenance")))).toMatchObject({
+      key_id: "test-key",
+      renderer_id: "artifact-share-qualified-pdf",
+    });
+  });
+
+  it("refuses controlled provenance when visible-content verification is unavailable", async () => {
     const root = await workspace();
     const path = join(root, "encrypted-report.pdf");
     const bytes = new TextEncoder().encode("%PDF-exact-encrypted-source");
     await writeFile(path, bytes);
+    const canonicalPath = join(root, "encrypted-report.md");
+    await writeFile(canonicalPath, "Visible text");
     const fetch = vi.fn<typeof globalThis.fetch>();
     const journalPath = join(root, "private-state.json");
 
-    await expect(publishArtifact({ path, expiresInSeconds: 1800 }, {
+    await expect(publishArtifact({ path, canonicalSourcePath: canonicalPath, expiresInSeconds: 1800 }, {
       baseUrl: new URL("https://artifacts.example.test"),
       fetch,
       token: agentToken,
       workspaceRoots: [root],
       journal: new FilePublicationJournal(journalPath),
+      pdfProvenance: { keyId: "test-key", privateKeyPkcs8Base64: "not-used" },
       extractPdf: async () => {
         throw new Error("encrypted PDF");
       },
-    })).rejects.toThrow(/safety scan/iu);
-
-    expect(fetch).not.toHaveBeenCalled();
-    await expect(readFile(journalPath, "utf8")).rejects.toThrow();
-  });
-
-  it("refuses a PDF whose rendered graphics are not covered by the safety scan", async () => {
-    const root = await workspace();
-    const path = join(root, "illustrated-report.pdf");
-    await writeFile(path, "%PDF-text-plus-unscanned-image");
-    const journalPath = join(root, "private-state.json");
-    const fetch = vi.fn<typeof globalThis.fetch>();
-
-    await expect(publishArtifact({ path, expiresInSeconds: 1800 }, {
-      baseUrl: new URL("https://artifacts.example.test"),
-      fetch,
-      token: agentToken,
-      workspaceRoots: [root],
-      journal: new FilePublicationJournal(journalPath),
-      extractPdf: async () => ({
-        metadata: {
-          status: "best_effort",
-          extractor: "fixture",
-          extractor_version: "1",
-          page_count: 1,
-        },
-        pages: [{ page: 1, text: "Visible text" }],
-        safetyCoverage: "incomplete",
-      }),
-    })).rejects.toThrow(/rendered-content coverage/iu);
-
-    expect(fetch).not.toHaveBeenCalled();
-    await expect(readFile(journalPath, "utf8")).rejects.toThrow();
-  });
-
-  it("refuses sensitive extracted PDF text before journal or network access", async () => {
-    const root = await workspace();
-    const path = join(root, "sensitive-report.pdf");
-    await writeFile(path, "%PDF-safe-binary-wrapper");
-    const journalPath = join(root, "private-state.json");
-    const fetch = vi.fn<typeof globalThis.fetch>();
-
-    await expect(publishArtifact({ path, expiresInSeconds: 3600 }, {
-      baseUrl: new URL("https://artifacts.example.test"),
-      fetch,
-      token: agentToken,
-      workspaceRoots: [root],
-      journal: new FilePublicationJournal(journalPath),
-      extractPdf: async () => ({
-        metadata: {
-          status: "best_effort",
-          extractor: "fixture",
-          extractor_version: "1",
-          page_count: 1,
-        },
-        pages: [{ page: 1, text: `as_${"x".repeat(43)}` }],
-        safetyCoverage: "complete",
-      }),
-    })).rejects.toThrow(/Derived PDF text.*sensitive/iu);
+    })).rejects.toThrow(/could not read/iu);
 
     expect(fetch).not.toHaveBeenCalled();
     await expect(readFile(journalPath, "utf8")).rejects.toThrow();

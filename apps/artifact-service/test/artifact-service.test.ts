@@ -121,7 +121,7 @@ describe("staged artifact writes", () => {
     expect(objects.put).not.toHaveBeenCalled();
   });
 
-  it("removes source, derived bytes, and staging metadata when activation fails", async () => {
+  it("removes source bytes and staging metadata when activation fails", async () => {
     let staged: StagedArtifact | undefined;
     const metadata = repository({
       insertStaging: vi.fn(async (artifact) => {
@@ -147,22 +147,13 @@ describe("staged artifact writes", () => {
         mimeType: "application/pdf",
         bytes: new TextEncoder().encode("%PDF-1.7\nfixture"),
         expiresInSeconds: 900,
-        extraction: {
-          status: "best_effort",
-          extractor: "fixture",
-          extractor_version: "1",
-          page_count: 1,
-        },
-        derivedText: new TextEncoder().encode("Page 1"),
+        extraction: { status: "unavailable", reason: "Human-only fixture" },
       }),
     ).rejects.toThrow("D1 activation unavailable");
 
     expect(staged?.status).toBe("staging");
     expect(objects.delete).toHaveBeenCalledWith(
       "artifacts/11111111-1111-4111-8111-111111111111/source",
-    );
-    expect(objects.delete).toHaveBeenCalledWith(
-      "artifacts/11111111-1111-4111-8111-111111111111/derived-text",
     );
     expect(metadata.delete).toHaveBeenCalledWith("11111111-1111-4111-8111-111111111111");
   });

@@ -5,10 +5,12 @@ import {
   PROTOCOL_MAX_ARTIFACT_BYTES,
   uploadResponseSchemaForOrigin,
   type ExtractionMetadata,
+  type PdfTrust,
   type SupportedMimeType,
   type UploadResponse,
 } from "artifact-protocol";
-import { extractPdfInNode, pdfPagesToText, type PdfExtractionResult } from "representation-pipeline";
+import { extractPdfInNode, type PdfExtractionResult } from "representation-pipeline";
+import { qualifyAndSignPdfProvenance } from "representation-pipeline/node-provenance";
 import { createPayloadCommitment } from "../../../../scripts/publication-commitment.mjs";
 import {
   findFirstSensitiveContent,
@@ -46,6 +48,7 @@ export interface FileOperations {
 export interface PublishArtifactInput {
   readonly path: string;
   readonly expiresInSeconds: number;
+  readonly canonicalSourcePath?: string;
 }
 
 export interface PublishArtifactDependencies {
@@ -57,6 +60,10 @@ export interface PublishArtifactDependencies {
   readonly fileOperations?: FileOperations;
   readonly extractPdf?: (bytes: Uint8Array) => Promise<PdfExtractionResult>;
   readonly journal?: PublicationJournal;
+  readonly pdfProvenance?: {
+    readonly keyId: string;
+    readonly privateKeyPkcs8Base64: string;
+  };
 }
 
 type AuthorizedPublishArtifactDependencies =
@@ -151,6 +158,7 @@ const assertSafeContent = (content: string | Uint8Array, label = "Artifact conte
 
 interface PreparedExtraction {
   readonly metadata: ExtractionMetadata;
+  readonly pdfTrust: PdfTrust;
   readonly derivedBytes?: Uint8Array;
   readonly derivedText?: string;
   readonly safetyCoverage?: PdfExtractionResult["safetyCoverage"];
@@ -161,15 +169,38 @@ const addExtraction = async (
   mimeType: SupportedMimeType,
   bytes: Uint8Array,
   extractPdf: (bytes: Uint8Array) => Promise<PdfExtractionResult>,
+  controlled?: {
+    readonly canonicalSource: Uint8Array;
+    readonly keyId: string;
+    readonly privateKeyPkcs8Base64: string;
+  },
 ): Promise<PreparedExtraction> => {
   if (mimeType !== "application/pdf") {
     form.set("extraction_status", "not_applicable");
-    return { metadata: { status: "not_applicable" } };
+    return {
+      metadata: { status: "not_applicable" },
+      pdfTrust: { status: "not_applicable" },
+    };
+  }
+  if (controlled === undefined) {
+    const metadata = {
+      status: "unavailable" as const,
+      reason: "No authenticated canonical PDF source was supplied.",
+    };
+    form.set("extraction_status", metadata.status);
+    form.set("extraction_reason", metadata.reason);
+    return {
+      metadata,
+      pdfTrust: { status: "human_only", reason: "provenance_missing" },
+    };
   }
   let result: PdfExtractionResult;
   try {
     result = await extractPdf(bytes);
   } catch {
+    if (controlled !== undefined) {
+      throw new Error("Controlled PDF verification could not read the rendered document");
+    }
     form.set("extraction_status", "unavailable");
     form.set("extraction_reason", "Embedded PDF text extraction was unavailable.");
     return {
@@ -177,6 +208,7 @@ const addExtraction = async (
         status: "unavailable",
         reason: "Embedded PDF text extraction was unavailable.",
       },
+      pdfTrust: { status: "human_only", reason: "provenance_invalid" },
     };
   }
   form.set("extraction_status", result.metadata.status);
@@ -186,16 +218,22 @@ const addExtraction = async (
   }
   if (result.metadata.status === "best_effort") {
     form.set("page_count", String(result.metadata.page_count));
-    const warning = result.qualityWarnings?.includes("layout_may_be_degraded") === true
-      ? "[Extraction quality note: column or table layout may be degraded.]\n\n"
-      : "";
-    const derivedText = `${warning}${pdfPagesToText(result.pages)}`;
-    const derivedBytes = new TextEncoder().encode(derivedText);
+    const qualified = await qualifyAndSignPdfProvenance({
+      canonicalSource: controlled.canonicalSource,
+      pdfBytes: bytes,
+      extraction: result,
+      keyId: controlled.keyId,
+      privateKeyPkcs8Base64: controlled.privateKeyPkcs8Base64,
+    });
+    const derivedBytes = qualified.canonicalSource;
+    const derivedText = new TextDecoder("utf-8", { fatal: true }).decode(derivedBytes);
     form.set("derived_text", new File([derivedBytes], `${basename("artifact.pdf")}.txt`, {
       type: "text/plain;charset=utf-8",
     }));
+    form.set("pdf_provenance", JSON.stringify(qualified.receipt));
     return {
       metadata: result.metadata,
+      pdfTrust: { status: "controlled", receipt: qualified.receipt },
       derivedBytes,
       derivedText,
       safetyCoverage: result.safetyCoverage,
@@ -203,7 +241,14 @@ const addExtraction = async (
   } else if (result.metadata.reason !== undefined) {
     form.set("extraction_reason", result.metadata.reason);
   }
-  return { metadata: result.metadata, safetyCoverage: result.safetyCoverage };
+  if (controlled !== undefined) {
+    throw new Error("Controlled PDF verification could not prove visible-content coverage");
+  }
+  return {
+    metadata: result.metadata,
+    pdfTrust: { status: "human_only", reason: "provenance_invalid" },
+    safetyCoverage: result.safetyCoverage,
+  };
 };
 
 export const publishArtifact = async (
@@ -231,6 +276,40 @@ export const publishArtifact = async (
     const sourceText = validateBytes(bytes, mimeType);
     assertSafeContent(sourceText ?? bytes);
 
+    let controlledPdf: {
+      readonly canonicalSource: Uint8Array;
+      readonly keyId: string;
+      readonly privateKeyPkcs8Base64: string;
+    } | undefined;
+    if (input.canonicalSourcePath !== undefined) {
+      if (mimeType !== "application/pdf") {
+        throw new Error("Canonical PDF source can only accompany a PDF artifact");
+      }
+      if (authorizedDependencies.pdfProvenance === undefined) {
+        throw new Error("Controlled PDF signing is not configured");
+      }
+      const canonicalPath = await resolveApprovedPath(
+        input.canonicalSourcePath,
+        authorizedDependencies.workspaceRoots,
+        operations,
+      );
+      if (findSensitivePath(canonicalPath) !== null) {
+        throw new Error("Canonical PDF source path contains a sensitive segment");
+      }
+      const canonicalFile = await operations.open(canonicalPath);
+      try {
+        const canonicalBefore = await canonicalFile.stat();
+        if (!canonicalBefore.isFile()) throw new Error("Canonical PDF source must be a regular file");
+        const canonicalSource = new Uint8Array(await canonicalFile.readFile());
+        assertUnchanged(canonicalBefore, await canonicalFile.stat());
+        const canonicalText = new TextDecoder("utf-8", { fatal: true }).decode(canonicalSource);
+        assertSafeContent(canonicalText, "Canonical PDF source");
+        controlledPdf = { canonicalSource, ...authorizedDependencies.pdfProvenance };
+      } finally {
+        await canonicalFile.close();
+      }
+    }
+
     const form = new FormData();
     form.set("file", new File([bytes], filename, { type: mimeType }));
     form.set("expires_in_seconds", String(input.expiresInSeconds));
@@ -239,15 +318,8 @@ export const publishArtifact = async (
       mimeType,
       bytes,
       authorizedDependencies.extractPdf ?? (async (pdfBytes) => extractPdfInNode({ bytes: pdfBytes })),
+      controlledPdf,
     );
-    if (
-      mimeType === "application/pdf" &&
-      (extraction.metadata.status !== "best_effort" || extraction.safetyCoverage !== "complete")
-    ) {
-      throw new Error(
-        "PDF publishing requires complete text and rendered-content coverage so its safety scan can complete",
-      );
-    }
     if (extraction.derivedBytes !== undefined) {
       assertSafeContent(extraction.derivedText ?? extraction.derivedBytes, "Derived PDF text");
     }
@@ -258,6 +330,7 @@ export const publishArtifact = async (
       ...(extraction.derivedBytes === undefined ? {} : { derivedBytes: extraction.derivedBytes }),
       expiresInSeconds: input.expiresInSeconds,
       extraction: extraction.metadata,
+      pdfTrust: extraction.pdfTrust,
       filename,
       mimeType,
     });

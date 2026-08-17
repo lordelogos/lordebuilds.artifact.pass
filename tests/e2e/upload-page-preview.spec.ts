@@ -19,19 +19,10 @@ const mockUploadService = async (page: Page, onUpload?: (body: string) => void) 
   await page.route("**/upload/artifacts", async (route) => {
     const requestBody = route.request().postData() ?? "";
     onUpload?.(requestBody);
-    const extraction = requestBody.includes("unavailable")
-      ? {
-          status: "unavailable",
-          extractor: "pdfjs-dist",
-          extractor_version: "6.2.108",
-          reason: "No useful embedded text was found; OCR is not included.",
-        }
-      : {
-          status: "best_effort",
-          extractor: "pdfjs-dist",
-          extractor_version: "6.2.108",
-          page_count: 1,
-        };
+    const extraction = {
+      status: "unavailable",
+      reason: "No agent-readable PDF source was supplied.",
+    };
     await route.fulfill({
       status: 201,
       contentType: "application/json",
@@ -48,6 +39,7 @@ const mockUploadService = async (page: Page, onUpload?: (body: string) => void) 
           created_at: "2026-08-16T12:00:00.000Z",
           expires_at: "2026-08-16T12:30:00.000Z",
           extraction,
+          pdf_trust: { status: "human_only", reason: "provenance_missing" },
         },
       }),
     });
@@ -88,7 +80,7 @@ test.describe("local upload page preview", () => {
     await page.screenshot({ path: "test-results/u4-upload-mobile.png", fullPage: true });
   });
 
-  test("runs born-digital PDF extraction in the browser worker before upload", async ({ page }) => {
+  test("uploads a born-digital browser PDF without exposing extracted agent text", async ({ page }) => {
     let multipartBody = "";
     await mockUploadService(page, (body) => {
       multipartBody = body;
@@ -101,11 +93,13 @@ test.describe("local upload page preview", () => {
     });
     await page.getByRole("button", { name: "Create temporary link" }).click();
     await expect(page.getByRole("heading", { name: "The link is live." })).toBeVisible({ timeout: 20_000 });
-    expect(multipartBody).toContain("best_effort");
     expect(multipartBody).toContain("Born digital report");
+    expect(multipartBody).not.toContain('name="derived_text"');
+    expect(multipartBody).not.toContain('name="pdf_provenance"');
+    expect(multipartBody).not.toContain('name="extraction_status"');
   });
 
-  test("labels a PDF without an embedded text layer unavailable", async ({ page }) => {
+  test("uploads an image-only browser PDF through the same human-only path", async ({ page }) => {
     let multipartBody = "";
     await mockUploadService(page, (body) => {
       multipartBody = body;
@@ -118,8 +112,8 @@ test.describe("local upload page preview", () => {
     });
     await page.getByRole("button", { name: "Create temporary link" }).click();
     await expect(page.getByRole("heading", { name: "The link is live." })).toBeVisible({ timeout: 20_000 });
-    expect(multipartBody).toContain("unavailable");
-    expect(multipartBody).toContain("No useful embedded text was found; OCR is not included.");
     expect(multipartBody).not.toContain('name="derived_text"');
+    expect(multipartBody).not.toContain('name="pdf_provenance"');
+    expect(multipartBody).not.toContain('name="extraction_status"');
   });
 });

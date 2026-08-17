@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 import { reset } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPayloadCommitment } from "../../../scripts/publication-commitment.mjs";
+import { qualifyAndSignPdfProvenance } from "representation-pipeline/node-provenance";
 
 import { createArtifactApplication } from "../src/server/index";
 import { ARTIFACT_SCHEMA_SQL } from "../src/server/db/schema";
@@ -87,6 +88,12 @@ const digest = async (value: string): Promise<string> =>
     (byte) => byte.toString(16).padStart(2, "0"),
   ).join("");
 
+const base64 = (value: ArrayBuffer): string => {
+  let binary = "";
+  for (const byte of new Uint8Array(value)) binary += String.fromCharCode(byte);
+  return btoa(binary);
+};
+
 const idempotentUpload = async (
   source: string,
   attempt: string,
@@ -159,39 +166,92 @@ describe("private artifact routes", () => {
     expect(row?.share_token_hash).toBe(await digest(token));
   });
 
-  it("stores and labels best-effort PDF text separately from exact source", async () => {
+  it("keeps an ordinary uploaded PDF human-only with no agent-readable text", async () => {
     const source = "%PDF-1.7\nexact-source\n%%EOF";
     const created = await expectUpload({
       filename: "report.pdf",
       mimeType: "application/pdf",
       bytes: source,
-      extractionStatus: "best_effort",
-      derivedText: "--- Page 1 ---\nBest effort text",
+      extractionStatus: "unavailable",
     });
 
     const manifest = await requestShare(created.share_url, "/manifest");
     await expect(manifest.json()).resolves.toMatchObject({
       mime_type: "application/pdf",
-      extraction: {
-        status: "best_effort",
-        extractor: "fixture-extractor",
-        extractor_version: "1.0.0",
-        page_count: 1,
-      },
+      extraction: { status: "unavailable" },
+      pdf_trust: { status: "human_only", reason: "provenance_missing" },
     });
     const derived = await requestShare(created.share_url, "/derived");
-    await expect(derived.text()).resolves.toBe("--- Page 1 ---\nBest effort text");
-    const derivedRange = await requestShare(created.share_url, "/derived", {
-      headers: { range: "bytes=4-9" },
-    });
-    expect(derivedRange.status).toBe(206);
-    expect(derivedRange.headers.get("content-range")).toBe("bytes 4-9/31");
-    expect(derivedRange.headers.get("x-artifact-sha256")).toBe(
-      await digest("--- Page 1 ---\nBest effort text"),
-    );
-    await expect(derivedRange.text()).resolves.toBe("Page 1");
+    expect(derived.status).toBe(404);
     const raw = await requestShare(created.share_url, "/raw");
     expect(new TextDecoder().decode(await raw.arrayBuffer())).toBe(source);
+  });
+
+  it("accepts a hash-bound signed PDF source and rejects a forged receipt", async () => {
+    await authorizeStorageTestAgent();
+    const keyPair = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]);
+    const { privateKey, publicKey } = keyPair as unknown as {
+      privateKey: Parameters<typeof crypto.subtle.exportKey>[1];
+      publicKey: Parameters<typeof crypto.subtle.exportKey>[1];
+    };
+    const privateKeyPkcs8Base64 = base64(await crypto.subtle.exportKey("pkcs8", privateKey));
+    const publicKeyBase64 = base64(await crypto.subtle.exportKey("raw", publicKey));
+    const canonicalSource = new TextEncoder().encode("Verified visible text");
+    const pdfBytes = new TextEncoder().encode("%PDF-1.7\nverified-fixture\n%%EOF");
+    const qualified = await qualifyAndSignPdfProvenance({
+      canonicalSource,
+      pdfBytes,
+      extraction: {
+        metadata: {
+          status: "best_effort",
+          extractor: "fixture",
+          extractor_version: "1",
+          page_count: 1,
+        },
+        pages: [{ page: 1, text: "Verified visible text" }],
+        safetyCoverage: "complete",
+      },
+      keyId: "test-key",
+      privateKeyPkcs8Base64,
+      generatedAt: "2026-08-16T12:00:00.000Z",
+    });
+    const bindings = testBindings({
+      PDF_PROVENANCE_PUBLIC_KEYS: JSON.stringify({ "test-key": publicKeyBase64 }),
+      PDF_PROVENANCE_RENDERERS: "artifact-share-qualified-pdf@1",
+    });
+    const send = (receipt: unknown) => {
+      const form = new FormData();
+      form.set("file", new File([pdfBytes], "verified.pdf", { type: "application/pdf" }));
+      form.set("expires_in_seconds", "900");
+      form.set("extraction_status", "best_effort");
+      form.set("extractor", "fixture");
+      form.set("extractor_version", "1");
+      form.set("page_count", "1");
+      form.set("derived_text", new File([canonicalSource], "verified.pdf.txt", { type: "text/plain" }));
+      form.set("pdf_provenance", JSON.stringify(receipt));
+      return createArtifactApplication().fetch(new Request("https://artifacts.example/api/artifacts", {
+        method: "POST",
+        headers: { authorization: `Bearer ${storageTestAgentToken}` },
+        body: form,
+      }), bindings);
+    };
+
+    const created = await send(qualified.receipt);
+    expect(created.status).toBe(201);
+    const result = await created.json<{ share_url: string; manifest: { pdf_trust: { status: string } } }>();
+    expect(result.manifest.pdf_trust.status).toBe("controlled");
+    const derived = await createArtifactApplication().fetch(
+      new Request(`${result.share_url}/derived`, { headers: { range: "bytes=0-20" } }),
+      bindings,
+    );
+    expect(derived.status).toBe(206);
+    await expect(derived.text()).resolves.toBe("Verified visible text");
+
+    const forged = { ...qualified.receipt, pdf_sha256: "0".repeat(64) };
+    const rejected = await send(forged);
+    expect(rejected.status).toBe(400);
+    expect(await env.ARTIFACT_DB.prepare("SELECT COUNT(*) AS count FROM artifacts").first("count"))
+      .toBe(1);
   });
 
   it("serves deterministic bounded chunks that reconstruct a large exact source", async () => {

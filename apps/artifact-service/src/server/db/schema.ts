@@ -8,6 +8,7 @@ export const artifacts = sqliteTable(
     status: text("status", { enum: ["staging", "active", "cleanup_pending"] }).notNull(),
     objectKey: text("object_key").notNull(),
     derivedObjectKey: text("derived_object_key"),
+    legacyDerivedObjectKey: text("legacy_derived_object_key"),
     filename: text("filename").notNull(),
     mimeType: text("mime_type").notNull(),
     byteSize: integer("byte_size").notNull(),
@@ -23,6 +24,9 @@ export const artifacts = sqliteTable(
     extractorVersion: text("extractor_version"),
     pageCount: integer("page_count"),
     extractionReason: text("extraction_reason"),
+    pdfTrustStatus: text("pdf_trust_status", { enum: ["not_applicable", "human_only", "controlled"] }).notNull().default("not_applicable"),
+    pdfTrustReason: text("pdf_trust_reason"),
+    pdfProvenanceReceipt: text("pdf_provenance_receipt"),
     cleanupAttempts: integer("cleanup_attempts").notNull().default(0),
     lastCleanupError: text("last_cleanup_error"),
   },
@@ -88,7 +92,7 @@ export const requestRateLimits = sqliteTable("request_rate_limits", {
 });
 
 export const ARTIFACT_SCHEMA_SQL = [
-  "CREATE TABLE IF NOT EXISTS artifacts (id TEXT PRIMARY KEY NOT NULL, status TEXT NOT NULL CHECK (status IN ('staging', 'active', 'cleanup_pending')), object_key TEXT NOT NULL UNIQUE, derived_object_key TEXT, filename TEXT NOT NULL, mime_type TEXT NOT NULL, byte_size INTEGER NOT NULL CHECK (byte_size >= 0), sha256 TEXT NOT NULL, share_token_hash TEXT NOT NULL UNIQUE, publisher_id TEXT, publication_attempt TEXT, payload_commitment TEXT, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, extraction_status TEXT NOT NULL, extractor TEXT, extractor_version TEXT, page_count INTEGER, extraction_reason TEXT, cleanup_attempts INTEGER NOT NULL DEFAULT 0, last_cleanup_error TEXT);",
+  "CREATE TABLE IF NOT EXISTS artifacts (id TEXT PRIMARY KEY NOT NULL, status TEXT NOT NULL CHECK (status IN ('staging', 'active', 'cleanup_pending')), object_key TEXT NOT NULL UNIQUE, derived_object_key TEXT, legacy_derived_object_key TEXT, filename TEXT NOT NULL, mime_type TEXT NOT NULL, byte_size INTEGER NOT NULL CHECK (byte_size >= 0), sha256 TEXT NOT NULL, share_token_hash TEXT NOT NULL UNIQUE, publisher_id TEXT, publication_attempt TEXT, payload_commitment TEXT, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, extraction_status TEXT NOT NULL, extractor TEXT, extractor_version TEXT, page_count INTEGER, extraction_reason TEXT, pdf_trust_status TEXT NOT NULL DEFAULT 'not_applicable', pdf_trust_reason TEXT, pdf_provenance_receipt TEXT, cleanup_attempts INTEGER NOT NULL DEFAULT 0, last_cleanup_error TEXT);",
   "CREATE INDEX IF NOT EXISTS artifacts_status_expires_at_idx ON artifacts (status, expires_at);",
   "CREATE UNIQUE INDEX IF NOT EXISTS artifacts_publisher_attempt_unique ON artifacts (publisher_id, publication_attempt) WHERE publisher_id IS NOT NULL AND publication_attempt IS NOT NULL;",
   "CREATE TABLE IF NOT EXISTS device_authorizations (id TEXT PRIMARY KEY NOT NULL, device_code_hash TEXT NOT NULL UNIQUE, user_code_hash TEXT NOT NULL UNIQUE, code_challenge TEXT NOT NULL, status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'consumed')), created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, next_poll_at INTEGER NOT NULL, poll_attempts INTEGER NOT NULL DEFAULT 0 CHECK (poll_attempts >= 0), identity_subject TEXT, identity_email TEXT, approved_at INTEGER, consumed_at INTEGER, agent_token_id TEXT);",

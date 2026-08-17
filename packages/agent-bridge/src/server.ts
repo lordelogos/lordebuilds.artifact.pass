@@ -40,6 +40,10 @@ export interface BridgeConfiguration {
   readonly logger?: RedactingLogger;
   readonly publicationJournal?: PublicationJournal;
   readonly publicationStatePath?: string;
+  readonly pdfProvenance?: {
+    readonly keyId: string;
+    readonly privateKeyPkcs8Base64: string;
+  };
 }
 
 const errorResult = (error: unknown) => ({
@@ -74,7 +78,7 @@ export const createBridgeServer = (configuration: BridgeConfiguration): McpServe
       destructiveHint: false,
       openWorldHint: true,
     },
-  }, async ({ path, expires_in_seconds: expiresInSeconds }) => {
+  }, async ({ path, canonical_source_path: canonicalSourcePath, expires_in_seconds: expiresInSeconds }) => {
     try {
       const token = configuration.openDevelopment === true
         ? undefined
@@ -83,12 +87,19 @@ export const createBridgeServer = (configuration: BridgeConfiguration): McpServe
           environmentStore: configuration.environmentStore,
           ...(configuration.osStore === undefined ? {} : { osStore: configuration.osStore }),
         });
-      const result = await publishArtifact({ path, expiresInSeconds }, {
+      const result = await publishArtifact({
+        path,
+        expiresInSeconds,
+        ...(canonicalSourcePath === undefined ? {} : { canonicalSourcePath }),
+      }, {
         baseUrl: configuration.baseUrl,
         workspaceRoots: configuration.workspaceRoots,
         ...(token === undefined ? {} : { token }),
         openDevelopment: configuration.openDevelopment === true,
         journal: publicationJournal,
+        ...(configuration.pdfProvenance === undefined
+          ? {}
+          : { pdfProvenance: configuration.pdfProvenance }),
         ...(configuration.fetch === undefined ? {} : { fetch: configuration.fetch }),
       });
       return {
@@ -167,6 +178,11 @@ export const configurationFromEnvironment = (
   const publicationStatePath = publicationStatePathValue === undefined
     ? `${localConfigPath}.publication-state`
     : resolve(publicationStatePathValue);
+  const pdfProvenanceKeyId = environment.ARTIFACT_SHARE_PDF_KEY_ID;
+  const pdfProvenancePrivateKey = environment.ARTIFACT_SHARE_PDF_PRIVATE_KEY;
+  if ((pdfProvenanceKeyId === undefined) !== (pdfProvenancePrivateKey === undefined)) {
+    throw new Error("ARTIFACT_SHARE_PDF_KEY_ID and ARTIFACT_SHARE_PDF_PRIVATE_KEY must be configured together");
+  }
   return {
     baseUrl: assertDeploymentOrigin(new URL(baseUrlValue), { openDevelopment }),
     workspaceRoots,
@@ -174,6 +190,14 @@ export const configurationFromEnvironment = (
     headless,
     environmentStore,
     publicationStatePath,
+    ...(pdfProvenanceKeyId === undefined || pdfProvenancePrivateKey === undefined
+      ? {}
+      : {
+          pdfProvenance: {
+            keyId: pdfProvenanceKeyId,
+            privateKeyPkcs8Base64: pdfProvenancePrivateKey,
+          },
+        }),
     ...(headless ? {} : { osStore: new OsCredentialStore() }),
   };
 };

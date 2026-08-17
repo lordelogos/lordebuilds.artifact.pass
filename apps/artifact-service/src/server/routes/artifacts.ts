@@ -1,4 +1,9 @@
-import { PROTOCOL_VERSION, type ExtractionMetadata } from "artifact-protocol";
+import {
+  PROTOCOL_VERSION,
+  pdfProvenanceReceiptSchema,
+  type ExtractionMetadata,
+  type PdfTrust,
+} from "artifact-protocol";
 import { Hono, type Context } from "hono";
 
 import type { ArtifactServiceBindings } from "../adapters/cloudflare-bindings";
@@ -63,7 +68,24 @@ const parseExtraction = (form: FormData, isPdf: boolean): ExtractionMetadata => 
         : { reason: optionalString(form.get("extraction_reason")) }),
     };
   }
+  if (status === null) {
+    return {
+      status: "unavailable",
+      reason: "No agent-readable PDF source was supplied.",
+    };
+  }
   throw new ArtifactError("malformed_upload", "PDF extraction status is required", 400);
+};
+
+const parsePdfTrust = (form: FormData, isPdf: boolean): PdfTrust => {
+  if (!isPdf) return { status: "not_applicable" };
+  const receiptValue = optionalString(form.get("pdf_provenance"));
+  if (receiptValue === undefined) return { status: "human_only", reason: "provenance_missing" };
+  try {
+    return { status: "controlled", receipt: pdfProvenanceReceiptSchema.parse(JSON.parse(receiptValue)) };
+  } catch {
+    throw new ArtifactError("malformed_upload", "PDF provenance receipt is malformed", 400);
+  }
 };
 
 export const createArtifactsRouter = (
@@ -106,6 +128,7 @@ export const createArtifactsRouter = (
       bytes: new Uint8Array(await file.arrayBuffer()),
       expiresInSeconds: parseInteger(form.get("expires_in_seconds"), "expires_in_seconds"),
       extraction: parseExtraction(form, file.type.toLowerCase() === "application/pdf"),
+      pdfTrust: parsePdfTrust(form, file.type.toLowerCase() === "application/pdf"),
       ...(derivedText === undefined ? {} : { derivedText }),
       ...(publisherId === undefined ? {} : { publisherId }),
       ...(publicationAttempt === undefined ? {} : { publicationAttempt }),

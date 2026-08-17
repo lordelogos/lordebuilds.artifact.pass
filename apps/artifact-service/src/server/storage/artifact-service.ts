@@ -17,6 +17,8 @@ import type {
 import { createShareToken, hashShareToken, sha256 } from "./crypto";
 import type { ArtifactObjectStore, StoredObject } from "./r2-object-store";
 import { validateArtifactUpload } from "./validation";
+import { verifyPdfProvenance } from "./pdf-provenance";
+import type { ArtifactServiceBindings } from "../adapters/cloudflare-bindings";
 
 export interface ArtifactServiceOptions {
   readonly repository: ArtifactRepository;
@@ -27,6 +29,7 @@ export interface ArtifactServiceOptions {
   readonly createToken?: () => string;
   readonly publicationRecoveryAttempts?: number;
   readonly waitForPublication?: () => Promise<void>;
+  readonly provenanceBindings?: Pick<ArtifactServiceBindings, "PDF_PROVENANCE_PUBLIC_KEYS" | "PDF_PROVENANCE_RENDERERS">;
 }
 
 export const artifactRecordToManifest = (artifact: ArtifactRecord): ArtifactManifest =>
@@ -40,6 +43,7 @@ export const artifactRecordToManifest = (artifact: ArtifactRecord): ArtifactMani
     created_at: new Date(artifact.createdAt).toISOString(),
     expires_at: new Date(artifact.expiresAt).toISOString(),
     extraction: artifact.extraction,
+    pdf_trust: artifact.pdfTrust,
   });
 
 const notFound = (): ArtifactError =>
@@ -95,12 +99,34 @@ export class ArtifactApplicationService {
   }
 
   public async create(input: ArtifactUploadInput): Promise<CreatedArtifact> {
-    const mimeType = validateArtifactUpload(input, this.options.policy);
+    const declaredPdfTrust = input.pdfTrust ?? (
+      input.mimeType.toLowerCase() === "application/pdf"
+        ? { status: "human_only" as const, reason: "provenance_missing" as const }
+        : { status: "not_applicable" as const }
+    );
+    const normalizedInput = { ...input, pdfTrust: declaredPdfTrust };
+    const mimeType = validateArtifactUpload(normalizedInput, this.options.policy);
     const publication = publicationRetryFromInput(input);
     const [checksum, derivedSha256] = await Promise.all([
       sha256(input.bytes),
       input.derivedText === undefined ? Promise.resolve(null) : sha256(input.derivedText),
     ]);
+    let pdfTrust = declaredPdfTrust;
+    if (pdfTrust.status === "controlled") {
+      if (derivedSha256 === null) {
+        throw new ArtifactError("malformed_upload", "Controlled PDF source is required", 400);
+      }
+      const verified = await verifyPdfProvenance(
+        pdfTrust.receipt,
+        derivedSha256,
+        checksum,
+        this.options.provenanceBindings ?? {},
+      );
+      if (verified === null) {
+        throw new ArtifactError("malformed_upload", "PDF provenance could not be verified", 400);
+      }
+      pdfTrust = { status: "controlled", receipt: verified };
+    }
     if (publication !== undefined) {
       if (
         !/^[A-Za-z0-9:_-]{8,255}$/u.test(publication.publisherId) ||
@@ -116,6 +142,7 @@ export class ArtifactApplicationService {
         extraction: input.extraction,
         filename: input.filename,
         mimeType,
+        pdfTrust,
         sourceHash: checksum,
       });
       if (expectedCommitment !== publication.payloadCommitment) {
@@ -139,6 +166,7 @@ export class ArtifactApplicationService {
       status: "staging",
       objectKey,
       derivedObjectKey,
+      legacyDerivedObjectKey: null,
       filename: input.filename,
       mimeType,
       byteSize: input.bytes.byteLength,
@@ -150,6 +178,7 @@ export class ArtifactApplicationService {
       createdAt,
       expiresAt: createdAt + input.expiresInSeconds * 1000,
       extraction: input.extraction,
+      pdfTrust,
       cleanupAttempts: 0,
       lastCleanupError: null,
     };
@@ -255,7 +284,7 @@ export class ArtifactApplicationService {
     artifact: ArtifactRecord,
     range?: { readonly offset: number; readonly length: number },
   ): Promise<StoredObject> {
-    if (artifact.derivedObjectKey === null) throw notFound();
+    if (artifact.pdfTrust.status !== "controlled" || artifact.derivedObjectKey === null) throw notFound();
     const object = await this.options.objectStore.get(artifact.derivedObjectKey, range);
     if (object !== null) return object;
     await this.options.repository.markCleanupPending(artifact.id).catch(() => undefined);

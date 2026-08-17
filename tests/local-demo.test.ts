@@ -47,6 +47,10 @@ let demoProcess: ChildProcess | undefined;
 let browser: Browser | undefined;
 let mobileContext: BrowserContext | undefined;
 let processLog = "";
+let pdfPrivateKey = "";
+let pdfPublicKey = "";
+
+const base64 = (value: ArrayBuffer): string => Buffer.from(value).toString("base64");
 
 const freePort = async (): Promise<number> => new Promise((resolvePort, reject) => {
   const server = createServer();
@@ -223,6 +227,13 @@ beforeAll(async () => {
   controlToken = randomBytes(32).toString("base64url");
   const port = await freePort();
   baseUrl = `http://127.0.0.1:${port}`;
+  const pdfKeyPair = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]);
+  const { privateKey, publicKey } = pdfKeyPair as unknown as {
+    privateKey: Parameters<typeof crypto.subtle.exportKey>[1];
+    publicKey: Parameters<typeof crypto.subtle.exportKey>[1];
+  };
+  pdfPrivateKey = base64(await crypto.subtle.exportKey("pkcs8", privateKey));
+  pdfPublicKey = base64(await crypto.subtle.exportKey("raw", publicKey));
   await writeFile(configPath, `${JSON.stringify({
     name: "lordebuilds-artifacts-share-local-test",
     main: workerEntry,
@@ -232,6 +243,8 @@ beforeAll(async () => {
       MAX_ARTIFACT_BYTES: "26214400",
       MAX_EXPIRY_SECONDS: "86400",
       LOCAL_TEST_CONTROL_TOKEN: controlToken,
+      PDF_PROVENANCE_PUBLIC_KEYS: JSON.stringify({ "local-test": pdfPublicKey }),
+      PDF_PROVENANCE_RENDERERS: "artifact-share-qualified-pdf@1",
     },
     d1_databases: [{
       binding: "ARTIFACT_DB",
@@ -329,21 +342,24 @@ describe("real persistent local Cloudflare lifecycle", () => {
     const pdfBytes = textPdf("Agent readable PDF lifecycle");
     const htmlPath = join(temporaryRoot, "local-lifecycle.html");
     const pdfPath = join(temporaryRoot, "local-lifecycle.pdf");
+    const pdfCanonicalPath = join(temporaryRoot, "local-lifecycle-pdf-source.md");
     await writeFile(htmlPath, htmlBytes);
     await writeFile(pdfPath, pdfBytes);
+    await writeFile(pdfCanonicalPath, "Agent readable PDF lifecycle");
     const journal = new FilePublicationJournal(join(temporaryRoot, "publication-state.json"));
     const publishDependencies = {
       baseUrl: new URL(baseUrl),
       workspaceRoots: [temporaryRoot],
       openDevelopment: true as const,
       journal,
+      pdfProvenance: { keyId: "local-test", privateKeyPkcs8Base64: pdfPrivateKey },
     };
     const htmlPublished = await publishArtifact(
       { path: htmlPath, expiresInSeconds: 900 },
       publishDependencies,
     );
     const pdfPublished = await publishArtifact(
-      { path: pdfPath, expiresInSeconds: 900 },
+      { path: pdfPath, canonicalSourcePath: pdfCanonicalPath, expiresInSeconds: 900 },
       publishDependencies,
     );
     const artifacts: readonly PublishedArtifact[] = [

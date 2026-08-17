@@ -12,12 +12,18 @@ export const createPayloadCommitmentFromSourceHash = async ({
   derivedHash = null,
   expiresInSeconds,
   extraction = { status: "not_applicable" },
+  pdfTrust,
   filename,
   mimeType,
   sourceHash,
 }) => {
+  const effectivePdfTrust = pdfTrust ?? (
+    mimeType === "application/pdf"
+      ? { status: "human_only", reason: "provenance_missing" }
+      : { status: "not_applicable" }
+  );
   return digest(new TextEncoder().encode(JSON.stringify([
-    "artifact-share-upload-v2",
+    "artifact-share-upload-v3",
     filename,
     mimeType,
     expiresInSeconds,
@@ -30,6 +36,7 @@ export const createPayloadCommitmentFromSourceHash = async ({
       extraction.reason ?? null,
     ],
     derivedHash,
+    effectivePdfTrust,
   ])));
 };
 

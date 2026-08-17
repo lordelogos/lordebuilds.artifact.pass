@@ -24,8 +24,13 @@ export const extractionStatusSchema = z.enum([
   "unavailable",
 ]);
 
+export const PDF_PROVENANCE_VERSION = 1 as const;
+export const PDF_QUALIFIER_ID = "artifact-share-qualified-pdf" as const;
+export const PDF_QUALIFIER_VERSION = "1" as const;
+
 const isoDateTimeSchema = z.iso.datetime({ offset: true });
 const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/u, "Expected a lowercase SHA-256 digest");
+const keyIdSchema = z.string().regex(/^[A-Za-z0-9._-]{1,64}$/u, "Expected a signing key ID");
 const artifactIdSchema = z.uuid();
 const filenameSchema = z
   .string()
@@ -57,7 +62,49 @@ const extractionMetadataSchema = z.discriminatedUnion("status", [
     .strict(),
 ]);
 
-export const artifactManifestSchema = z
+export const pdfProvenanceReceiptSchema = z
+  .object({
+    version: z.literal(PDF_PROVENANCE_VERSION),
+    key_id: keyIdSchema,
+    renderer_id: z.string().min(1).max(100),
+    renderer_version: z.string().min(1).max(50),
+    source_sha256: sha256Schema,
+    pdf_sha256: sha256Schema,
+    generated_at: isoDateTimeSchema,
+    signature: z.string().regex(/^[A-Za-z0-9_-]{86}$/u, "Expected an Ed25519 signature"),
+  })
+  .strict();
+
+export const pdfTrustSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("not_applicable") }).strict(),
+  z
+    .object({
+      status: z.literal("human_only"),
+      reason: z.enum(["provenance_missing", "provenance_invalid", "legacy"]),
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal("controlled"),
+      receipt: pdfProvenanceReceiptSchema,
+    })
+    .strict(),
+]);
+
+export const canonicalPdfProvenancePayload = (
+  receipt: Omit<z.infer<typeof pdfProvenanceReceiptSchema>, "signature">,
+): Uint8Array => new TextEncoder().encode(JSON.stringify([
+  "artifact-share-pdf-provenance-v1",
+  receipt.version,
+  receipt.key_id,
+  receipt.renderer_id,
+  receipt.renderer_version,
+  receipt.source_sha256,
+  receipt.pdf_sha256,
+  receipt.generated_at,
+]));
+
+const artifactManifestObjectSchema = z
   .object({
     protocol_version: protocolVersionSchema,
     artifact_id: artifactIdSchema,
@@ -68,6 +115,7 @@ export const artifactManifestSchema = z
     created_at: isoDateTimeSchema,
     expires_at: isoDateTimeSchema,
     extraction: extractionMetadataSchema,
+    pdf_trust: pdfTrustSchema,
   })
   .strict()
   .superRefine((manifest, context) => {
@@ -89,7 +137,38 @@ export const artifactManifestSchema = z
         path: ["extraction", "status"],
       });
     }
+    if (isPdf === (manifest.pdf_trust.status === "not_applicable")) {
+      context.addIssue({
+        code: "custom",
+        message: isPdf
+          ? "PDF artifacts must report a trust decision"
+          : "Only PDF artifacts can report PDF trust",
+        path: ["pdf_trust", "status"],
+      });
+    }
+    if (
+      manifest.pdf_trust.status === "controlled" &&
+      manifest.extraction.status !== "best_effort"
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Controlled PDFs must expose their signed canonical source",
+        path: ["extraction", "status"],
+      });
+    }
   });
+
+export const artifactManifestSchema = z.preprocess((value) => {
+  if (typeof value !== "object" || value === null || !("mime_type" in value)) return value;
+  const manifest = value as Record<string, unknown>;
+  if (manifest.pdf_trust !== undefined && manifest.pdf_trust !== null) return value;
+  return {
+    ...manifest,
+    pdf_trust: manifest.mime_type === "application/pdf"
+      ? { status: "human_only", reason: "legacy" }
+      : { status: "not_applicable" },
+  };
+}, artifactManifestObjectSchema);
 
 export const expiryPolicySchema = z
   .object({
@@ -240,6 +319,8 @@ export const artifactErrorSchema = z
 export type ArtifactManifest = z.infer<typeof artifactManifestSchema>;
 export type ExpiryPolicy = z.infer<typeof expiryPolicySchema>;
 export type ExtractionMetadata = z.infer<typeof extractionMetadataSchema>;
+export type PdfProvenanceReceipt = z.infer<typeof pdfProvenanceReceiptSchema>;
+export type PdfTrust = z.infer<typeof pdfTrustSchema>;
 export type ProtocolLimits = z.infer<typeof protocolLimitsSchema>;
 export type SourceChunk = z.infer<typeof sourceChunkSchema>;
 export type SupportedMimeType = z.infer<typeof supportedMimeTypeSchema>;

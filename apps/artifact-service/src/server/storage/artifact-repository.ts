@@ -1,4 +1,4 @@
-import type { ExtractionMetadata, SupportedMimeType } from "artifact-protocol";
+import type { ExtractionMetadata, PdfTrust, SupportedMimeType } from "artifact-protocol";
 
 import type { ArtifactRecord, StagedArtifact } from "./artifact-types";
 
@@ -7,6 +7,7 @@ interface ArtifactRow {
   status: "staging" | "active" | "cleanup_pending";
   object_key: string;
   derived_object_key: string | null;
+  legacy_derived_object_key: string | null;
   filename: string;
   mime_type: SupportedMimeType;
   byte_size: number;
@@ -22,6 +23,9 @@ interface ArtifactRow {
   extractor_version: string | null;
   page_count: number | null;
   extraction_reason: string | null;
+  pdf_trust_status: PdfTrust["status"] | null;
+  pdf_trust_reason: string | null;
+  pdf_provenance_receipt: string | null;
   cleanup_attempts: number;
   last_cleanup_error: string | null;
 }
@@ -49,6 +53,7 @@ const artifactFromRow = (row: ArtifactRow): ArtifactRecord => ({
   status: row.status,
   objectKey: row.object_key,
   derivedObjectKey: row.derived_object_key,
+  legacyDerivedObjectKey: row.legacy_derived_object_key,
   filename: row.filename,
   mimeType: row.mime_type,
   byteSize: row.byte_size,
@@ -60,6 +65,25 @@ const artifactFromRow = (row: ArtifactRow): ArtifactRecord => ({
   createdAt: row.created_at,
   expiresAt: row.expires_at,
   extraction: extractionFromRow(row),
+  pdfTrust: (() => {
+    if (row.mime_type !== "application/pdf") return { status: "not_applicable" };
+    if (row.pdf_trust_status === "controlled" && row.pdf_provenance_receipt !== null) {
+      try {
+        return {
+          status: "controlled",
+          receipt: JSON.parse(row.pdf_provenance_receipt),
+        } as const;
+      } catch {
+        return { status: "human_only", reason: "provenance_invalid" } as const;
+      }
+    }
+    return {
+      status: "human_only",
+      reason: row.pdf_trust_reason === "provenance_missing" || row.pdf_trust_reason === "provenance_invalid"
+        ? row.pdf_trust_reason
+        : "legacy",
+    } as const;
+  })(),
   cleanupAttempts: row.cleanup_attempts,
   lastCleanupError: row.last_cleanup_error,
 });
@@ -73,6 +97,8 @@ export interface ArtifactRepository {
   findCleanupCandidates(now: number, limit: number): Promise<readonly ArtifactRecord[]>;
   markCleanupPending(id: string): Promise<void>;
   recordCleanupFailure(id: string, message: string): Promise<void>;
+  findLegacyDerivedCandidates?(limit: number): Promise<readonly ArtifactRecord[]>;
+  clearLegacyDerivedObject?(id: string): Promise<void>;
 }
 
 export class D1ArtifactRepository implements ArtifactRepository {
@@ -83,17 +109,19 @@ export class D1ArtifactRepository implements ArtifactRepository {
     await this.database
       .prepare(
         `INSERT INTO artifacts (
-          id, status, object_key, derived_object_key, filename, mime_type, byte_size, sha256,
+          id, status, object_key, derived_object_key, legacy_derived_object_key, filename, mime_type, byte_size, sha256,
           share_token_hash, publisher_id, publication_attempt, payload_commitment,
           created_at, expires_at, extraction_status, extractor,
-          extractor_version, page_count, extraction_reason
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          extractor_version, page_count, extraction_reason, pdf_trust_status,
+          pdf_trust_reason, pdf_provenance_receipt
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .bind(
         artifact.id,
         artifact.status,
         artifact.objectKey,
         artifact.derivedObjectKey,
+        artifact.legacyDerivedObjectKey,
         artifact.filename,
         artifact.mimeType,
         artifact.byteSize,
@@ -109,6 +137,9 @@ export class D1ArtifactRepository implements ArtifactRepository {
         "extractor_version" in extraction ? (extraction.extractor_version ?? null) : null,
         "page_count" in extraction ? extraction.page_count : null,
         "reason" in extraction ? (extraction.reason ?? null) : null,
+        artifact.pdfTrust.status,
+        artifact.pdfTrust.status === "human_only" ? artifact.pdfTrust.reason : null,
+        artifact.pdfTrust.status === "controlled" ? JSON.stringify(artifact.pdfTrust.receipt) : null,
       )
       .run();
   }
@@ -176,6 +207,21 @@ export class D1ArtifactRepository implements ArtifactRepository {
          WHERE id = ?`,
       )
       .bind(message.slice(0, 500), id)
+      .run();
+  }
+
+  public async findLegacyDerivedCandidates(limit: number): Promise<readonly ArtifactRecord[]> {
+    const result = await this.database
+      .prepare("SELECT * FROM artifacts WHERE legacy_derived_object_key IS NOT NULL LIMIT ?")
+      .bind(limit)
+      .all<ArtifactRow>();
+    return result.results.map(artifactFromRow);
+  }
+
+  public async clearLegacyDerivedObject(id: string): Promise<void> {
+    await this.database
+      .prepare("UPDATE artifacts SET legacy_derived_object_key = NULL WHERE id = ?")
+      .bind(id)
       .run();
   }
 }

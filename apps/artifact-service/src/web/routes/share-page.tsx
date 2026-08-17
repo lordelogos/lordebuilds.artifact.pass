@@ -46,9 +46,9 @@ export const renderSharePage = ({
   sharePath,
 }: SharePageOptions): string => {
   const extractionCopy = manifest.mime_type === "application/pdf"
-    ? manifest.extraction.status === "best_effort"
-      ? "Embedded text: best effort"
-      : "Embedded text unavailable · no OCR"
+    ? manifest.pdf_trust.status === "controlled"
+      ? "Verified for agent reading"
+      : "Human-only · unverified for agents"
     : "Exact uploaded source";
   const markup = renderToStaticMarkup(
     <html lang="en">

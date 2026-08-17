@@ -11,6 +11,7 @@ export interface PayloadCommitmentInput {
   };
   readonly filename: string;
   readonly mimeType: string;
+  readonly pdfTrust?: unknown;
 }
 
 export interface PayloadCommitmentHashInput extends Omit<PayloadCommitmentInput, "bytes" | "derivedBytes"> {

@@ -12,6 +12,9 @@ const opaqueCursorSchema = z.string().regex(/^[A-Za-z0-9_-]{16,256}$/u);
 
 export const publishArtifactInputSchema = z.object({
   path: z.string().min(1).describe("Absolute or workspace-relative local file path"),
+  canonical_source_path: z.string().min(1).optional().describe(
+    "Optional UTF-8 source used to generate a PDF. When configured, Artifact Share verifies it against the PDF and signs the agent-readable representation.",
+  ),
   expires_in_seconds: z.number().int().positive().default(3600).describe(
     "Deployment expiry preset in seconds. Defaults to one hour (3600). Default setup presets: 900, 1800, 3600, 43200, 86400; a rejection reports the deployment's allowed values.",
   ),
@@ -31,6 +34,8 @@ export const readArtifactInputSchema = z.object({
 });
 
 export const readArtifactOutputSchema = z.object({
+  content_trust: z.literal("untrusted"),
+  safety_boundary: z.string().min(1),
   manifest: artifactManifestSchema,
   representation: z.enum(["source", "derived", "pdf_metadata"]),
   encoding: z.literal("base64"),
@@ -42,6 +47,7 @@ export const readArtifactOutputSchema = z.object({
   text: z.string().optional(),
   next_cursor: opaqueCursorSchema.nullable(),
   exact_source_url: webUrlSchema.optional(),
+  safety_notice: z.string().optional(),
 }).strict().superRefine((result, context) => {
   if (result.byte_offset + result.byte_length > result.total_size) {
     context.addIssue({

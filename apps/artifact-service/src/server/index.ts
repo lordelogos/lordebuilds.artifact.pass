@@ -39,6 +39,7 @@ const createService = (
     repository: new D1ArtifactRepository(bindings.ARTIFACT_DB),
     objectStore: new R2ArtifactObjectStore(bindings.ARTIFACTS),
     policy: artifactPolicyFromBindings(bindings),
+    provenanceBindings: bindings,
     ...(options.now === undefined ? {} : { now: options.now }),
   });
 

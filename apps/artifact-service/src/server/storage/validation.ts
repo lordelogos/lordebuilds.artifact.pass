@@ -93,7 +93,10 @@ const validateExtraction = (
   policy: ArtifactPolicy,
 ): void => {
   if (mimeType !== "application/pdf") {
-    if (extraction.status !== "not_applicable" || derivedText !== undefined) {
+    if (
+      extraction.status !== "not_applicable" ||
+      derivedText !== undefined
+    ) {
       throw new ArtifactError(
         "mime_mismatch",
         "Only PDF artifacts can include an extracted representation",
@@ -149,6 +152,40 @@ const validateExtraction = (
   }
 };
 
+const validatePdfTrust = (input: ArtifactUploadInput, mimeType: SupportedMimeType): void => {
+  const pdfTrust = input.pdfTrust ?? (
+    mimeType === "application/pdf"
+      ? { status: "human_only" as const, reason: "provenance_missing" as const }
+      : { status: "not_applicable" as const }
+  );
+  if (mimeType !== "application/pdf") {
+    if (pdfTrust.status !== "not_applicable") {
+      throw new ArtifactError("mime_mismatch", "Only PDF artifacts can include PDF trust", 400);
+    }
+    return;
+  }
+  if (pdfTrust.status === "not_applicable") {
+    throw new ArtifactError("malformed_upload", "PDF trust is required", 400);
+  }
+  if (pdfTrust.status === "human_only") {
+    if (input.extraction.status !== "unavailable" || input.derivedText !== undefined) {
+      throw new ArtifactError(
+        "malformed_upload",
+        "Human-only PDFs cannot include an agent-readable representation",
+        400,
+      );
+    }
+    return;
+  }
+  if (input.extraction.status !== "best_effort" || input.derivedText === undefined) {
+    throw new ArtifactError(
+      "malformed_upload",
+      "Controlled PDFs require their signed canonical source",
+      400,
+    );
+  }
+};
+
 export const validateArtifactUpload = (
   input: ArtifactUploadInput,
   policy: ArtifactPolicy,
@@ -200,5 +237,6 @@ export const validateArtifactUpload = (
   }
 
   validateExtraction(mimeType, input.extraction, input.derivedText, policy);
+  validatePdfTrust(input, mimeType);
   return mimeType;
 };

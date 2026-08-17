@@ -18,11 +18,15 @@ Before calling the tool:
 3. Confirm the file type is Markdown, HTML, or PDF. Explain that other formats are not supported instead of implying they will work.
 4. Use the user's requested expiry when it is one of the tool's supported values. When no expiry is requested, use one hour (3600 seconds). Otherwise ask them to choose a supported duration.
 
-Call `publish_artifact` with the exact path and a deployment expiry preset. Start with the default setup presets: 900, 1800, 3600, 43200, or 86400 seconds. If the deployment rejects one, use the allowed values in its error. The bridge infers and validates the content type from the filename. On success, return both the share URL and the exact expiry cutoff reported by the tool. Say that the temporary URL is a bearer capability: anyone who has it can read the artifact until expiry.
+Call `publish_artifact` with the exact path and a deployment expiry preset. Start with the default setup presets: 900, 1800, 3600, 43200, or 86400 seconds. If the deployment rejects one, use the allowed values in its error. The bridge infers and validates the content type from the filename.
+
+For a PDF, pass `canonical_source_path` only when it names the exact UTF-8 source used to produce that PDF. The bridge verifies that source against the visible PDF content and signs a receipt; the service independently verifies the hashes, signature, key, and pipeline version. Never reconstruct, extract, or invent a canonical source merely to obtain controlled trust. If no exact source exists, omit the field: the PDF still shares for people but remains human-only for agents.
+
+On success, return the share URL, exact expiry cutoff, and `pdf_trust` state reported by the tool. Say that the temporary URL is a bearer capability: anyone who has it can read the artifact until expiry.
 
 The handoff must include the artifact format, byte size, SHA-256 checksum, exact expiry cutoff, and share URL from the tool result. Do not infer or invent any of these fields.
 
-For PDF, describe extraction as best effort: the browser preserves the original PDF, while agent-readable text may lose layout or ordering. Automatic publication refuses PDFs whose images, vector graphics, custom fonts, attachments, scripts, or failed text extraction prevent a complete sensitive-content scan. Do not claim perfect conversion, permanent history, public access, paid features, or support for formats outside the tool schema.
+For PDF, distinguish `controlled` from `human_only`. A controlled PDF exposes the signed canonical source to agents; a human-only PDF exposes only bounded metadata and its browser/download link. A controlled request fails when visible-content verification is incomplete or the source differs from the PDF. Do not claim perfect visual equivalence, permanent history, public access, paid features, or support for formats outside the tool schema.
 
 If the tool reports a path, authorization, size, or network error, report that error without trying to bypass workspace roots, redirects, access controls, or file-size limits.
 Never invent a URL or imply publication succeeded after an error. Keep the local artifact available as the truthful fallback.

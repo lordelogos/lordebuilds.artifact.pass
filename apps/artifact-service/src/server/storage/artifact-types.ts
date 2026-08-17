@@ -1,6 +1,7 @@
 import type {
   ArtifactManifest,
   ExtractionMetadata,
+  PdfTrust,
   SupportedMimeType,
 } from "artifact-protocol";
 
@@ -11,6 +12,7 @@ export interface ArtifactRecord {
   readonly status: ArtifactStatus;
   readonly objectKey: string;
   readonly derivedObjectKey: string | null;
+  readonly legacyDerivedObjectKey: string | null;
   readonly filename: string;
   readonly mimeType: SupportedMimeType;
   readonly byteSize: number;
@@ -22,6 +24,7 @@ export interface ArtifactRecord {
   readonly createdAt: number;
   readonly expiresAt: number;
   readonly extraction: ExtractionMetadata;
+  readonly pdfTrust: PdfTrust;
   readonly cleanupAttempts: number;
   readonly lastCleanupError: string | null;
 }
@@ -36,6 +39,7 @@ export interface ArtifactUploadInput {
   readonly bytes: Uint8Array;
   readonly expiresInSeconds: number;
   readonly extraction: ExtractionMetadata;
+  readonly pdfTrust?: PdfTrust;
   readonly derivedText?: Uint8Array;
   readonly publisherId?: string;
   readonly publicationAttempt?: string;

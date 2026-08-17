@@ -2,7 +2,6 @@ import {
   SUPPORTED_MIME_TYPES,
   protocolLimitsSchema,
   uploadResponseSchemaForOrigin,
-  type ExtractionMetadata,
   type ProtocolLimits,
   type UploadResponse,
 } from "artifact-protocol";
@@ -11,7 +10,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ExpiryPicker } from "../components/expiry-picker";
 import { FileDrop } from "../components/file-drop";
 
-type UploadStage = "idle" | "validating" | "extracting" | "uploading" | "complete";
+type UploadStage = "idle" | "validating" | "uploading" | "complete";
 
 type UploadPolicy = ProtocolLimits;
 type UploadResult = UploadResponse;
@@ -56,29 +55,12 @@ export const validateBrowserFile = async (
 const uploadWithProgress = (
   file: File,
   expiresInSeconds: number,
-  extraction: ExtractionMetadata,
-  derivedText: string,
   onProgress: (progress: number) => void,
 ): Promise<UploadResult> =>
   new Promise((resolve, reject) => {
     const form = new FormData();
     form.set("file", file);
     form.set("expires_in_seconds", String(expiresInSeconds));
-    if (file.type === "application/pdf") {
-      form.set("extraction_status", extraction.status);
-      if (extraction.status === "best_effort") {
-        form.set("extractor", extraction.extractor);
-        form.set("extractor_version", extraction.extractor_version);
-        form.set("page_count", String(extraction.page_count));
-        form.set("derived_text", derivedText);
-      } else if (extraction.status === "unavailable") {
-        if (extraction.extractor !== undefined) form.set("extractor", extraction.extractor);
-        if (extraction.extractor_version !== undefined) {
-          form.set("extractor_version", extraction.extractor_version);
-        }
-        if (extraction.reason !== undefined) form.set("extraction_reason", extraction.reason);
-      }
-    }
 
     const xhr = new XMLHttpRequest();
     xhr.open("POST", "/upload/artifacts");
@@ -117,7 +99,6 @@ const uploadWithProgress = (
 
 const statusCopy: Record<Exclude<UploadStage, "idle" | "complete">, string> = {
   validating: "Checking the artifact",
-  extracting: "Reading embedded PDF text",
   uploading: "Publishing the temporary link",
 };
 
@@ -175,21 +156,10 @@ export function UploadPage() {
     setError(null);
     setProgress(0);
     try {
-      let extraction: ExtractionMetadata = { status: "not_applicable" };
-      let derivedText = "";
-      if (file.type === "application/pdf") {
-        setStage("extracting");
-        const { extractPdfInBrowser } = await import("../workers/pdf-extraction-client");
-        const extracted = await extractPdfInBrowser(file);
-        extraction = extracted.result.metadata;
-        derivedText = extracted.derivedText;
-      }
       setStage("uploading");
       setResult(await uploadWithProgress(
         file,
         expiresInSeconds,
-        extraction,
-        derivedText,
         setProgress,
       ));
       setProgress(100);

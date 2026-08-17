@@ -30,6 +30,21 @@ const pdfManifest = (extraction: Record<string, unknown>) => ({
   created_at: "2026-08-16T00:00:00.000Z",
   expires_at: "2026-08-16T00:30:00.000Z",
   extraction,
+  pdf_trust: extraction.status === "best_effort"
+    ? {
+        status: "controlled",
+        receipt: {
+          version: 1,
+          key_id: "test-key",
+          renderer_id: "artifact-share-qualified-pdf",
+          renderer_version: "1",
+          source_sha256: "a".repeat(64),
+          pdf_sha256: "b".repeat(64),
+          generated_at: "2026-08-16T00:00:00.000Z",
+          signature: "A".repeat(86),
+        },
+      }
+    : { status: "human_only", reason: "provenance_missing" },
 });
 
 describe("read_artifact", () => {

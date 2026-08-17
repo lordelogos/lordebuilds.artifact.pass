@@ -13,6 +13,21 @@ export const expireArtifacts = async (options: {
   readonly now: number;
   readonly limit?: number;
 }): Promise<ExpireArtifactsResult> => {
+  if (
+    options.repository.findLegacyDerivedCandidates !== undefined &&
+    options.repository.clearLegacyDerivedObject !== undefined
+  ) {
+    const legacy = await options.repository.findLegacyDerivedCandidates(options.limit ?? 100);
+    for (const artifact of legacy) {
+      if (artifact.legacyDerivedObjectKey === null) continue;
+      try {
+        await options.objectStore.delete(artifact.legacyDerivedObjectKey);
+        await options.repository.clearLegacyDerivedObject(artifact.id);
+      } catch {
+        // Leave the private object key recorded so the next scheduled run retries it.
+      }
+    }
+  }
   const candidates = await options.repository.findCleanupCandidates(
     options.now,
     options.limit ?? 100,
@@ -31,6 +46,9 @@ export const expireArtifacts = async (options: {
         await options.objectStore.delete(artifact.objectKey);
         if (artifact.derivedObjectKey !== null) {
           await options.objectStore.delete(artifact.derivedObjectKey);
+        }
+        if (artifact.legacyDerivedObjectKey !== null) {
+          await options.objectStore.delete(artifact.legacyDerivedObjectKey);
         }
         await options.repository.delete(artifact.id);
         deleted += 1;
