@@ -113,4 +113,19 @@ describe("expired artifact cleanup", () => {
       }),
     ).resolves.toEqual({ scanned: 1, deleted: 1, failed: 0 });
   });
+
+  it("reports failed legacy-object removal for retry visibility", async () => {
+    const repository = {
+      findLegacyDerivedCandidates: vi.fn(async () => [{ id: "legacy", legacyDerivedObjectKey: "derived/legacy" }]),
+      clearLegacyDerivedObject: vi.fn(async () => undefined),
+      findCleanupCandidates: vi.fn(async () => []),
+    } as unknown as D1ArtifactRepository;
+    const objectStore = {
+      delete: vi.fn(async () => { throw new Error("temporary R2 failure"); }),
+    } as unknown as ArtifactObjectStore;
+
+    await expect(expireArtifacts({ repository, objectStore, now: createdAt }))
+      .resolves.toEqual({ scanned: 0, deleted: 0, failed: 1 });
+    expect(repository.clearLegacyDerivedObject).not.toHaveBeenCalled();
+  });
 });

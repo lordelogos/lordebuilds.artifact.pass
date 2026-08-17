@@ -25,18 +25,17 @@ afterEach(async () => {
 });
 
 describe("MemoryPublicationJournal", () => {
-  it("bounds retained same-session publication attempts", async () => {
+  it("never evicts unacknowledged same-session publication attempts", async () => {
     const journal = new MemoryPublicationJournal({ now: () => 1_000 });
     const oldestCommitment = "0".repeat(64);
     const oldest = await journal.prepare(oldestCommitment, 10_000);
 
-    for (let index = 1; index <= 32; index += 1) {
+    for (let index = 1; index < 32; index += 1) {
       await journal.prepare(index.toString(16).padStart(64, "0"), 10_000);
     }
 
-    const replacement = await journal.prepare(oldestCommitment, 10_000);
-    expect(replacement.attemptId).not.toBe(oldest.attemptId);
-    expect(replacement.shareToken).not.toBe(oldest.shareToken);
+    await expect(journal.prepare("f".repeat(64), 10_000)).rejects.toThrow("full of pending");
+    await expect(journal.prepare(oldestCommitment, 10_000)).resolves.toEqual(oldest);
   });
 
   it("reuses acknowledged attempts only before their exact expiry", async () => {
@@ -57,6 +56,18 @@ describe("MemoryPublicationJournal", () => {
 });
 
 describe("FilePublicationJournal", () => {
+  it("never evicts unacknowledged persisted publication attempts", async () => {
+    const root = await workspace();
+    const journal = new FilePublicationJournal(join(root, "publication-state.json"), { now: () => 1_000 });
+    const commitments = Array.from({ length: 32 }, (_, index) =>
+      index.toString(16).padStart(64, "0")
+    );
+    const attempts = await Promise.all(commitments.map((commitment) => journal.prepare(commitment, 10_000)));
+
+    await expect(journal.prepare("f".repeat(64), 10_000)).rejects.toThrow("full of pending");
+    await expect(journal.prepare(commitments[0] ?? "", 10_000)).resolves.toEqual(attempts[0]);
+  });
+
   it("persists acknowledgements across restart until expiry, then rotates", async () => {
     const root = await workspace();
     const path = join(root, "publication-state.json");

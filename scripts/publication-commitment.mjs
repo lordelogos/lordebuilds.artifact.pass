@@ -8,6 +8,12 @@ const digest = async (bytes) => bytesToHex(new Uint8Array(
 export const sourceSha256 = async (bytes) =>
   digest(bytes);
 
+const stablePdfTrust = (pdfTrust) => {
+  if (pdfTrust?.status !== "controlled") return pdfTrust;
+  const { generated_at: _generatedAt, signature: _signature, ...receipt } = pdfTrust.receipt;
+  return { status: "controlled", receipt };
+};
+
 export const createPayloadCommitmentFromSourceHash = async ({
   derivedHash = null,
   expiresInSeconds,
@@ -36,7 +42,7 @@ export const createPayloadCommitmentFromSourceHash = async ({
       extraction.reason ?? null,
     ],
     derivedHash,
-    effectivePdfTrust,
+    stablePdfTrust(effectivePdfTrust),
   ])));
 };
 

@@ -198,6 +198,36 @@ describe("read_artifact", () => {
     expect(transferred).toBe(derived.byteLength);
   });
 
+  it("keeps derived UTF-8 code points intact across byte-range boundaries", async () => {
+    const derived = new TextEncoder().encode("ab😀cd");
+    const derivedSha256 = createHash("sha256").update(derived).digest("hex");
+    const metadata = pdfManifest({ status: "best_effort", extractor: "fixture", extractor_version: "1", page_count: 1 });
+    const fetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/manifest")) return Response.json(metadata);
+      const range = /^bytes=(\d+)-(\d+)$/u.exec(new Headers(init?.headers).get("range") ?? "");
+      const start = Number(range?.[1]);
+      const end = Math.min(Number(range?.[2]), derived.byteLength - 1);
+      return new Response(derived.subarray(start, end + 1), {
+        status: 206,
+        headers: {
+          "content-range": `bytes ${start}-${end}/${derived.byteLength}`,
+          "x-artifact-sha256": derivedSha256,
+        },
+      });
+    });
+
+    const first = await readArtifact({ shareUrl, maxBytes: 4 }, {
+      baseUrl: new URL("https://artifacts.example.test"), fetch,
+    });
+    expect(first.text).toBe("ab");
+    expect(first.next_cursor).not.toBeNull();
+    const second = await readArtifact({ shareUrl, maxBytes: 4, cursor: first.next_cursor ?? "" }, {
+      baseUrl: new URL("https://artifacts.example.test"), fetch,
+    });
+    expect(second.text).toBe("😀");
+  });
+
   it("returns honest metadata and an exact PDF resource when extraction is unavailable", async () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(Response.json(pdfManifest({
       status: "unavailable",

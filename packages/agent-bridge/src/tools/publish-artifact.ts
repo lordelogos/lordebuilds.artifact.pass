@@ -182,18 +182,6 @@ const addExtraction = async (
       pdfTrust: { status: "not_applicable" },
     };
   }
-  if (controlled === undefined) {
-    const metadata = {
-      status: "unavailable" as const,
-      reason: "No authenticated canonical PDF source was supplied.",
-    };
-    form.set("extraction_status", metadata.status);
-    form.set("extraction_reason", metadata.reason);
-    return {
-      metadata,
-      pdfTrust: { status: "human_only", reason: "provenance_missing" },
-    };
-  }
   let result: PdfExtractionResult;
   try {
     result = await extractPdf(bytes);
@@ -209,6 +197,20 @@ const addExtraction = async (
         reason: "Embedded PDF text extraction was unavailable.",
       },
       pdfTrust: { status: "human_only", reason: "provenance_invalid" },
+    };
+  }
+  const extractedText = result.pages.map((page) => page.text).join("\n");
+  if (extractedText.length > 0) assertSafeContent(extractedText, "Extracted PDF text");
+  if (controlled === undefined) {
+    const metadata = {
+      status: "unavailable" as const,
+      reason: "No authenticated canonical PDF source was supplied.",
+    };
+    form.set("extraction_status", metadata.status);
+    form.set("extraction_reason", metadata.reason);
+    return {
+      metadata,
+      pdfTrust: { status: "human_only", reason: "provenance_missing" },
     };
   }
   form.set("extraction_status", result.metadata.status);
@@ -241,14 +243,7 @@ const addExtraction = async (
   } else if (result.metadata.reason !== undefined) {
     form.set("extraction_reason", result.metadata.reason);
   }
-  if (controlled !== undefined) {
-    throw new Error("Controlled PDF verification could not prove visible-content coverage");
-  }
-  return {
-    metadata: result.metadata,
-    pdfTrust: { status: "human_only", reason: "provenance_invalid" },
-    safetyCoverage: result.safetyCoverage,
-  };
+  throw new Error("Controlled PDF verification could not prove visible-content coverage");
 };
 
 export const publishArtifact = async (

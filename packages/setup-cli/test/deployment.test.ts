@@ -45,6 +45,8 @@ const fakeClient = (options: {
   existing?: boolean;
   forbidden?: boolean;
   failR2?: boolean;
+  policyDecision?: string;
+  remoteState?: { workerVersion: string; schemaVersion: string; lifecycleVersion: string };
 } = {}) => {
   const requests: { path: string; init: RequestInit }[] = [];
   const request = vi.fn(async (path: string, init: RequestInit = {}) => {
@@ -59,6 +61,10 @@ const fakeClient = (options: {
       return { subdomain: "artifact-share-test" };
     }
     if (path.endsWith("/workers/subdomain")) return { subdomain: "artifact-share-test" };
+    if (path.endsWith("/workers/scripts")) return options.existing ? [{
+      id: "lordebuilds-artifacts-share",
+      modified_on: options.remoteState?.workerVersion ?? "worker-v1",
+    }] : [];
     if (path === `/zones/${zoneId}`) return { name: "example.com", status: "active" };
     if (path.includes("/d1/database?")) return options.existing ? [{ uuid: "db-id", name: "lordebuilds-artifacts-share" }] : [];
     if (path.endsWith("/d1/database")) return { uuid: "db-id", name: "lordebuilds-artifacts-share" };
@@ -68,6 +74,12 @@ const fakeClient = (options: {
     if (path.endsWith("/r2/buckets") && init.method === "POST" && options.failR2 === true) {
       throw new Error("R2 provisioning failed");
     }
+    if (path.includes("/d1/database/db-id/query")) return [{
+      results: [{ name: "artifacts", type: "table", sql: options.remoteState?.schemaVersion ?? "schema-v1" }],
+    }];
+    if (path.endsWith("/r2/buckets/lordebuilds-artifacts-share/lifecycle")) return {
+      rules: [{ id: options.remoteState?.lifecycleVersion ?? "lifecycle-v1" }],
+    };
     if (path.endsWith("/access/organizations")) return { auth_domain: "team.cloudflareaccess.com" };
     if (path.endsWith("/access/apps") && init.method !== "POST") {
       return options.existing ? [{
@@ -87,6 +99,7 @@ const fakeClient = (options: {
       return options.existing ? [{
         id: "policy-id",
         name: "Artifact Share uploaders",
+        decision: options.policyDecision ?? "allow",
         include: [{ email_domain: { domain: "example.com" } }],
       }] : [];
     }
@@ -197,6 +210,49 @@ describe("Cloudflare deployment", () => {
       runner,
     })).rejects.toThrow("no longer matches");
     expect(runner).not.toHaveBeenCalled();
+  });
+
+  it("aborts before mutation when approved remote deployment state changes", async () => {
+    const root = await deploymentRoot();
+    const manifestPath = resolve(root, "approval.json");
+    const remoteState = { workerVersion: "worker-v1", schemaVersion: "schema-v1", lifecycleVersion: "lifecycle-v1" };
+    const client = fakeClient({ existing: true, remoteState });
+    await deployArtifactShare({ ...input, writeApprovalManifest: manifestPath }, {
+      client: client.client,
+      deploymentRoot: root,
+    });
+    remoteState.schemaVersion = "schema-v2";
+    const runner = vi.fn();
+
+    await expect(deployArtifactShare({ ...input, approveManifest: manifestPath }, {
+      client: client.client,
+      deploymentRoot: root,
+      runner,
+    })).rejects.toThrow("no longer matches");
+    expect(runner).not.toHaveBeenCalled();
+  });
+
+  it("repairs a matching Access policy whose decision is not allow", async () => {
+    const client = fakeClient({ existing: true, policyDecision: "deny" });
+    const runner = vi.fn(async () => ({ stdout: "", stderr: "" }));
+    const fetch = vi.fn(async (url: string | URL | Request) =>
+      String(url).endsWith("/health")
+        ? new Response(JSON.stringify({ service: "lordebuilds.artifacts.share", status: "ok" }))
+        : new Response(null, { status: 302 })
+    );
+
+    const result = await deployArtifactShare(input, {
+      client: client.client,
+      deploymentRoot: await deploymentRoot(),
+      runner,
+      fetch,
+    });
+
+    expect(result.changed).toContain("Access policy");
+    const update = client.requests.find(({ path, init }) =>
+      path.endsWith("/policies/policy-id") && init.method === "PUT"
+    );
+    expect(JSON.parse(String(update?.init.body))).toMatchObject({ decision: "allow" });
   });
 
   it("rejects missing identity, invalid IDs, and a hostname outside the zone", async () => {

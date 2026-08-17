@@ -247,6 +247,31 @@ describe("private artifact routes", () => {
     expect(derived.status).toBe(206);
     await expect(derived.text()).resolves.toBe("Verified visible text");
 
+    const revokedManifest = await createArtifactApplication().fetch(
+      new Request(`${result.share_url}/manifest`),
+      testBindings({ PDF_PROVENANCE_PUBLIC_KEYS: "{}", PDF_PROVENANCE_RENDERERS: "" }),
+    );
+    await expect(revokedManifest.json()).resolves.toMatchObject({
+      pdf_trust: { status: "human_only", reason: "provenance_invalid" },
+    });
+    const revokedDerived = await createArtifactApplication().fetch(
+      new Request(`${result.share_url}/derived`),
+      testBindings({ PDF_PROVENANCE_PUBLIC_KEYS: "{}", PDF_PROVENANCE_RENDERERS: "" }),
+    );
+    expect(revokedDerived.status).toBe(404);
+
+    const row = await env.ARTIFACT_DB.prepare("SELECT derived_object_key FROM artifacts").first<{
+      derived_object_key: string;
+    }>();
+    await env.ARTIFACTS.put(row?.derived_object_key ?? "", "replacement", {
+      customMetadata: { sha256: "0".repeat(64) },
+    });
+    const replacedDerived = await createArtifactApplication().fetch(
+      new Request(`${result.share_url}/derived`),
+      bindings,
+    );
+    expect(replacedDerived.status).toBe(404);
+
     const forged = { ...qualified.receipt, pdf_sha256: "0".repeat(64) };
     const rejected = await send(forged);
     expect(rejected.status).toBe(400);

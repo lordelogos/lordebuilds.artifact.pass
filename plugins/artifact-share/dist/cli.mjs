@@ -91800,7 +91800,7 @@ var extractPdfInNode = async (request) => {
     const page = await document2.getPage(pageNumber);
     const operatorList = await page.getOperatorList();
     hasUnsupportedRendering ||= operatorList.fnArray.some(
-      (operation) => unsupportedRenderingOperations.has(operation)
+      (operation, index) => unsupportedRenderingOperations.has(operation) || operation === OPS.setTextRenderingMode && operatorList.argsArray[index]?.[0] !== 0
     );
     for (const [identifier, value] of page.commonObjs) {
       if (typeof identifier === "string" && identifier.includes("_f") && (value === null || typeof value !== "object" || !isCoveredFont(value))) {
@@ -91888,6 +91888,11 @@ var digest = async (bytes) => bytesToHex(new Uint8Array(
   await crypto.subtle.digest("SHA-256", bytes)
 ));
 var sourceSha256 = async (bytes) => digest(bytes);
+var stablePdfTrust = (pdfTrust) => {
+  if (pdfTrust?.status !== "controlled") return pdfTrust;
+  const { generated_at: _generatedAt, signature: _signature, ...receipt } = pdfTrust.receipt;
+  return { status: "controlled", receipt };
+};
 var createPayloadCommitmentFromSourceHash = async ({
   derivedHash = null,
   expiresInSeconds,
@@ -91912,7 +91917,7 @@ var createPayloadCommitmentFromSourceHash = async ({
       extraction.reason ?? null
     ],
     derivedHash,
-    effectivePdfTrust
+    stablePdfTrust(effectivePdfTrust)
   ])));
 };
 var createPayloadCommitment = async ({ bytes, derivedBytes, ...metadata }) => {
@@ -91993,6 +91998,11 @@ var remember = (entries, payloadCommitment, entry) => {
     entries.delete(oldest);
   }
 };
+var pruneExpired = (entries, now) => {
+  for (const [commitment, entry] of entries) {
+    if (entry.expires_at <= now) entries.delete(commitment);
+  }
+};
 var opaqueToken = () => randomBytes(32).toString("base64url");
 var publisherId = () => `local_${randomBytes(18).toString("base64url")}`;
 var validateEntryMap = (value, legacy) => {
@@ -92050,6 +92060,8 @@ var MemoryPublicationJournal = class {
     assertExpiry(expiresAt);
     const now = this.now();
     if (expiresAt <= now) throw new Error("Artifact publication expiry must be in the future");
+    pruneExpired(this.pending, now);
+    pruneExpired(this.acknowledged, now);
     const acknowledged = this.acknowledged.get(payloadCommitment);
     if (acknowledged !== void 0 && now < acknowledged.expires_at) {
       return {
@@ -92066,7 +92078,16 @@ var MemoryPublicationJournal = class {
       updated_at: now,
       expires_at: expiresAt
     };
-    remember(this.pending, payloadCommitment, entry);
+    if (pending === void 0) {
+      while (this.pending.size + this.acknowledged.size >= maximumEntries) {
+        const oldestAcknowledged = this.acknowledged.keys().next().value;
+        if (oldestAcknowledged === void 0) {
+          throw new Error("Artifact Share publication journal is full of pending attempts");
+        }
+        this.acknowledged.delete(oldestAcknowledged);
+      }
+    }
+    this.pending.set(payloadCommitment, entry);
     return {
       publisherId: this.publisher,
       attemptId: entry.attempt_id,
@@ -92197,9 +92218,12 @@ var FilePublicationJournal = class _FilePublicationJournal {
     const row = database.prepare("SELECT COUNT(*) AS count FROM publication_entries").get();
     const overflow = row.count - maximumEntries;
     if (overflow <= 0) return;
-    database.prepare(
-      "DELETE FROM publication_entries WHERE payload_commitment IN (SELECT payload_commitment FROM publication_entries ORDER BY updated_at ASC, payload_commitment ASC LIMIT ?)"
+    const result = database.prepare(
+      "DELETE FROM publication_entries WHERE payload_commitment IN (SELECT payload_commitment FROM publication_entries WHERE acknowledged = 1 ORDER BY updated_at ASC, payload_commitment ASC LIMIT ?)"
     ).run(overflow);
+    if (result.changes < overflow) {
+      throw new Error("Artifact Share publication journal is full of pending attempts");
+    }
   }
   prepare(payloadCommitment, expiresAt) {
     if (!commitmentPattern.test(payloadCommitment)) {
@@ -92315,6 +92339,18 @@ var decodeDerivedCursor = (cursor, artifactId) => {
     throw new Error("Artifact source cursor is invalid");
   }
 };
+var utf8AlignedPrefix = (bytes) => {
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  for (let trim = 0; trim <= Math.min(3, bytes.byteLength - 1); trim += 1) {
+    const candidate = bytes.subarray(0, bytes.byteLength - trim);
+    try {
+      decoder.decode(candidate);
+      return candidate;
+    } catch {
+    }
+  }
+  return bytes;
+};
 var readDerived = async (manifest, shareBase, input, fetchImplementation, maximumBytes) => {
   if (manifest.mime_type !== "application/pdf" || manifest.pdf_trust.status !== "controlled" || manifest.extraction.status !== "best_effort") {
     throw new Error("PDF is human-only and has no agent-readable representation");
@@ -92341,15 +92377,11 @@ var readDerived = async (manifest, shareBase, input, fetchImplementation, maximu
   if (responseOffset !== offset || !Number.isSafeInteger(responseEnd) || responseEnd < responseOffset || !Number.isSafeInteger(totalSize) || totalSize <= 0 || totalSize > PROTOCOL_MAX_ARTIFACT_BYTES) {
     throw new Error("Artifact Share returned inconsistent derived text metadata");
   }
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  if (bytes.byteLength !== responseEnd - responseOffset + 1 || bytes.byteLength > maximumBytes) {
+  const responseBytes = new Uint8Array(await response.arrayBuffer());
+  if (responseBytes.byteLength !== responseEnd - responseOffset + 1 || responseBytes.byteLength > maximumBytes) {
     throw new Error("Artifact Share returned an invalid derived text range");
   }
-  try {
-    new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-  } catch {
-    throw new Error("Artifact Share returned malformed derived text");
-  }
+  const bytes = utf8AlignedPrefix(responseBytes);
   if (offset > totalSize) {
     throw new Error("Artifact source cursor is invalid");
   }
@@ -92518,18 +92550,6 @@ var addExtraction = async (form, mimeType, bytes, extractPdf, controlled) => {
       pdfTrust: { status: "not_applicable" }
     };
   }
-  if (controlled === void 0) {
-    const metadata = {
-      status: "unavailable",
-      reason: "No authenticated canonical PDF source was supplied."
-    };
-    form.set("extraction_status", metadata.status);
-    form.set("extraction_reason", metadata.reason);
-    return {
-      metadata,
-      pdfTrust: { status: "human_only", reason: "provenance_missing" }
-    };
-  }
   let result;
   try {
     result = await extractPdf(bytes);
@@ -92545,6 +92565,20 @@ var addExtraction = async (form, mimeType, bytes, extractPdf, controlled) => {
         reason: "Embedded PDF text extraction was unavailable."
       },
       pdfTrust: { status: "human_only", reason: "provenance_invalid" }
+    };
+  }
+  const extractedText = result.pages.map((page) => page.text).join("\n");
+  if (extractedText.length > 0) assertSafeContent(extractedText, "Extracted PDF text");
+  if (controlled === void 0) {
+    const metadata = {
+      status: "unavailable",
+      reason: "No authenticated canonical PDF source was supplied."
+    };
+    form.set("extraction_status", metadata.status);
+    form.set("extraction_reason", metadata.reason);
+    return {
+      metadata,
+      pdfTrust: { status: "human_only", reason: "provenance_missing" }
     };
   }
   form.set("extraction_status", result.metadata.status);
@@ -92577,14 +92611,7 @@ var addExtraction = async (form, mimeType, bytes, extractPdf, controlled) => {
   } else if (result.metadata.reason !== void 0) {
     form.set("extraction_reason", result.metadata.reason);
   }
-  if (controlled !== void 0) {
-    throw new Error("Controlled PDF verification could not prove visible-content coverage");
-  }
-  return {
-    metadata: result.metadata,
-    pdfTrust: { status: "human_only", reason: "provenance_invalid" },
-    safetyCoverage: result.safetyCoverage
-  };
+  throw new Error("Controlled PDF verification could not prove visible-content coverage");
 };
 var publishArtifact = async (input, dependencies) => {
   const authorizedDependencies = authorizePublishDependencies(dependencies);

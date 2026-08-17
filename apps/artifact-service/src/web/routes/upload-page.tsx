@@ -9,6 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { ExpiryPicker } from "../components/expiry-picker";
 import { FileDrop } from "../components/file-drop";
+import { findFirstSensitiveContent } from "../../../../../scripts/security-patterns.mjs";
 
 type UploadStage = "idle" | "validating" | "uploading" | "complete";
 
@@ -24,6 +25,8 @@ const extensionByMime = {
 export const validateBrowserFile = async (
   file: File,
   maximumBytes: number,
+  extractPdf: (file: File) => Promise<{ readonly derivedText: string }> = async (pdf) =>
+    (await import("../workers/pdf-extraction-client")).extractPdfInBrowser(pdf),
 ): Promise<string | null> => {
   if (!SUPPORTED_MIME_TYPES.includes(file.type as never)) {
     return "Only HTML, Markdown, and PDF files are supported.";
@@ -40,6 +43,9 @@ export const validateBrowserFile = async (
     if (new TextDecoder().decode(bytes.slice(0, 5)) !== "%PDF-") {
       return "This file does not contain a valid PDF signature.";
     }
+    const extraction = await extractPdf(file);
+    const finding = findFirstSensitiveContent(extraction.derivedText);
+    if (finding !== null) return `This PDF may contain sensitive ${finding.label}.`;
   } else {
     const bytes = new Uint8Array(await file.arrayBuffer());
     try {

@@ -63,6 +63,12 @@ const remember = (
   }
 };
 
+const pruneExpired = (entries: Map<string, JournalEntry>, now: number): void => {
+  for (const [commitment, entry] of entries) {
+    if (entry.expires_at <= now) entries.delete(commitment);
+  }
+};
+
 const opaqueToken = (): string => randomBytes(32).toString("base64url");
 const publisherId = (): string => `local_${randomBytes(18).toString("base64url")}`;
 
@@ -147,6 +153,8 @@ export class MemoryPublicationJournal implements PublicationJournal {
     assertExpiry(expiresAt);
     const now = this.now();
     if (expiresAt <= now) throw new Error("Artifact publication expiry must be in the future");
+    pruneExpired(this.pending, now);
+    pruneExpired(this.acknowledged, now);
     const acknowledged = this.acknowledged.get(payloadCommitment);
     if (acknowledged !== undefined && now < acknowledged.expires_at) {
       return {
@@ -165,7 +173,16 @@ export class MemoryPublicationJournal implements PublicationJournal {
           updated_at: now,
           expires_at: expiresAt,
         };
-    remember(this.pending, payloadCommitment, entry);
+    if (pending === undefined) {
+      while (this.pending.size + this.acknowledged.size >= maximumEntries) {
+        const oldestAcknowledged = this.acknowledged.keys().next().value as string | undefined;
+        if (oldestAcknowledged === undefined) {
+          throw new Error("Artifact Share publication journal is full of pending attempts");
+        }
+        this.acknowledged.delete(oldestAcknowledged);
+      }
+    }
+    this.pending.set(payloadCommitment, entry);
     return {
       publisherId: this.publisher,
       attemptId: entry.attempt_id,
@@ -333,11 +350,15 @@ export class FilePublicationJournal implements PublicationJournal {
       .get() as { readonly count: number };
     const overflow = row.count - maximumEntries;
     if (overflow <= 0) return;
-    database.prepare(
+    const result = database.prepare(
       "DELETE FROM publication_entries WHERE payload_commitment IN (" +
       "SELECT payload_commitment FROM publication_entries " +
+      "WHERE acknowledged = 1 " +
       "ORDER BY updated_at ASC, payload_commitment ASC LIMIT ?)",
     ).run(overflow);
+    if (result.changes < overflow) {
+      throw new Error("Artifact Share publication journal is full of pending attempts");
+    }
   }
 
   public prepare(payloadCommitment: string, expiresAt: number): Promise<PublicationAttempt> {

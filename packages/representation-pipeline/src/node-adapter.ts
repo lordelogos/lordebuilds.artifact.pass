@@ -153,8 +153,12 @@ export const extractPdfInNode = async (
     assertNotAborted();
     const page = await document.getPage(pageNumber);
     const operatorList = await page.getOperatorList();
-    hasUnsupportedRendering ||= operatorList.fnArray.some((operation) =>
-      unsupportedRenderingOperations.has(operation)
+    hasUnsupportedRendering ||= operatorList.fnArray.some((operation, index) =>
+      unsupportedRenderingOperations.has(operation) ||
+      (
+        operation === OPS.setTextRenderingMode &&
+        operatorList.argsArray[index]?.[0] !== 0
+      )
     );
     for (const [identifier, value] of page.commonObjs) {
       if (

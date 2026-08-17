@@ -45,6 +45,35 @@ const markdownInput = {
 };
 
 describe("staged artifact writes", () => {
+  it("keeps controlled-PDF publication commitments stable across receipt regeneration", async () => {
+    const baseReceipt = {
+      version: 1 as const,
+      key_id: "test-key",
+      renderer_id: "artifact-share-qualified-pdf",
+      renderer_version: "1",
+      source_sha256: "a".repeat(64),
+      pdf_sha256: "b".repeat(64),
+    };
+    const input = {
+      bytes: new TextEncoder().encode("%PDF-fixture"),
+      derivedBytes: new TextEncoder().encode("Visible text"),
+      expiresInSeconds: 900,
+      extraction: { status: "best_effort", extractor: "fixture", extractor_version: "1", page_count: 1 },
+      filename: "report.pdf",
+      mimeType: "application/pdf",
+    } as const;
+    const first = await createPayloadCommitment({
+      ...input,
+      pdfTrust: { status: "controlled", receipt: { ...baseReceipt, generated_at: "2026-08-16T12:00:00.000Z", signature: "A".repeat(86) } },
+    });
+    const retry = await createPayloadCommitment({
+      ...input,
+      pdfTrust: { status: "controlled", receipt: { ...baseReceipt, generated_at: "2026-08-16T12:00:01.000Z", signature: "B".repeat(86) } },
+    });
+
+    expect(retry).toBe(first);
+  });
+
   it("waits for a matching concurrent publication to activate and returns its result", async () => {
     const publicationAttempt = crypto.randomUUID();
     const shareToken = "A".repeat(43);

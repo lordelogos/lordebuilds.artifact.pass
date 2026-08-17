@@ -87,6 +87,20 @@ const decodeDerivedCursor = (cursor: string | undefined, artifactId: string): nu
   }
 };
 
+const utf8AlignedPrefix = (bytes: Uint8Array): Uint8Array => {
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  for (let trim = 0; trim <= Math.min(3, bytes.byteLength - 1); trim += 1) {
+    const candidate = bytes.subarray(0, bytes.byteLength - trim);
+    try {
+      decoder.decode(candidate);
+      return candidate;
+    } catch {
+      // A UTF-8 code point may straddle the requested byte-range boundary.
+    }
+  }
+  return bytes;
+};
+
 const readDerived = async (
   manifest: ArtifactManifest,
   shareBase: URL,
@@ -130,15 +144,11 @@ const readDerived = async (
   ) {
     throw new Error("Artifact Share returned inconsistent derived text metadata");
   }
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  if (bytes.byteLength !== responseEnd - responseOffset + 1 || bytes.byteLength > maximumBytes) {
+  const responseBytes = new Uint8Array(await response.arrayBuffer());
+  if (responseBytes.byteLength !== responseEnd - responseOffset + 1 || responseBytes.byteLength > maximumBytes) {
     throw new Error("Artifact Share returned an invalid derived text range");
   }
-  try {
-    new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-  } catch {
-    throw new Error("Artifact Share returned malformed derived text");
-  }
+  const bytes = utf8AlignedPrefix(responseBytes);
   if (offset > totalSize) {
     throw new Error("Artifact source cursor is invalid");
   }

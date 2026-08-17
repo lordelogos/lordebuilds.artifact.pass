@@ -267,6 +267,17 @@ export class ArtifactApplicationService {
       await hashShareToken(shareToken),
     );
     if (artifact === null || this.now() >= artifact.expiresAt) throw notFound();
+    if (artifact.pdfTrust.status === "controlled") {
+      const verified = await verifyPdfProvenance(
+        artifact.pdfTrust.receipt,
+        artifact.pdfTrust.receipt.source_sha256,
+        artifact.sha256,
+        this.options.provenanceBindings ?? {},
+      );
+      if (verified === null) {
+        return { ...artifact, pdfTrust: { status: "human_only", reason: "provenance_invalid" } };
+      }
+    }
     return artifact;
   }
 
@@ -286,7 +297,10 @@ export class ArtifactApplicationService {
   ): Promise<StoredObject> {
     if (artifact.pdfTrust.status !== "controlled" || artifact.derivedObjectKey === null) throw notFound();
     const object = await this.options.objectStore.get(artifact.derivedObjectKey, range);
-    if (object !== null) return object;
+    if (object !== null) {
+      if (object.metadata?.sha256 !== artifact.pdfTrust.receipt.source_sha256) throw notFound();
+      return object;
+    }
     await this.options.repository.markCleanupPending(artifact.id).catch(() => undefined);
     throw notFound();
   }

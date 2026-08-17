@@ -13,6 +13,7 @@ export const expireArtifacts = async (options: {
   readonly now: number;
   readonly limit?: number;
 }): Promise<ExpireArtifactsResult> => {
+  let legacyFailures = 0;
   if (
     options.repository.findLegacyDerivedCandidates !== undefined &&
     options.repository.clearLegacyDerivedObject !== undefined
@@ -25,6 +26,7 @@ export const expireArtifacts = async (options: {
         await options.repository.clearLegacyDerivedObject(artifact.id);
       } catch {
         // Leave the private object key recorded so the next scheduled run retries it.
+        legacyFailures += 1;
       }
     }
   }
@@ -33,7 +35,7 @@ export const expireArtifacts = async (options: {
     options.limit ?? 100,
   );
   let deleted = 0;
-  let failed = 0;
+  let failed = legacyFailures;
   let nextIndex = 0;
 
   const worker = async (): Promise<void> => {

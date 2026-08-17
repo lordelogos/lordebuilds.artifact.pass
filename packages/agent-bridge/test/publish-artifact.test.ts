@@ -257,7 +257,11 @@ describe("publish_artifact", () => {
       fetch,
       token: agentToken,
       workspaceRoots: [root],
-      extractPdf: vi.fn(async () => { throw new Error("must not extract human PDFs"); }),
+      extractPdf: vi.fn(async () => ({
+        metadata: { status: "best_effort" as const, extractor: "fixture", extractor_version: "1", page_count: 1 },
+        pages: [{ page: 1, text: "ordinary content" }],
+        safetyCoverage: "incomplete" as const,
+      })),
     });
 
     const form = fetch.mock.calls[0]?.[1]?.body as FormData;
@@ -265,6 +269,26 @@ describe("publish_artifact", () => {
     expect(form.get("extraction_status")).toBe("unavailable");
     expect(form.get("derived_text")).toBeNull();
     expect(form.get("pdf_provenance")).toBeNull();
+  });
+
+  it("scans extracted PDF streams before publishing a human-only PDF", async () => {
+    const root = await workspace();
+    const path = join(root, "compressed-secret.pdf");
+    await writeFile(path, "%PDF-compressed-fixture");
+    const fetch = vi.fn<typeof globalThis.fetch>();
+
+    await expect(publishArtifact({ path, expiresInSeconds: 1800 }, {
+      baseUrl: new URL("https://artifacts.example.test"),
+      fetch,
+      token: agentToken,
+      workspaceRoots: [root],
+      extractPdf: async () => ({
+        metadata: { status: "best_effort", extractor: "fixture", extractor_version: "1", page_count: 1 },
+        pages: [{ page: 1, text: `cfut_${"A".repeat(24)}` }],
+        safetyCoverage: "incomplete",
+      }),
+    })).rejects.toThrow(/sensitive/iu);
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("publishes a qualified PDF with its signed canonical source", async () => {

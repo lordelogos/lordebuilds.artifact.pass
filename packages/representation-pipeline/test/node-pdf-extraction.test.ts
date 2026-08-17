@@ -71,6 +71,28 @@ const createMisleadingToUnicodePdf = (): Uint8Array => {
   return new TextEncoder().encode(source);
 };
 
+const createInvisibleTextPdf = (): Uint8Array => {
+  const content = "BT /F1 18 Tf 3 Tr 72 650 Td (Hidden text) Tj ET";
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
+    `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+  ];
+  let source = "%PDF-1.4\n";
+  const offsets = [0];
+  for (const [index, object] of objects.entries()) {
+    offsets.push(source.length);
+    source += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  }
+  const xrefOffset = source.length;
+  source += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  source += offsets.slice(1).map((offset) => `${String(offset).padStart(10, "0")} 00000 n \n`).join("");
+  source += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  return new TextEncoder().encode(source);
+};
+
 describe("Node PDF extraction", () => {
   it("extracts born-digital text page-by-page and labels it best effort", async () => {
     const bytes = await createTextPdf([
@@ -159,6 +181,13 @@ describe("Node PDF extraction", () => {
     const result = await extractPdfInNode({ bytes: createMisleadingToUnicodePdf() });
 
     expect(pdfPagesToText(result.pages)).toContain("B");
+    expect(result.safetyCoverage).toBe("incomplete");
+  });
+
+  it("marks invisible text rendering modes incomplete", async () => {
+    const result = await extractPdfInNode({ bytes: createInvisibleTextPdf() });
+
+    expect(pdfPagesToText(result.pages)).toContain("Hidden text");
     expect(result.safetyCoverage).toBe("incomplete");
   });
 });

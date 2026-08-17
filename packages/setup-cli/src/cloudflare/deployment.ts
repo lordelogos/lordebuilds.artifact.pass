@@ -44,6 +44,7 @@ interface AccessApplication {
 }
 interface AccessOrganization { readonly auth_domain: string }
 interface WorkerDomain { readonly hostname: string; readonly service: string }
+interface WorkerScript { readonly id: string; readonly modified_on?: string; readonly etag?: string }
 
 interface ApprovalManifest {
   readonly version: 1;
@@ -168,10 +169,30 @@ const approvalBinding = async (
   const policies = application === undefined
     ? []
     : await dependencies.client.request<readonly {
-        readonly id: string;
-        readonly name: string;
-        readonly include?: readonly unknown[];
+      readonly id: string;
+      readonly name: string;
+      readonly decision?: string;
+      readonly include?: readonly unknown[];
       }[]>(`/accounts/${input.accountId}/access/apps/${application.id}/policies`);
+  const database = databases.find((candidate) => candidate.name === serviceName) ?? null;
+  const bucket = buckets.buckets.find((candidate) => candidate.name === serviceName) ?? null;
+  const [scripts, databaseSchema, lifecycle] = await Promise.all([
+    dependencies.client.request<readonly WorkerScript[]>(`/accounts/${input.accountId}/workers/scripts`),
+    database === null
+      ? Promise.resolve(null)
+      : dependencies.client.request<readonly { readonly results?: readonly unknown[] }[]>(
+          `/accounts/${input.accountId}/d1/database/${database.uuid}/query`,
+          {
+            method: "POST",
+            body: JSON.stringify({ sql: "SELECT name, type, sql FROM sqlite_schema ORDER BY type, name" }),
+          },
+        ).then((queries) => queries.flatMap((query) => query.results ?? [])),
+    bucket === null
+      ? Promise.resolve(null)
+      : dependencies.client.request<unknown>(
+          `/accounts/${input.accountId}/r2/buckets/${encodeURIComponent(serviceName)}/lifecycle`,
+        ),
+  ]);
   return {
     input: {
       accountId: input.accountId,
@@ -188,8 +209,11 @@ const approvalBinding = async (
       zone,
       workersSubdomain,
       domain: domains.find((candidate) => candidate.hostname === input.hostname) ?? null,
-      database: databases.find((candidate) => candidate.name === serviceName) ?? null,
-      bucket: buckets.buckets.find((candidate) => candidate.name === serviceName) ?? null,
+      database,
+      databaseSchema,
+      bucket,
+      lifecycle,
+      worker: scripts.find((candidate) => candidate.id === serviceName) ?? null,
       organization,
       application: application ?? null,
       policy: policies.find((candidate) => candidate.name === "Artifact Share uploaders") ?? null,
@@ -329,6 +353,7 @@ export const deployArtifactShare = async (
   const policies = await dependencies.client.request<readonly {
     readonly id: string;
     readonly name: string;
+    readonly decision?: string;
     readonly include?: readonly unknown[];
   }[]>(
     `/accounts/${input.accountId}/access/apps/${application.id}/policies`,
@@ -348,7 +373,10 @@ export const deployArtifactShare = async (
       },
     );
     changed.push("Access policy");
-  } else if (canonicalJson(policy.include ?? []) !== canonicalJson(expectedIncludes)) {
+  } else if (
+    policy.decision !== "allow" ||
+    canonicalJson(policy.include ?? []) !== canonicalJson(expectedIncludes)
+  ) {
     await dependencies.client.request(
       `/accounts/${input.accountId}/access/apps/${application.id}/policies/${policy.id}`,
       {
