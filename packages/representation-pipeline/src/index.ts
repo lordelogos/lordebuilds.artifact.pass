@@ -7,6 +7,7 @@ export type {
   PdfExtractionResult,
   PdfPageText,
   PdfQualityWarning,
+  PdfSafetyCoverage,
   PdfRepresentationAdapter,
 } from "./contracts";
 export { createNodePdfAdapter, extractPdfInNode } from "./node-adapter";

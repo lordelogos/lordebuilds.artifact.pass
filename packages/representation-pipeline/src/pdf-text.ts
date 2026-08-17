@@ -34,6 +34,7 @@ export const createPdfExtractionResult = (
         reason: "No useful embedded text was found; OCR is not included.",
       },
       pages: normalizedPages,
+      safetyCoverage: "incomplete",
     };
   }
 
@@ -45,5 +46,6 @@ export const createPdfExtractionResult = (
       page_count: normalizedPages.length,
     },
     pages: normalizedPages,
+    safetyCoverage: "incomplete",
   };
 };

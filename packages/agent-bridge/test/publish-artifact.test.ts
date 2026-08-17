@@ -261,6 +261,7 @@ describe("publish_artifact", () => {
           page_count: 1,
         },
         pages: [{ page: 1, text: "Table text" }],
+        safetyCoverage: "complete",
         qualityWarnings: ["layout_may_be_degraded"],
       }),
     });
@@ -297,6 +298,35 @@ describe("publish_artifact", () => {
     await expect(readFile(journalPath, "utf8")).rejects.toThrow();
   });
 
+  it("refuses a PDF whose rendered graphics are not covered by the safety scan", async () => {
+    const root = await workspace();
+    const path = join(root, "illustrated-report.pdf");
+    await writeFile(path, "%PDF-text-plus-unscanned-image");
+    const journalPath = join(root, "private-state.json");
+    const fetch = vi.fn<typeof globalThis.fetch>();
+
+    await expect(publishArtifact({ path, expiresInSeconds: 1800 }, {
+      baseUrl: new URL("https://artifacts.example.test"),
+      fetch,
+      token: agentToken,
+      workspaceRoots: [root],
+      journal: new FilePublicationJournal(journalPath),
+      extractPdf: async () => ({
+        metadata: {
+          status: "best_effort",
+          extractor: "fixture",
+          extractor_version: "1",
+          page_count: 1,
+        },
+        pages: [{ page: 1, text: "Visible text" }],
+        safetyCoverage: "incomplete",
+      }),
+    })).rejects.toThrow(/rendered-content coverage/iu);
+
+    expect(fetch).not.toHaveBeenCalled();
+    await expect(readFile(journalPath, "utf8")).rejects.toThrow();
+  });
+
   it("refuses sensitive extracted PDF text before journal or network access", async () => {
     const root = await workspace();
     const path = join(root, "sensitive-report.pdf");
@@ -318,6 +348,7 @@ describe("publish_artifact", () => {
           page_count: 1,
         },
         pages: [{ page: 1, text: `as_${"x".repeat(43)}` }],
+        safetyCoverage: "complete",
       }),
     })).rejects.toThrow(/Derived PDF text.*sensitive/iu);
 

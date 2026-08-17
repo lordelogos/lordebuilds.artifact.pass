@@ -69555,7 +69555,8 @@ var createPdfExtractionResult = (pages, extractor, extractorVersion) => {
         extractor_version: extractorVersion,
         reason: "No useful embedded text was found; OCR is not included."
       },
-      pages: normalizedPages
+      pages: normalizedPages,
+      safetyCoverage: "incomplete"
     };
   }
   return {
@@ -69565,7 +69566,8 @@ var createPdfExtractionResult = (pages, extractor, extractorVersion) => {
       extractor_version: extractorVersion,
       page_count: normalizedPages.length
     },
-    pages: normalizedPages
+    pages: normalizedPages,
+    safetyCoverage: "incomplete"
   };
 };
 
@@ -69622,9 +69624,46 @@ var extractPdfInNode = async (request) => {
     complexLayout ||= extracted.complex;
     pages.push({ page: pageNumber, text: extracted.text });
   }
-  const { version: version2 } = await getResolvedPDFJS2();
+  const { OPS, version: version2 } = await getResolvedPDFJS2();
   const result = createPdfExtractionResult(pages, "pdfjs-dist", version2);
-  return complexLayout && result.metadata.status === "best_effort" ? { ...result, qualityWarnings: ["layout_may_be_degraded"] } : result;
+  const unsupportedRenderingOperations = /* @__PURE__ */ new Set([
+    OPS.shadingFill,
+    OPS.beginInlineImage,
+    OPS.beginImageData,
+    OPS.paintXObject,
+    OPS.paintFormXObjectBegin,
+    OPS.beginGroup,
+    OPS.beginAnnotation,
+    OPS.paintImageMaskXObject,
+    OPS.paintImageMaskXObjectGroup,
+    OPS.paintImageXObject,
+    OPS.paintInlineImageXObject,
+    OPS.paintInlineImageXObjectGroup,
+    OPS.paintImageXObjectRepeat,
+    OPS.paintImageMaskXObjectRepeat,
+    OPS.paintSolidColorImageMask,
+    OPS.constructPath,
+    OPS.rawFillPath
+  ]);
+  let hasUnsupportedRendering = false;
+  for (let pageNumber = 1; pageNumber <= extractedDocument.totalPages; pageNumber += 1) {
+    assertNotAborted();
+    const page = await document2.getPage(pageNumber);
+    const operatorList = await page.getOperatorList();
+    hasUnsupportedRendering ||= operatorList.fnArray.some(
+      (operation) => unsupportedRenderingOperations.has(operation)
+    );
+  }
+  const [attachments, javaScriptActions] = await Promise.all([
+    document2.getAttachments(),
+    document2.getJSActions()
+  ]);
+  const safetyCoverage = result.metadata.status === "best_effort" && !hasUnsupportedRendering && (attachments === null || attachments.size === 0) && javaScriptActions === null ? "complete" : "incomplete";
+  return {
+    ...result,
+    safetyCoverage,
+    ...complexLayout && result.metadata.status === "best_effort" ? { qualityWarnings: ["layout_may_be_degraded"] } : {}
+  };
 };
 
 // ../../scripts/publication-commitment.mjs
@@ -70291,11 +70330,16 @@ var addExtraction = async (form, mimeType, bytes, extractPdf) => {
     form.set("derived_text", new File([derivedBytes], `${basename("artifact.pdf")}.txt`, {
       type: "text/plain;charset=utf-8"
     }));
-    return { metadata: result.metadata, derivedBytes, derivedText };
+    return {
+      metadata: result.metadata,
+      derivedBytes,
+      derivedText,
+      safetyCoverage: result.safetyCoverage
+    };
   } else if (result.metadata.reason !== void 0) {
     form.set("extraction_reason", result.metadata.reason);
   }
-  return { metadata: result.metadata };
+  return { metadata: result.metadata, safetyCoverage: result.safetyCoverage };
 };
 var publishArtifact = async (input, dependencies) => {
   const authorizedDependencies = authorizePublishDependencies(dependencies);
@@ -70326,8 +70370,10 @@ var publishArtifact = async (input, dependencies) => {
       bytes,
       authorizedDependencies.extractPdf ?? (async (pdfBytes) => extractPdfInNode({ bytes: pdfBytes }))
     );
-    if (mimeType === "application/pdf" && extraction.metadata.status !== "best_effort") {
-      throw new Error("PDF publishing requires successful text extraction so its safety scan can complete");
+    if (mimeType === "application/pdf" && (extraction.metadata.status !== "best_effort" || extraction.safetyCoverage !== "complete")) {
+      throw new Error(
+        "PDF publishing requires complete text and rendered-content coverage so its safety scan can complete"
+      );
     }
     if (extraction.derivedBytes !== void 0) {
       assertSafeContent(extraction.derivedText ?? extraction.derivedBytes, "Derived PDF text");

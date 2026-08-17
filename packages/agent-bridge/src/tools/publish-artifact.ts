@@ -153,6 +153,7 @@ interface PreparedExtraction {
   readonly metadata: ExtractionMetadata;
   readonly derivedBytes?: Uint8Array;
   readonly derivedText?: string;
+  readonly safetyCoverage?: PdfExtractionResult["safetyCoverage"];
 }
 
 const addExtraction = async (
@@ -193,11 +194,16 @@ const addExtraction = async (
     form.set("derived_text", new File([derivedBytes], `${basename("artifact.pdf")}.txt`, {
       type: "text/plain;charset=utf-8",
     }));
-    return { metadata: result.metadata, derivedBytes, derivedText };
+    return {
+      metadata: result.metadata,
+      derivedBytes,
+      derivedText,
+      safetyCoverage: result.safetyCoverage,
+    };
   } else if (result.metadata.reason !== undefined) {
     form.set("extraction_reason", result.metadata.reason);
   }
-  return { metadata: result.metadata };
+  return { metadata: result.metadata, safetyCoverage: result.safetyCoverage };
 };
 
 export const publishArtifact = async (
@@ -234,8 +240,13 @@ export const publishArtifact = async (
       bytes,
       authorizedDependencies.extractPdf ?? (async (pdfBytes) => extractPdfInNode({ bytes: pdfBytes })),
     );
-    if (mimeType === "application/pdf" && extraction.metadata.status !== "best_effort") {
-      throw new Error("PDF publishing requires successful text extraction so its safety scan can complete");
+    if (
+      mimeType === "application/pdf" &&
+      (extraction.metadata.status !== "best_effort" || extraction.safetyCoverage !== "complete")
+    ) {
+      throw new Error(
+        "PDF publishing requires complete text and rendered-content coverage so its safety scan can complete",
+      );
     }
     if (extraction.derivedBytes !== undefined) {
       assertSafeContent(extraction.derivedText ?? extraction.derivedBytes, "Derived PDF text");

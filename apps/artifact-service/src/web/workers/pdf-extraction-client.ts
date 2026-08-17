@@ -38,6 +38,7 @@ export const extractPdfInBrowser = async (file: File): Promise<BrowserPdfExtract
           reason: "Embedded text extraction failed; the exact PDF is still available.",
         },
         pages: [],
+        safetyCoverage: "incomplete",
       },
       derivedText: "",
     };

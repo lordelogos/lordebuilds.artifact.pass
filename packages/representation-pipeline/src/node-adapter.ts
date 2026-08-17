@@ -83,9 +83,51 @@ export const extractPdfInNode = async (
     pages.push({ page: pageNumber, text: extracted.text });
   }
 
-  const { version } = await getResolvedPDFJS();
+  const { OPS, version } = await getResolvedPDFJS();
   const result = createPdfExtractionResult(pages, "pdfjs-dist", version);
-  return complexLayout && result.metadata.status === "best_effort"
-    ? { ...result, qualityWarnings: ["layout_may_be_degraded"] }
-    : result;
+  const unsupportedRenderingOperations = new Set([
+    OPS.shadingFill,
+    OPS.beginInlineImage,
+    OPS.beginImageData,
+    OPS.paintXObject,
+    OPS.paintFormXObjectBegin,
+    OPS.beginGroup,
+    OPS.beginAnnotation,
+    OPS.paintImageMaskXObject,
+    OPS.paintImageMaskXObjectGroup,
+    OPS.paintImageXObject,
+    OPS.paintInlineImageXObject,
+    OPS.paintInlineImageXObjectGroup,
+    OPS.paintImageXObjectRepeat,
+    OPS.paintImageMaskXObjectRepeat,
+    OPS.paintSolidColorImageMask,
+    OPS.constructPath,
+    OPS.rawFillPath,
+  ]);
+  let hasUnsupportedRendering = false;
+  for (let pageNumber = 1; pageNumber <= extractedDocument.totalPages; pageNumber += 1) {
+    assertNotAborted();
+    const page = await document.getPage(pageNumber);
+    const operatorList = await page.getOperatorList();
+    hasUnsupportedRendering ||= operatorList.fnArray.some((operation) =>
+      unsupportedRenderingOperations.has(operation)
+    );
+  }
+  const [attachments, javaScriptActions] = await Promise.all([
+    document.getAttachments(),
+    document.getJSActions(),
+  ]);
+  const safetyCoverage = result.metadata.status === "best_effort" &&
+      !hasUnsupportedRendering &&
+      (attachments === null || attachments.size === 0) &&
+      javaScriptActions === null
+    ? "complete"
+    : "incomplete";
+  return {
+    ...result,
+    safetyCoverage,
+    ...(complexLayout && result.metadata.status === "best_effort"
+      ? { qualityWarnings: ["layout_may_be_degraded" as const] }
+      : {}),
+  };
 };

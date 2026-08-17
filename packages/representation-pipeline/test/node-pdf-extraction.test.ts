@@ -31,6 +31,7 @@ describe("Node PDF extraction", () => {
       extractor: "pdfjs-dist",
       page_count: 2,
     });
+    expect(result.safetyCoverage).toBe("complete");
     expect(pdfPagesToText(result.pages)).toContain("--- Page 1 ---\nOpening page");
     expect(pdfPagesToText(result.pages)).toContain("--- Page 2 ---\nClosing page");
   });
@@ -64,6 +65,26 @@ describe("Node PDF extraction", () => {
       extractor: "pdfjs-dist",
     });
     expect(result.metadata).toHaveProperty("reason");
+    expect(result.safetyCoverage).toBe("incomplete");
     expect(pdfPagesToText(result.pages)).toBe("");
+  });
+
+  it("marks PDFs with unscanned rendered graphics as incomplete", async () => {
+    const bytes = await createTextPdf([
+      async (document) => {
+        const page = document.addPage();
+        page.drawText("Visible text", {
+          x: 50,
+          y: 700,
+          font: await document.embedFont(StandardFonts.Helvetica),
+        });
+        page.drawRectangle({ x: 50, y: 650, width: 100, height: 20 });
+      },
+    ]);
+
+    const result = await extractPdfInNode({ bytes });
+
+    expect(result.metadata.status).toBe("best_effort");
+    expect(result.safetyCoverage).toBe("incomplete");
   });
 });
