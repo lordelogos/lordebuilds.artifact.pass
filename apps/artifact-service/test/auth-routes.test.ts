@@ -156,7 +156,7 @@ describe("Cloudflare Access assertions", () => {
     expect(uploadSurface.status).toBe(200);
   });
 
-  it("renders and submits the human device-approval page without exposing a token", async () => {
+  it("renders and submits the hosted Access approval form with a same-origin browser request", async () => {
     const verifier = verifierFor("a browser approval page needs a valid PKCE verifier");
     const device = await startDeviceFlow(verifier);
     const page = await request(
@@ -165,6 +165,7 @@ describe("Cloudflare Access assertions", () => {
     );
     expect(page.status).toBe(200);
     expect(page.headers.get("content-security-policy")).toContain("style-src 'nonce-");
+    expect(page.headers.get("referrer-policy")).toBe("same-origin");
     const markup = await page.text();
     expect(markup).toContain("Approve this agent?");
     expect(markup).toContain(device.user_code);

@@ -92,6 +92,7 @@ const approvalPage = (userCode: string, nonce: string, approved = false): string
 
 const approvalHeaders = (nonce: string) => ({
   ...RESPONSE_HEADERS,
+  "Referrer-Policy": "same-origin",
   "Content-Type": "text/html; charset=utf-8",
   "Content-Security-Policy": `default-src 'none'; style-src 'nonce-${nonce}'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`,
 });
