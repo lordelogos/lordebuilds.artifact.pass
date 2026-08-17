@@ -25,6 +25,7 @@ export {
   MemoryPublicationJournal,
   type PublicationAttempt,
   type PublicationJournal,
+  type PublicationJournalOptions,
 } from "./state/publication-journal";
 export {
   createRedactingLogger,

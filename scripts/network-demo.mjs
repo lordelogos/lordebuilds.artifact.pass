@@ -6,6 +6,8 @@ import { networkInterfaces, tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { PROTOCOL_VERSION } from "../packages/artifact-protocol/src/index.ts";
+
 const SESSION_COOKIE = "__Host-artifact-share-tunnel";
 const TUNNEL_PATH = "/__artifact-share-tunnel";
 const MAX_AUTH_BODY_BYTES = 8 * 1024;
@@ -82,6 +84,48 @@ const send = (response, status, headers, body = "") => {
   response.end(body);
 };
 
+const errorMessage = (error) => error instanceof Error ? error.message : String(error);
+const errorReport = (error) => error instanceof AggregateError
+  ? [error.message, ...error.errors.map((failure) => `- ${errorMessage(failure)}`)].join("\n")
+  : errorMessage(error);
+
+const healthBeforeDeadline = async (
+  fetchImplementation,
+  input,
+  init,
+  deadline,
+  timeoutMessage,
+) => {
+  const remaining = deadline - Date.now();
+  if (remaining <= 0) throw new Error(timeoutMessage);
+  const controller = new AbortController();
+  let timer;
+  const timedOut = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      const error = new Error(timeoutMessage);
+      controller.abort(error);
+      reject(error);
+    }, remaining);
+  });
+  try {
+    return await Promise.race([
+      (async () => {
+        const response = await fetchImplementation(input, { ...init, signal: controller.signal });
+        const body = await response.clone().json().catch(() => null);
+        return {
+          response,
+          valid: response.ok &&
+            body?.service === "lordebuilds.artifacts.share" &&
+            body.status === "ok",
+        };
+      })(),
+      timedOut,
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
 const tunnelLoginPage = (failed = false) => html(`
   <main><h1>Unlock tunnel uploads</h1>
   <p>Public artifact links are readable without this token. Enter the temporary token shown by the tunnel helper to enable uploads in this browser session.</p>
@@ -129,13 +173,22 @@ export const createTunnelGateway = async ({
   hostname = "127.0.0.1",
   port = 0,
   fetchImplementation = globalThis.fetch,
+  healthTimeoutMs = 5_000,
 } = {}) => {
   const target = new URL(targetOrigin);
   if (target.protocol !== "http:" || !isLoopback(target.hostname)) {
     throw new Error("The Quick Tunnel gateway target must be a loopback HTTP origin");
   }
-  const health = await fetchImplementation(new URL("/health", target), { redirect: "manual" });
-  if (!health.ok) throw new Error(`The local Artifact Share demo is not healthy (${health.status})`);
+  const health = await healthBeforeDeadline(
+    fetchImplementation,
+    new URL("/health", target),
+    { redirect: "manual" },
+    Date.now() + healthTimeoutMs,
+    `The local Artifact Share demo health check timed out after ${healthTimeoutMs}ms`,
+  );
+  if (!health.valid) {
+    throw new Error(`The local Artifact Share demo is not healthy (${health.response.status})`);
+  }
 
   const sessions = new Set();
   const server = createServer(async (request, response) => {
@@ -182,7 +235,13 @@ export const createTunnelGateway = async ({
         send(response, 401, {
           ...securityHeaders,
           "content-type": "application/json; charset=utf-8",
-        }, JSON.stringify({ error: { code: "upload_token_required", message: "A temporary Quick Tunnel upload token is required" } }));
+        }, JSON.stringify({
+          protocol_version: PROTOCOL_VERSION,
+          error: {
+            code: "unauthorized",
+            message: "A temporary Quick Tunnel upload token is required",
+          },
+        }));
         return;
       }
       if (isBrowserUpload && sessionAuthorized) {
@@ -241,21 +300,22 @@ export const createTunnelGateway = async ({
   });
   const address = server.address();
   if (address === null || typeof address === "string") throw new Error("Could not bind the tunnel gateway");
-  let closed = false;
+  let closePromise;
   return {
     uploadToken,
     localOrigin: new URL(`http://${hostname}:${address.port}`),
-    async close() {
-      if (closed) return;
-      closed = true;
-      sessions.clear();
-      await new Promise((resolve, reject) => server.close((error) => error === undefined ? resolve() : reject(error)));
+    close() {
+      closePromise ??= (async () => {
+        sessions.clear();
+        await new Promise((resolve, reject) => server.close((error) => error === undefined ? resolve() : reject(error)));
+      })();
+      return closePromise;
     },
   };
 };
 
 export const parseQuickTunnelUrl = (text) => {
-  const match = /https:\/\/[a-z0-9-]+\.trycloudflare\.com\b/iu.exec(text);
+  const match = /https:\/\/[a-z0-9-]+\.trycloudflare\.com(?=$|[^a-z0-9._-])/iu.exec(text);
   return match === null ? undefined : new URL(match[0]);
 };
 
@@ -289,31 +349,72 @@ export const startQuickTunnel = async ({
   readinessDelayMs = 5_000,
   readinessTimeoutMs = 30_000,
   fetchImplementation = globalThis.fetch,
+  createGateway = createTunnelGateway,
+  makeTemporaryDirectory = mkdtemp,
+  writeConfiguration = writeFile,
+  removeDirectory = rm,
+  stopProcess = stopChild,
 } = {}) => {
-  const gateway = await createTunnelGateway({ targetOrigin, fetchImplementation });
-  const configRoot = await mkdtemp(join(tmpdir(), "artifact-share-cloudflared-"));
-  const configPath = join(configRoot, "config.yaml");
-  await writeFile(configPath, "{}\n", { mode: 0o600 });
+  const startupDeadline = Date.now() + timeoutMs;
+  const gateway = await createGateway({
+    targetOrigin,
+    fetchImplementation,
+    healthTimeoutMs: Math.max(1, startupDeadline - Date.now()),
+  });
+  let configRoot;
+  let configPath;
   let child;
-  let closed = false;
-  const cleanup = async () => {
-    if (closed) return;
-    closed = true;
-    await Promise.allSettled([
-      ...(child === undefined ? [] : [stopChild(child)]),
-      gateway.close(),
-      rm(configRoot, { recursive: true, force: true }),
-    ]);
+  let cleanupPromise;
+  const cleanup = () => {
+    cleanupPromise ??= (async () => {
+      const operations = [
+        ...(child === undefined ? [] : [() => stopProcess(child)]),
+        () => gateway.close(),
+        ...(configRoot === undefined
+          ? []
+          : [() => removeDirectory(configRoot, { recursive: true, force: true })]),
+      ];
+      const results = await Promise.allSettled(
+        operations.map((operation) => Promise.resolve().then(operation)),
+      );
+      const failures = results
+        .filter((result) => result.status === "rejected")
+        .map((result) => result.reason);
+      if (failures.length > 0) {
+        throw new AggregateError(failures, "Quick Tunnel cleanup failed");
+      }
+    })();
+    return cleanupPromise;
+  };
+  const failAfterCleanup = async (original) => {
+    try {
+      await cleanup();
+    } catch (cleanupError) {
+      const cleanupFailures = cleanupError instanceof AggregateError
+        ? cleanupError.errors
+        : [cleanupError];
+      throw new AggregateError(
+        [original, ...cleanupFailures],
+        `${errorMessage(original)}; Quick Tunnel cleanup also failed`,
+        { cause: original },
+      );
+    }
+    throw original;
   };
   try {
+    configRoot = await makeTemporaryDirectory(join(tmpdir(), "artifact-share-cloudflared-"));
+    configPath = join(configRoot, "config.yaml");
+    await writeConfiguration(configPath, "{}\n", { mode: 0o600 });
     child = spawnProcess(
       cloudflaredPath,
       quickTunnelArguments(configPath, gateway.localOrigin.toString()),
       { stdio: ["ignore", "pipe", "pipe"] },
     );
   } catch (error) {
-    await cleanup();
-    throw new Error(`Could not start cloudflared: ${error instanceof Error ? error.message : "process launch failed"}`);
+    await failAfterCleanup(new Error(
+      `Could not start cloudflared: ${error instanceof Error ? error.message : "process launch failed"}`,
+      { cause: error },
+    ));
   }
   let output = "";
   let settled = false;
@@ -335,10 +436,14 @@ export const startQuickTunnel = async ({
     child.stderr?.on("data", inspect);
     child.once("error", (error) => finish(new Error(`Could not start cloudflared: ${error.message}. Install it with Homebrew: brew install cloudflared`)));
     child.once("exit", (code) => finish(new Error(`cloudflared exited before creating a Quick Tunnel (${code ?? "signal"}). ${output.trim()}`)));
-    timer = setTimeout(() => finish(new Error(`cloudflared did not create a Quick Tunnel within ${timeoutMs}ms. ${output.trim()}`)), timeoutMs);
+    const remaining = startupDeadline - Date.now();
+    if (remaining <= 0) {
+      finish(new Error(`cloudflared did not create a Quick Tunnel within ${timeoutMs}ms. ${output.trim()}`));
+      return;
+    }
+    timer = setTimeout(() => finish(new Error(`cloudflared did not create a Quick Tunnel within ${timeoutMs}ms. ${output.trim()}`)), remaining);
   }).catch(async (error) => {
-    await cleanup();
-    throw error;
+    await failAfterCleanup(error);
   });
   if (readinessDelayMs > 0) {
     await new Promise((resolve) => setTimeout(resolve, readinessDelayMs));
@@ -347,25 +452,37 @@ export const startQuickTunnel = async ({
   let lastReadiness = "no edge response";
   while (true) {
     if (child.exitCode !== null || child.signalCode !== null) {
-      await cleanup();
-      throw new Error("cloudflared exited while the Quick Tunnel was becoming reachable");
+      await failAfterCleanup(new Error("cloudflared exited while the Quick Tunnel was becoming reachable"));
+    }
+    if (Date.now() >= readinessDeadline) {
+      await failAfterCleanup(new Error(`Quick Tunnel was created but did not become reachable within ${readinessTimeoutMs}ms (${lastReadiness}). ${output.trim()}`));
     }
     try {
-      const health = await fetchImplementation(new URL("/health", publicOrigin), { redirect: "manual" });
-      if (health.ok) break;
-      lastReadiness = `HTTP ${health.status}`;
+      const health = await healthBeforeDeadline(
+        fetchImplementation,
+        new URL("/health", publicOrigin),
+        { redirect: "manual" },
+        readinessDeadline,
+        `Quick Tunnel readiness health check timed out after ${readinessTimeoutMs}ms`,
+      );
+      if (health.valid) break;
+      lastReadiness = health.response.ok
+        ? "unexpected health response"
+        : `HTTP ${health.response.status}`;
     } catch (error) {
       // A new trycloudflare hostname can take a moment to resolve and reach the edge.
       lastReadiness = error instanceof Error ? error.message : "network error";
     }
     if (Date.now() >= readinessDeadline) {
-      await cleanup();
-      throw new Error(`Quick Tunnel was created but did not become reachable within ${readinessTimeoutMs}ms (${lastReadiness}). ${output.trim()}`);
+      await failAfterCleanup(new Error(`Quick Tunnel was created but did not become reachable within ${readinessTimeoutMs}ms (${lastReadiness}). ${output.trim()}`));
     }
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    const remaining = readinessDeadline - Date.now();
+    if (remaining > 0) {
+      await new Promise((resolve) => setTimeout(resolve, Math.min(250, remaining)));
+    }
   }
   child.once("exit", () => {
-    void cleanup();
+    void cleanup().catch(() => undefined);
   });
   return {
     publicOrigin,
@@ -373,8 +490,8 @@ export const startQuickTunnel = async ({
     uploadToken: gateway.uploadToken,
     gatewayOrigin: gateway.localOrigin,
     child,
-    async close() {
-      await cleanup();
+    close() {
+      return cleanup();
     },
   };
 };
@@ -403,16 +520,22 @@ export const runQuickTunnelCli = async (arguments_ = process.argv.slice(2)) => {
     "",
   ].join("\n"));
   const shutdown = async () => {
-    await session.close();
+    try {
+      await session.close();
+      process.exit(0);
+    } catch (error) {
+      process.stderr.write(`${errorReport(error)}\n`);
+      process.exit(1);
+    }
   };
-  process.once("SIGINT", () => void shutdown().then(() => process.exit(0)));
-  process.once("SIGTERM", () => void shutdown().then(() => process.exit(0)));
+  process.once("SIGINT", () => void shutdown());
+  process.once("SIGTERM", () => void shutdown());
   return session;
 };
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
   runQuickTunnelCli().catch((error) => {
-    process.stderr.write(`${error instanceof Error ? error.message : "Quick Tunnel failed"}\n`);
+    process.stderr.write(`${errorReport(error)}\n`);
     process.exitCode = 1;
   });
 }

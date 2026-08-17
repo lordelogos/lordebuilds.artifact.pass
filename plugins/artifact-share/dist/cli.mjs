@@ -69436,27 +69436,59 @@ var artifactErrorSchema = external_exports.object({
 
 // src/http/safe-fetch.ts
 var redirectStatuses = /* @__PURE__ */ new Set([301, 302, 303, 307, 308]);
-var isPrivateIpv4 = (hostname3) => {
+var defaultFetchTimeoutMs = 6e4;
+var parseIpv4 = (hostname3) => {
   const octets = hostname3.split(".").map(Number);
   if (octets.length !== 4 || octets.some((value) => !Number.isInteger(value) || value < 0 || value > 255)) {
-    return false;
+    return void 0;
   }
-  const [first = -1, second = -1] = octets;
-  return first === 0 || first === 10 || first === 127 || first === 169 && second === 254 || first === 172 && second >= 16 && second <= 31 || first === 192 && second === 168 || first >= 224;
+  return octets;
 };
+var isLocalIpv4 = (hostname3) => {
+  const octets = parseIpv4(hostname3);
+  if (octets === void 0) return false;
+  const [first = -1, second = -1] = octets;
+  return first === 10 || first === 127 || first === 169 && second === 254 || first === 172 && second >= 16 && second <= 31 || first === 192 && second === 168;
+};
+var isNonPublicIpv4 = (hostname3) => {
+  const octets = parseIpv4(hostname3);
+  if (octets === void 0) return false;
+  const [first = -1] = octets;
+  return isLocalIpv4(hostname3) || first === 0 || first >= 224;
+};
+var isLocalIpv6 = (hostname3) => {
+  if (hostname3 === "::1") return true;
+  if (!hostname3.includes(":")) return false;
+  const firstHextet = Number.parseInt(hostname3.split(":", 1)[0] ?? "", 16);
+  return firstHextet >= 64512 && firstHextet <= 65023 || firstHextet >= 65152 && firstHextet <= 65215;
+};
+var isLocalHostname = (hostname3) => hostname3 === "localhost" || hostname3.endsWith(".localhost") || isLocalIpv4(hostname3) || isLocalIpv6(hostname3);
+var isNonPublicHostname = (hostname3) => isLocalHostname(hostname3) || isNonPublicIpv4(hostname3);
 var assertDeploymentOrigin = (url2, options = {}) => {
   const openDevelopment = options.openDevelopment === true;
-  if (url2.protocol !== "https:" && !(openDevelopment && url2.protocol === "http:") || url2.username !== "" || url2.password !== "" || url2.search !== "" || url2.hash !== "" || url2.pathname !== "/" && url2.pathname !== "") {
-    throw new Error(openDevelopment ? "Artifact Share development deployment must be a credential-free HTTP or HTTPS origin" : "Artifact Share deployment must be a credential-free HTTPS origin");
+  if (url2.username !== "" || url2.password !== "" || url2.search !== "" || url2.hash !== "" || url2.pathname !== "/" && url2.pathname !== "") {
+    throw new Error(openDevelopment ? "Artifact Share development deployment must be a credential-free local HTTP origin" : "Artifact Share deployment must be a credential-free HTTPS origin");
   }
   const hostname3 = url2.hostname.toLowerCase().replace(/^\[|\]$/gu, "");
-  if (!openDevelopment && (hostname3 === "localhost" || hostname3.endsWith(".localhost") || hostname3 === "::1" || hostname3.startsWith("fc") || hostname3.startsWith("fd") || hostname3.startsWith("fe8") || hostname3.startsWith("fe9") || hostname3.startsWith("fea") || hostname3.startsWith("feb") || isPrivateIpv4(hostname3))) {
+  if (openDevelopment && (url2.protocol !== "http:" || !isLocalHostname(hostname3))) {
+    throw new Error("Artifact Share development deployment must be a credential-free local HTTP origin");
+  }
+  if (!openDevelopment && url2.protocol !== "https:") {
+    throw new Error("Artifact Share deployment must be a credential-free HTTPS origin");
+  }
+  if (!openDevelopment && isNonPublicHostname(hostname3)) {
     throw new Error("Artifact Share deployment origin must not target a private network");
   }
   return new URL(url2.origin);
 };
-var fetchWithoutRedirects = async (fetchImplementation, input, init = {}) => {
-  const response = await fetchImplementation(input, { ...init, redirect: "manual" });
+var fetchWithoutRedirects = async (fetchImplementation, input, init = {}, options = {}) => {
+  const timeoutMs = options.timeoutMs ?? defaultFetchTimeoutMs;
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) {
+    throw new RangeError("Artifact Share request timeout must be a positive integer");
+  }
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
+  const signal = init.signal === void 0 || init.signal === null ? timeoutSignal : AbortSignal.any([init.signal, timeoutSignal]);
+  const response = await fetchImplementation(input, { ...init, redirect: "manual", signal });
   if (redirectStatuses.has(response.status) || response.redirected) {
     throw new Error("Artifact Share rejected a redirect response");
   }
@@ -69502,7 +69534,7 @@ var createRedactingLogger = (write = (line) => process.stderr.write(`${line}
 });
 
 // src/tools/publish-artifact.ts
-import { open, realpath } from "node:fs/promises";
+import { open as open2, realpath } from "node:fs/promises";
 import { basename, extname, isAbsolute, relative, resolve as resolve2, sep } from "node:path";
 
 // ../representation-pipeline/src/pdf-text.ts
@@ -69600,7 +69632,7 @@ var bytesToHex = (bytes) => Array.from(bytes, (byte) => byte.toString(16).padSta
 var digest = async (bytes) => bytesToHex(new Uint8Array(
   await crypto.subtle.digest("SHA-256", bytes)
 ));
-var sourceSha256 = async (bytes) => digest(new Uint8Array(bytes));
+var sourceSha256 = async (bytes) => digest(bytes);
 var createPayloadCommitmentFromSourceHash = async ({
   derivedHash = null,
   expiresInSeconds,
@@ -69625,11 +69657,13 @@ var createPayloadCommitmentFromSourceHash = async ({
     derivedHash
   ])));
 };
-var createPayloadCommitment = async ({ bytes, derivedBytes, ...metadata }) => createPayloadCommitmentFromSourceHash({
-  ...metadata,
-  derivedHash: derivedBytes === void 0 ? null : await sourceSha256(derivedBytes),
-  sourceHash: await sourceSha256(bytes)
-});
+var createPayloadCommitment = async ({ bytes, derivedBytes, ...metadata }) => {
+  const [sourceHash, derivedHash] = await Promise.all([
+    sourceSha256(bytes),
+    derivedBytes === void 0 ? Promise.resolve(null) : sourceSha256(derivedBytes)
+  ]);
+  return createPayloadCommitmentFromSourceHash({ ...metadata, derivedHash, sourceHash });
+};
 
 // ../../scripts/security-patterns.mjs
 var tokenPrefixes = ["cfut_", "as_"];
@@ -69659,15 +69693,13 @@ var sensitivePathSegments = [
   /^\.gnupg$/iu,
   /^(?:id_rsa|id_ed25519|credentials|secrets?)$/iu
 ];
-var findSensitiveContent = (source) => {
-  const findings = [];
+var findFirstSensitiveContent = (source) => {
   for (const { label, pattern } of contentPatterns) {
     pattern.lastIndex = 0;
-    for (const match of source.matchAll(pattern)) {
-      findings.push({ label, index: match.index ?? 0 });
-    }
+    const match = pattern.exec(source);
+    if (match !== null) return { label, index: match.index };
   }
-  return findings;
+  return null;
 };
 var findSensitivePath = (path) => {
   const normalized = path.replaceAll("\\", "/");
@@ -69679,86 +69711,162 @@ var findSensitivePath = (path) => {
 
 // src/state/publication-journal.ts
 import { randomBytes, randomUUID } from "node:crypto";
-import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname as dirname2 } from "node:path";
 var commitmentPattern = /^[a-f0-9]{64}$/u;
 var publisherPattern = /^[A-Za-z0-9_-]{16,128}$/u;
 var attemptPattern = /^[0-9a-f]{8}-[0-9a-f-]{27,45}$/u;
 var tokenPattern = /^[A-Za-z0-9_-]{43}$/u;
-var maximumPendingEntries = 32;
+var maximumEntries = 32;
+var defaultLockTimeoutMilliseconds = 5e3;
+var defaultLockStaleMilliseconds = 3e4;
+var defaultLockRetryMilliseconds = 20;
+var isErrorCode = (error51, code) => error51 instanceof Error && "code" in error51 && error51.code === code;
+var assertExpiry = (expiresAt) => {
+  if (!Number.isSafeInteger(expiresAt) || expiresAt < 0) {
+    throw new Error("Artifact publication expiry is malformed");
+  }
+};
 var remember = (entries, payloadCommitment, entry) => {
   entries.delete(payloadCommitment);
   entries.set(payloadCommitment, entry);
-  while (entries.size > maximumPendingEntries) {
+  while (entries.size > maximumEntries) {
     const oldest = entries.keys().next().value;
     if (oldest === void 0) break;
     entries.delete(oldest);
   }
 };
+var boundedRecord = (entries) => Object.fromEntries(
+  Object.entries(entries).sort((left, right) => left[1].updated_at - right[1].updated_at).slice(-maximumEntries)
+);
+var activeEntries = (entries, now) => Object.fromEntries(Object.entries(entries).filter(([, entry]) => now < entry.expires_at));
 var opaqueToken = () => randomBytes(32).toString("base64url");
 var publisherId = () => `local_${randomBytes(18).toString("base64url")}`;
 var emptyState = () => ({
-  version: 1,
+  version: 2,
   publisher_id: publisherId(),
-  pending: {}
+  pending: {},
+  acknowledged: {}
 });
-var validateState = (value) => {
+var validateEntryMap = (value, legacy) => {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("Artifact Share publication state is malformed");
   }
-  const candidate = value;
-  if (candidate.version !== 1 || typeof candidate.publisher_id !== "string" || !publisherPattern.test(candidate.publisher_id) || candidate.pending === null || typeof candidate.pending !== "object" || Array.isArray(candidate.pending)) {
-    throw new Error("Artifact Share publication state is malformed");
-  }
-  const entries = Object.entries(candidate.pending);
-  if (entries.length > maximumPendingEntries) {
+  const entries = Object.entries(value);
+  if (entries.length > maximumEntries) {
     throw new Error("Artifact Share publication state exceeds its bounded capacity");
   }
-  const pending = {};
+  const validated = {};
   for (const [commitment, raw] of entries) {
     if (!commitmentPattern.test(commitment) || raw === null || typeof raw !== "object" || Array.isArray(raw)) {
       throw new Error("Artifact Share publication state is malformed");
     }
     const entry = raw;
-    if (typeof entry.attempt_id !== "string" || !attemptPattern.test(entry.attempt_id) || typeof entry.share_token !== "string" || !tokenPattern.test(entry.share_token) || typeof entry.updated_at !== "number" || !Number.isSafeInteger(entry.updated_at)) {
+    const expiresAt = legacy ? 0 : entry.expires_at;
+    if (typeof entry.attempt_id !== "string" || !attemptPattern.test(entry.attempt_id) || typeof entry.share_token !== "string" || !tokenPattern.test(entry.share_token) || typeof entry.updated_at !== "number" || !Number.isSafeInteger(entry.updated_at) || typeof expiresAt !== "number" || !Number.isSafeInteger(expiresAt) || expiresAt < 0) {
       throw new Error("Artifact Share publication state is malformed");
     }
-    pending[commitment] = {
+    validated[commitment] = {
       attempt_id: entry.attempt_id,
       share_token: entry.share_token,
-      updated_at: entry.updated_at
+      updated_at: entry.updated_at,
+      expires_at: expiresAt
     };
   }
-  return { version: 1, publisher_id: candidate.publisher_id, pending };
+  return validated;
 };
+var validateState = (value) => {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Artifact Share publication state is malformed");
+  }
+  const candidate = value;
+  if (candidate.version !== 1 && candidate.version !== 2 || typeof candidate.publisher_id !== "string" || !publisherPattern.test(candidate.publisher_id)) {
+    throw new Error("Artifact Share publication state is malformed");
+  }
+  const legacy = candidate.version === 1;
+  return {
+    version: 2,
+    publisher_id: candidate.publisher_id,
+    pending: validateEntryMap(candidate.pending, legacy),
+    acknowledged: legacy ? {} : validateEntryMap(candidate.acknowledged, false)
+  };
+};
+var processIsAlive = (pid) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error51) {
+    return !isErrorCode(error51, "ESRCH");
+  }
+};
+var delay = (milliseconds) => new Promise((resolve4) => setTimeout(resolve4, milliseconds));
 var MemoryPublicationJournal = class {
   publisher = publisherId();
   pending = /* @__PURE__ */ new Map();
-  async prepare(payloadCommitment) {
-    const existing = this.pending.get(payloadCommitment);
-    const entry = existing ?? {
+  acknowledged = /* @__PURE__ */ new Map();
+  now;
+  constructor(options = {}) {
+    this.now = options.now ?? Date.now;
+  }
+  async prepare(payloadCommitment, expiresAt) {
+    assertExpiry(expiresAt);
+    const now = this.now();
+    if (expiresAt <= now) throw new Error("Artifact publication expiry must be in the future");
+    const acknowledged = this.acknowledged.get(payloadCommitment);
+    if (acknowledged !== void 0 && now < acknowledged.expires_at) {
+      return {
+        publisherId: this.publisher,
+        attemptId: acknowledged.attempt_id,
+        shareToken: acknowledged.share_token
+      };
+    }
+    this.acknowledged.delete(payloadCommitment);
+    const pending = this.pending.get(payloadCommitment);
+    const entry = pending !== void 0 && now < pending.expires_at ? pending : {
       attempt_id: randomUUID(),
       share_token: opaqueToken(),
-      updated_at: Date.now()
+      updated_at: now,
+      expires_at: expiresAt
     };
-    this.pending.set(payloadCommitment, entry);
+    remember(this.pending, payloadCommitment, entry);
     return {
       publisherId: this.publisher,
       attemptId: entry.attempt_id,
       shareToken: entry.share_token
     };
   }
-  async acknowledge(payloadCommitment, attemptId) {
-    if (this.pending.get(payloadCommitment)?.attempt_id !== attemptId) return;
+  async acknowledge(payloadCommitment, attemptId, expiresAt) {
+    assertExpiry(expiresAt);
+    const pending = this.pending.get(payloadCommitment);
+    const acknowledged = this.acknowledged.get(payloadCommitment);
+    const entry = pending?.attempt_id === attemptId ? pending : acknowledged?.attempt_id === attemptId ? acknowledged : void 0;
+    if (entry === void 0) return;
+    this.pending.delete(payloadCommitment);
+    this.acknowledged.delete(payloadCommitment);
+    const now = this.now();
+    if (now < expiresAt) {
+      remember(this.acknowledged, payloadCommitment, {
+        ...entry,
+        updated_at: now,
+        expires_at: expiresAt
+      });
+    }
   }
 };
 var FilePublicationJournal = class {
-  constructor(path) {
+  constructor(path, options = {}) {
     this.path = path;
+    this.now = options.now ?? Date.now;
+    this.lockTimeoutMilliseconds = options.lockTimeoutMilliseconds ?? defaultLockTimeoutMilliseconds;
+    this.lockStaleMilliseconds = options.lockStaleMilliseconds ?? defaultLockStaleMilliseconds;
+    this.lockRetryMilliseconds = options.lockRetryMilliseconds ?? defaultLockRetryMilliseconds;
   }
   path;
   operation = Promise.resolve();
-  acknowledged = /* @__PURE__ */ new Map();
+  now;
+  lockTimeoutMilliseconds;
+  lockStaleMilliseconds;
+  lockRetryMilliseconds;
   serialized(operation) {
     const next = this.operation.then(operation, operation);
     this.operation = next.catch(() => void 0);
@@ -69772,12 +69880,11 @@ var FilePublicationJournal = class {
       }
       return validateState(JSON.parse(source));
     } catch (error51) {
-      if (error51.code === "ENOENT") return emptyState();
+      if (isErrorCode(error51, "ENOENT")) return emptyState();
       throw error51;
     }
   }
   async save(state) {
-    await mkdir(dirname2(this.path), { recursive: true, mode: 448 });
     const temporary = `${this.path}.${process.pid}.${randomUUID()}.tmp`;
     await writeFile(temporary, `${JSON.stringify(state)}
 `, { mode: 384, flag: "wx" });
@@ -69787,35 +69894,101 @@ var FilePublicationJournal = class {
       await rm(temporary, { force: true });
       throw error51;
     }
-    await chmod(this.path, 384);
   }
-  prepare(payloadCommitment) {
+  async clearStaleLock(lockPath) {
+    let lockStat;
+    try {
+      lockStat = await stat(lockPath);
+    } catch (error51) {
+      if (isErrorCode(error51, "ENOENT")) return true;
+      throw error51;
+    }
+    if (Date.now() - lockStat.mtimeMs < this.lockStaleMilliseconds) return false;
+    let ownerPid;
+    try {
+      const owner = JSON.parse(await readFile(lockPath, "utf8"));
+      if (typeof owner.pid === "number" && Number.isSafeInteger(owner.pid) && owner.pid > 0) {
+        ownerPid = owner.pid;
+      }
+    } catch {
+      ownerPid = void 0;
+    }
+    if (ownerPid !== void 0 && processIsAlive(ownerPid)) return false;
+    await rm(lockPath, { force: true });
+    return true;
+  }
+  async withLock(operation) {
+    await mkdir(dirname2(this.path), { recursive: true, mode: 448 });
+    const lockPath = `${this.path}.lock`;
+    const deadline = Date.now() + this.lockTimeoutMilliseconds;
+    let lockHandle;
+    while (true) {
+      try {
+        lockHandle = await open(lockPath, "wx", 384);
+        try {
+          await lockHandle.writeFile(`${JSON.stringify({ pid: process.pid, created_at: Date.now() })}
+`);
+        } catch (error51) {
+          await lockHandle.close().catch(() => void 0);
+          await rm(lockPath, { force: true }).catch(() => void 0);
+          throw error51;
+        }
+        break;
+      } catch (error51) {
+        if (!isErrorCode(error51, "EEXIST")) throw error51;
+        if (await this.clearStaleLock(lockPath)) continue;
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) throw new Error("Timed out waiting for the Artifact Share publication journal lock");
+        await delay(Math.min(this.lockRetryMilliseconds, remaining));
+      }
+    }
+    try {
+      return await operation();
+    } finally {
+      await lockHandle.close().catch(() => void 0);
+      await rm(lockPath, { force: true }).catch(() => void 0);
+    }
+  }
+  transaction(operation) {
+    return this.serialized(() => this.withLock(operation));
+  }
+  prepare(payloadCommitment, expiresAt) {
     if (!commitmentPattern.test(payloadCommitment)) {
       return Promise.reject(new Error("Artifact payload commitment is malformed"));
     }
-    return this.serialized(async () => {
-      const acknowledged = this.acknowledged.get(payloadCommitment);
-      if (acknowledged !== void 0) {
+    try {
+      assertExpiry(expiresAt);
+    } catch (error51) {
+      return Promise.reject(error51);
+    }
+    return this.transaction(async () => {
+      const now = this.now();
+      if (expiresAt <= now) throw new Error("Artifact publication expiry must be in the future");
+      const loaded = await this.load();
+      const pending = activeEntries(loaded.pending, now);
+      const acknowledged = activeEntries(loaded.acknowledged, now);
+      const state = { ...loaded, pending, acknowledged };
+      const existing = acknowledged[payloadCommitment] ?? pending[payloadCommitment];
+      if (existing !== void 0) {
+        if (Object.keys(pending).length !== Object.keys(loaded.pending).length || Object.keys(acknowledged).length !== Object.keys(loaded.acknowledged).length) {
+          await this.save(state);
+        }
         return {
-          publisherId: (await this.load()).publisher_id,
-          attemptId: acknowledged.attempt_id,
-          shareToken: acknowledged.share_token
+          publisherId: state.publisher_id,
+          attemptId: existing.attempt_id,
+          shareToken: existing.share_token
         };
       }
-      const state = await this.load();
-      const existing = state.pending[payloadCommitment];
-      const entry = existing ?? {
+      const entry = {
         attempt_id: randomUUID(),
         share_token: opaqueToken(),
-        updated_at: Date.now()
+        updated_at: now,
+        expires_at: expiresAt
       };
-      if (existing === void 0) {
-        const pendingEntries = Object.entries(state.pending).sort((left, right) => left[1].updated_at - right[1].updated_at).slice(-(maximumPendingEntries - 1));
-        await this.save({
-          ...state,
-          pending: Object.fromEntries([...pendingEntries, [payloadCommitment, entry]])
-        });
-      }
+      await this.save({
+        ...state,
+        pending: boundedRecord({ ...pending, [payloadCommitment]: entry })
+      });
       return {
         publisherId: state.publisher_id,
         attemptId: entry.attempt_id,
@@ -69823,190 +69996,39 @@ var FilePublicationJournal = class {
       };
     });
   }
-  acknowledge(payloadCommitment, attemptId) {
-    return this.serialized(async () => {
-      const state = await this.load();
-      const acknowledged = state.pending[payloadCommitment];
-      if (acknowledged?.attempt_id !== attemptId) return;
-      remember(this.acknowledged, payloadCommitment, acknowledged);
-      const pending = { ...state.pending };
+  acknowledge(payloadCommitment, attemptId, expiresAt) {
+    try {
+      assertExpiry(expiresAt);
+    } catch (error51) {
+      return Promise.reject(error51);
+    }
+    return this.transaction(async () => {
+      const now = this.now();
+      const loaded = await this.load();
+      const pending = { ...activeEntries(loaded.pending, now) };
+      const acknowledged = { ...activeEntries(loaded.acknowledged, now) };
+      const matching = pending[payloadCommitment]?.attempt_id === attemptId ? pending[payloadCommitment] : acknowledged[payloadCommitment]?.attempt_id === attemptId ? acknowledged[payloadCommitment] : void 0;
+      if (matching === void 0) {
+        if (Object.keys(pending).length !== Object.keys(loaded.pending).length || Object.keys(acknowledged).length !== Object.keys(loaded.acknowledged).length) {
+          await this.save({ ...loaded, pending, acknowledged });
+        }
+        return;
+      }
       delete pending[payloadCommitment];
-      await this.save({ ...state, pending });
+      delete acknowledged[payloadCommitment];
+      await this.save({
+        ...loaded,
+        pending,
+        acknowledged: now < expiresAt ? boundedRecord({
+          ...acknowledged,
+          [payloadCommitment]: {
+            ...matching,
+            updated_at: now,
+            expires_at: expiresAt
+          }
+        }) : acknowledged
+      });
     });
-  }
-};
-
-// src/tools/publish-artifact.ts
-var authorizePublishDependencies = (dependencies) => {
-  const token = dependencies.token?.trim();
-  if (dependencies.openDevelopment === true) {
-    return { ...dependencies, openDevelopment: true, token };
-  }
-  if (!token) {
-    throw new Error("A non-empty Artifact Share token is required for production publishing");
-  }
-  return { ...dependencies, openDevelopment: false, token };
-};
-var nodeFileOperations = {
-  realpath,
-  open: async (path) => open(path, "r")
-};
-var mimeByExtension = {
-  ".htm": "text/html",
-  ".html": "text/html",
-  ".markdown": "text/markdown",
-  ".md": "text/markdown",
-  ".pdf": "application/pdf"
-};
-var assertUnchanged = (before, after) => {
-  if (before.dev !== after.dev || before.ino !== after.ino || before.mode !== after.mode || before.size !== after.size || before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs) {
-    throw new Error("Artifact file changed while it was being prepared or uploaded");
-  }
-};
-var isWithin = (root, candidate) => {
-  const path = relative(root, candidate);
-  return path === "" || !path.startsWith(`..${sep}`) && path !== ".." && !isAbsolute(path);
-};
-var resolveApprovedPath = async (candidate, roots, operations) => {
-  if (roots.length === 0) throw new Error("At least one approved workspace root is required");
-  const resolvedCandidate = await operations.realpath(resolve2(candidate));
-  const resolvedRoots = await Promise.all(roots.map(async (root) => operations.realpath(resolve2(root))));
-  if (!resolvedRoots.some((root) => isWithin(root, resolvedCandidate))) {
-    throw new Error("Artifact path is outside the approved workspace roots");
-  }
-  return resolvedCandidate;
-};
-var validateBytes = (bytes, mimeType) => {
-  if (bytes.byteLength === 0) throw new Error("Artifact source cannot be empty");
-  if (bytes.byteLength > PROTOCOL_MAX_ARTIFACT_BYTES) throw new Error("Artifact exceeds the supported size");
-  if (mimeType === "application/pdf") {
-    if (new TextDecoder().decode(bytes.subarray(0, 5)) !== "%PDF-") {
-      throw new Error("PDF signature does not match the filename");
-    }
-    return;
-  }
-  try {
-    const source = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-    if (source.includes("\0")) throw new Error("NUL byte");
-  } catch {
-    throw new Error("Text artifacts must contain valid UTF-8");
-  }
-};
-var assertSafeContent = (bytes, label = "Artifact content") => {
-  const finding = findSensitiveContent(new TextDecoder().decode(bytes))[0];
-  if (finding !== void 0) {
-    throw new Error(`${label} may contain sensitive ${finding.label}`);
-  }
-};
-var addExtraction = async (form, mimeType, bytes, extractPdf) => {
-  if (mimeType !== "application/pdf") {
-    form.set("extraction_status", "not_applicable");
-    return { metadata: { status: "not_applicable" } };
-  }
-  let result;
-  try {
-    result = await extractPdf(bytes);
-  } catch {
-    form.set("extraction_status", "unavailable");
-    form.set("extraction_reason", "Embedded PDF text extraction was unavailable.");
-    return {
-      metadata: {
-        status: "unavailable",
-        reason: "Embedded PDF text extraction was unavailable."
-      }
-    };
-  }
-  form.set("extraction_status", result.metadata.status);
-  if (result.metadata.extractor !== void 0) form.set("extractor", result.metadata.extractor);
-  if (result.metadata.extractor_version !== void 0) {
-    form.set("extractor_version", result.metadata.extractor_version);
-  }
-  if (result.metadata.status === "best_effort") {
-    form.set("page_count", String(result.metadata.page_count));
-    const warning = result.qualityWarnings?.includes("layout_may_be_degraded") === true ? "[Extraction quality note: column or table layout may be degraded.]\n\n" : "";
-    const derivedText = `${warning}${pdfPagesToText(result.pages)}`;
-    const derivedBytes = new TextEncoder().encode(derivedText);
-    form.set("derived_text", new File([derivedBytes], `${basename("artifact.pdf")}.txt`, {
-      type: "text/plain;charset=utf-8"
-    }));
-    return { metadata: result.metadata, derivedBytes };
-  } else if (result.metadata.reason !== void 0) {
-    form.set("extraction_reason", result.metadata.reason);
-  }
-  return { metadata: result.metadata };
-};
-var publishArtifact = async (input, dependencies) => {
-  const authorizedDependencies = authorizePublishDependencies(dependencies);
-  const operations = authorizedDependencies.fileOperations ?? nodeFileOperations;
-  const path = await resolveApprovedPath(input.path, authorizedDependencies.workspaceRoots, operations);
-  const sensitiveSegment = findSensitivePath(path);
-  if (sensitiveSegment !== null) {
-    throw new Error(`Artifact path contains a sensitive segment: ${sensitiveSegment}`);
-  }
-  const mimeType = mimeByExtension[extname(path).toLowerCase()];
-  if (mimeType === void 0) throw new Error("Artifact type is not supported");
-  const file2 = await operations.open(path);
-  try {
-    const before = await file2.stat();
-    if (!before.isFile()) throw new Error("Artifact path must refer to a regular file");
-    if (before.size > PROTOCOL_MAX_ARTIFACT_BYTES) throw new Error("Artifact exceeds the supported size");
-    const bytes = new Uint8Array(await file2.readFile());
-    assertUnchanged(before, await file2.stat());
-    validateBytes(bytes, mimeType);
-    assertSafeContent(bytes);
-    const form = new FormData();
-    form.set("file", new File([bytes], basename(path), { type: mimeType }));
-    form.set("expires_in_seconds", String(input.expiresInSeconds));
-    const extraction = await addExtraction(
-      form,
-      mimeType,
-      bytes,
-      authorizedDependencies.extractPdf ?? (async (pdfBytes) => extractPdfInNode({ bytes: pdfBytes }))
-    );
-    if (extraction.derivedBytes !== void 0) {
-      assertSafeContent(extraction.derivedBytes, "Derived PDF text");
-    }
-    assertUnchanged(before, await file2.stat());
-    const payloadCommitment = await createPayloadCommitment({
-      bytes,
-      ...extraction.derivedBytes === void 0 ? {} : { derivedBytes: extraction.derivedBytes },
-      expiresInSeconds: input.expiresInSeconds,
-      extraction: extraction.metadata,
-      filename: basename(path),
-      mimeType
-    });
-    const journal = authorizedDependencies.journal ?? new MemoryPublicationJournal();
-    const publication = await journal.prepare(payloadCommitment);
-    form.set("publication_attempt", publication.attemptId);
-    form.set("share_token", publication.shareToken);
-    form.set("payload_commitment", payloadCommitment);
-    const baseUrl = assertDeploymentOrigin(authorizedDependencies.baseUrl, {
-      openDevelopment: authorizedDependencies.openDevelopment
-    });
-    const headers = new Headers();
-    headers.set("x-artifact-publisher", publication.publisherId);
-    if (authorizedDependencies.token !== void 0) {
-      headers.set("authorization", `Bearer ${authorizedDependencies.token}`);
-    }
-    const response = await fetchWithoutRedirects(
-      authorizedDependencies.fetch ?? globalThis.fetch,
-      new URL("/api/artifacts", baseUrl),
-      {
-        method: "POST",
-        headers,
-        body: form
-      }
-    );
-    if (!response.ok) throw await responseError(response);
-    const result = uploadResponseSchemaForOrigin(baseUrl).parse(await response.json());
-    const shareUrl = new URL(result.share_url);
-    if (shareUrl.origin !== baseUrl.origin || shareUrl.username !== "" || shareUrl.password !== "" || shareUrl.search !== "" || shareUrl.hash !== "" || !/^\/a\/[A-Za-z0-9_-]{32,256}$/u.test(shareUrl.pathname)) {
-      throw new Error("Artifact Share returned a foreign share origin");
-    }
-    await journal.acknowledge(payloadCommitment, publication.attemptId);
-    return result;
-  } finally {
-    await file2.close();
   }
 };
 
@@ -70174,6 +70196,194 @@ var readArtifact = async (input, dependencies) => {
   };
 };
 
+// src/tools/publish-artifact.ts
+var authorizePublishDependencies = (dependencies) => {
+  const token = dependencies.token?.trim();
+  if (dependencies.openDevelopment === true) {
+    return { ...dependencies, openDevelopment: true, token };
+  }
+  if (!token) {
+    throw new Error("A non-empty Artifact Share token is required for production publishing");
+  }
+  return { ...dependencies, openDevelopment: false, token };
+};
+var nodeFileOperations = {
+  realpath,
+  open: async (path) => open2(path, "r")
+};
+var mimeByExtension = {
+  ".htm": "text/html",
+  ".html": "text/html",
+  ".markdown": "text/markdown",
+  ".md": "text/markdown",
+  ".pdf": "application/pdf"
+};
+var assertUnchanged = (before, after) => {
+  if (before.dev !== after.dev || before.ino !== after.ino || before.mode !== after.mode || before.size !== after.size || before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs) {
+    throw new Error("Artifact file changed while it was being prepared or uploaded");
+  }
+};
+var isWithin = (root, candidate) => {
+  const path = relative(root, candidate);
+  return path === "" || !path.startsWith(`..${sep}`) && path !== ".." && !isAbsolute(path);
+};
+var resolveApprovedPath = async (candidate, roots, operations) => {
+  if (roots.length === 0) throw new Error("At least one approved workspace root is required");
+  const resolvedCandidate = await operations.realpath(resolve2(candidate));
+  const resolvedRoots = await Promise.all(roots.map(async (root) => operations.realpath(resolve2(root))));
+  if (!resolvedRoots.some((root) => isWithin(root, resolvedCandidate))) {
+    throw new Error("Artifact path is outside the approved workspace roots");
+  }
+  return resolvedCandidate;
+};
+var validateBytes = (bytes, mimeType) => {
+  if (bytes.byteLength === 0) throw new Error("Artifact source cannot be empty");
+  if (bytes.byteLength > PROTOCOL_MAX_ARTIFACT_BYTES) throw new Error("Artifact exceeds the supported size");
+  if (mimeType === "application/pdf") {
+    if (new TextDecoder().decode(bytes.subarray(0, 5)) !== "%PDF-") {
+      throw new Error("PDF signature does not match the filename");
+    }
+    return void 0;
+  }
+  try {
+    const source = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    if (source.includes("\0")) throw new Error("NUL byte");
+    return source;
+  } catch {
+    throw new Error("Text artifacts must contain valid UTF-8");
+  }
+};
+var assertSafeContent = (content, label = "Artifact content") => {
+  const source = typeof content === "string" ? content : new TextDecoder().decode(content);
+  const finding = findFirstSensitiveContent(source);
+  if (finding !== null) {
+    throw new Error(`${label} may contain sensitive ${finding.label}`);
+  }
+};
+var addExtraction = async (form, mimeType, bytes, extractPdf) => {
+  if (mimeType !== "application/pdf") {
+    form.set("extraction_status", "not_applicable");
+    return { metadata: { status: "not_applicable" } };
+  }
+  let result;
+  try {
+    result = await extractPdf(bytes);
+  } catch {
+    form.set("extraction_status", "unavailable");
+    form.set("extraction_reason", "Embedded PDF text extraction was unavailable.");
+    return {
+      metadata: {
+        status: "unavailable",
+        reason: "Embedded PDF text extraction was unavailable."
+      }
+    };
+  }
+  form.set("extraction_status", result.metadata.status);
+  if (result.metadata.extractor !== void 0) form.set("extractor", result.metadata.extractor);
+  if (result.metadata.extractor_version !== void 0) {
+    form.set("extractor_version", result.metadata.extractor_version);
+  }
+  if (result.metadata.status === "best_effort") {
+    form.set("page_count", String(result.metadata.page_count));
+    const warning = result.qualityWarnings?.includes("layout_may_be_degraded") === true ? "[Extraction quality note: column or table layout may be degraded.]\n\n" : "";
+    const derivedText = `${warning}${pdfPagesToText(result.pages)}`;
+    const derivedBytes = new TextEncoder().encode(derivedText);
+    form.set("derived_text", new File([derivedBytes], `${basename("artifact.pdf")}.txt`, {
+      type: "text/plain;charset=utf-8"
+    }));
+    return { metadata: result.metadata, derivedBytes, derivedText };
+  } else if (result.metadata.reason !== void 0) {
+    form.set("extraction_reason", result.metadata.reason);
+  }
+  return { metadata: result.metadata };
+};
+var publishArtifact = async (input, dependencies) => {
+  const authorizedDependencies = authorizePublishDependencies(dependencies);
+  const operations = authorizedDependencies.fileOperations ?? nodeFileOperations;
+  const path = await resolveApprovedPath(input.path, authorizedDependencies.workspaceRoots, operations);
+  const filename = basename(path);
+  const sensitiveSegment = findSensitivePath(path);
+  if (sensitiveSegment !== null) {
+    throw new Error(`Artifact path contains a sensitive segment: ${sensitiveSegment}`);
+  }
+  const mimeType = mimeByExtension[extname(path).toLowerCase()];
+  if (mimeType === void 0) throw new Error("Artifact type is not supported");
+  const file2 = await operations.open(path);
+  try {
+    const before = await file2.stat();
+    if (!before.isFile()) throw new Error("Artifact path must refer to a regular file");
+    if (before.size > PROTOCOL_MAX_ARTIFACT_BYTES) throw new Error("Artifact exceeds the supported size");
+    const bytes = new Uint8Array(await file2.readFile());
+    assertUnchanged(before, await file2.stat());
+    const sourceText = validateBytes(bytes, mimeType);
+    assertSafeContent(sourceText ?? bytes);
+    const form = new FormData();
+    form.set("file", new File([bytes], filename, { type: mimeType }));
+    form.set("expires_in_seconds", String(input.expiresInSeconds));
+    const extraction = await addExtraction(
+      form,
+      mimeType,
+      bytes,
+      authorizedDependencies.extractPdf ?? (async (pdfBytes) => extractPdfInNode({ bytes: pdfBytes }))
+    );
+    if (mimeType === "application/pdf" && extraction.metadata.status !== "best_effort") {
+      throw new Error("PDF publishing requires successful text extraction so its safety scan can complete");
+    }
+    if (extraction.derivedBytes !== void 0) {
+      assertSafeContent(extraction.derivedText ?? extraction.derivedBytes, "Derived PDF text");
+    }
+    assertUnchanged(before, await file2.stat());
+    const payloadCommitment = await createPayloadCommitment({
+      bytes,
+      ...extraction.derivedBytes === void 0 ? {} : { derivedBytes: extraction.derivedBytes },
+      expiresInSeconds: input.expiresInSeconds,
+      extraction: extraction.metadata,
+      filename,
+      mimeType
+    });
+    const journal = authorizedDependencies.journal ?? new MemoryPublicationJournal();
+    const publication = await journal.prepare(
+      payloadCommitment,
+      Date.now() + input.expiresInSeconds * 1e3
+    );
+    form.set("publication_attempt", publication.attemptId);
+    form.set("share_token", publication.shareToken);
+    form.set("payload_commitment", payloadCommitment);
+    const baseUrl = assertDeploymentOrigin(authorizedDependencies.baseUrl, {
+      openDevelopment: authorizedDependencies.openDevelopment
+    });
+    const headers = new Headers();
+    headers.set("x-artifact-publisher", publication.publisherId);
+    if (authorizedDependencies.token !== void 0) {
+      headers.set("authorization", `Bearer ${authorizedDependencies.token}`);
+    }
+    const response = await fetchWithoutRedirects(
+      authorizedDependencies.fetch ?? globalThis.fetch,
+      new URL("/api/artifacts", baseUrl),
+      {
+        method: "POST",
+        headers,
+        body: form
+      }
+    );
+    if (!response.ok) throw await responseError(response);
+    const result = uploadResponseSchemaForOrigin(baseUrl).parse(await response.json());
+    try {
+      parseShareUrl(result.share_url, baseUrl);
+    } catch {
+      throw new Error("Artifact Share returned a foreign share origin");
+    }
+    await journal.acknowledge(
+      payloadCommitment,
+      publication.attemptId,
+      Date.parse(result.manifest.expires_at)
+    );
+    return result;
+  } finally {
+    await file2.close();
+  }
+};
+
 // src/tool-contract.ts
 var webUrlSchema = external_exports.url({ protocol: /^https?$/u });
 var sha256Schema2 = external_exports.string().regex(/^[a-f0-9]{64}$/u);
@@ -70254,7 +70464,6 @@ var createBridgeServer = (configuration) => {
     annotations: {
       readOnlyHint: false,
       destructiveHint: false,
-      idempotentHint: true,
       openWorldHint: true
     }
   }, async ({ path, expires_in_seconds: expiresInSeconds }) => {

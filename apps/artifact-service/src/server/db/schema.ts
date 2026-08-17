@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const artifacts = sqliteTable(
@@ -31,7 +32,7 @@ export const artifacts = sqliteTable(
     uniqueIndex("artifacts_publisher_attempt_unique").on(
       table.publisherId,
       table.publicationAttempt,
-    ),
+    ).where(sql`${table.publisherId} IS NOT NULL AND ${table.publicationAttempt} IS NOT NULL`),
     index("artifacts_status_expires_at_idx").on(table.status, table.expiresAt),
   ],
 );

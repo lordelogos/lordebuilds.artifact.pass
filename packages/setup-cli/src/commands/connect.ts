@@ -82,6 +82,19 @@ export const connectHost = async (
   ) {
     throw new Error(`Artifact Share health check failed (${health.status})`);
   }
+  const configPath = input.configPath ?? defaultLocalConfigPath();
+  const previousSettings = await (dependencies.readSettings ?? readLocalBridgeSettings)(configPath).catch((error: unknown) => {
+    if (isMissingFile(error)) return null;
+    throw error;
+  });
+  if (openDevelopment && previousSettings !== null && previousSettings.open_development !== true) {
+    const previousToken = await (dependencies.credentialStore ?? new OsCredentialStore()).get();
+    if (previousToken !== null) {
+      throw new Error(
+        "Disconnect the existing hosted Artifact Share connection before connecting to open development",
+      );
+    }
+  }
   const runner = dependencies.runner ?? runProcess;
   const installKnownHostAdapters = input.installKnownHostAdapters !== false;
   const hosts = installKnownHostAdapters ? (input.hosts ?? await detectHosts(runner)) : [];
@@ -91,7 +104,6 @@ export const connectHost = async (
   if (installKnownHostAdapters) {
     await installPluginForHosts(hosts, input.marketplaceSource, runner);
   }
-  const configPath = input.configPath ?? defaultLocalConfigPath();
   if (openDevelopment) {
     await (dependencies.writeSettings ?? writeLocalBridgeSettings)(configPath, {
       version: 1,
@@ -103,10 +115,6 @@ export const connectHost = async (
   }
   const store = dependencies.credentialStore ?? new OsCredentialStore();
   const previousToken = await store.get();
-  const previousSettings = await (dependencies.readSettings ?? readLocalBridgeSettings)(configPath).catch((error: unknown) => {
-    if (isMissingFile(error)) return null;
-    throw error;
-  });
   if (previousToken !== null && previousSettings === null) {
     throw new Error("The existing Artifact Share credential has no readable local configuration; disconnect it first");
   }

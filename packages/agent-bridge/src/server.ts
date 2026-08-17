@@ -72,7 +72,6 @@ export const createBridgeServer = (configuration: BridgeConfiguration): McpServe
     annotations: {
       readOnlyHint: false,
       destructiveHint: false,
-      idempotentHint: true,
       openWorldHint: true,
     },
   }, async ({ path, expires_in_seconds: expiresInSeconds }) => {

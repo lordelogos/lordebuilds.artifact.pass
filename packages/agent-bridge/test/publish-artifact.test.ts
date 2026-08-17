@@ -274,42 +274,27 @@ describe("publish_artifact", () => {
     );
   });
 
-  it("publishes exact PDF bytes when optional extraction fails", async () => {
+  it("refuses a PDF before journal or network access when its safety extraction fails", async () => {
     const root = await workspace();
     const path = join(root, "encrypted-report.pdf");
     const bytes = new TextEncoder().encode("%PDF-exact-encrypted-source");
     await writeFile(path, bytes);
-    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response(JSON.stringify({
-      protocol_version: 1,
-      manifest: {
-        protocol_version: 1,
-        artifact_id: "018f1f52-cbf1-7a5e-b66e-9ac829614b53",
-        filename: "encrypted-report.pdf",
-        mime_type: "application/pdf",
-        byte_size: bytes.byteLength,
-        sha256: "a".repeat(64),
-        created_at: "2026-08-16T00:00:00.000Z",
-        expires_at: "2026-08-16T00:30:00.000Z",
-        extraction: { status: "unavailable", reason: "Embedded PDF text extraction was unavailable." },
-      },
-      share_url: shareUrl,
-    }), { status: 201, headers: { "content-type": "application/json" } }));
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    const journalPath = join(root, "private-state.json");
 
     await expect(publishArtifact({ path, expiresInSeconds: 1800 }, {
       baseUrl: new URL("https://artifacts.example.test"),
       fetch,
       token: agentToken,
       workspaceRoots: [root],
+      journal: new FilePublicationJournal(journalPath),
       extractPdf: async () => {
         throw new Error("encrypted PDF");
       },
-    })).resolves.toMatchObject({ share_url: shareUrl });
+    })).rejects.toThrow(/safety scan/iu);
 
-    const form = fetch.mock.calls[0]?.[1]?.body as FormData;
-    expect(new Uint8Array(await (form.get("file") as File).arrayBuffer())).toEqual(bytes);
-    expect(form.get("extraction_status")).toBe("unavailable");
-    expect(form.get("extraction_reason")).not.toContain("encrypted PDF");
-    expect(form.get("derived_text")).toBeNull();
+    expect(fetch).not.toHaveBeenCalled();
+    await expect(readFile(journalPath, "utf8")).rejects.toThrow();
   });
 
   it("refuses sensitive extracted PDF text before journal or network access", async () => {
@@ -420,11 +405,58 @@ describe("publish_artifact", () => {
     })).resolves.toMatchObject({ share_url: shareUrl });
   });
 
+  it("rotates an acknowledged share token at the server-reported expiry", async () => {
+    const root = await workspace();
+    const path = join(root, "expiry.md");
+    await writeFile(path, "# Expiring handoff\n");
+    let now = 1_000;
+    const journal = new FilePublicationJournal(join(root, "bridge-state.json"), {
+      now: () => now,
+    });
+    const observedTokens: string[] = [];
+    const fetch = vi.fn<typeof globalThis.fetch>(async (_input, init) => {
+      const form = init?.body;
+      if (!(form instanceof FormData)) throw new Error("Expected a multipart upload");
+      const token = String(form.get("share_token"));
+      observedTokens.push(token);
+      return new Response(JSON.stringify({
+        protocol_version: 1,
+        manifest: {
+          protocol_version: 1,
+          artifact_id: crypto.randomUUID(),
+          filename: "expiry.md",
+          mime_type: "text/markdown",
+          byte_size: 19,
+          sha256: "a".repeat(64),
+          created_at: new Date(now).toISOString(),
+          expires_at: new Date(now + 3_000).toISOString(),
+          extraction: { status: "not_applicable" },
+        },
+        share_url: `https://artifacts.example.test/a/${token}`,
+      }), { status: 201, headers: { "content-type": "application/json" } });
+    });
+    const dependencies = {
+      baseUrl: new URL("https://artifacts.example.test"),
+      fetch,
+      token: agentToken,
+      workspaceRoots: [root],
+      journal,
+    };
+
+    const original = await publishArtifact({ path, expiresInSeconds: 3 }, dependencies);
+    now = 4_000;
+    const replacement = await publishArtifact({ path, expiresInSeconds: 3 }, dependencies);
+
+    expect(replacement.share_url).not.toBe(original.share_url);
+    expect(observedTokens[1]).not.toBe(observedTokens[0]);
+  });
+
   it("recovers the original publication after a committed response is lost and the bridge restarts", async () => {
     const root = await workspace();
     const path = join(root, "final.md");
     const journalPath = join(root, "bridge-state.json");
     await writeFile(path, "# Final handoff\n");
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
     let committed: {
       attempt: string;
       token: string;
@@ -454,7 +486,7 @@ describe("publish_artifact", () => {
           byte_size: 16,
           sha256: "a".repeat(64),
           created_at: "2026-08-16T00:00:00.000Z",
-          expires_at: "2026-08-16T01:00:00.000Z",
+          expires_at: expiresAt,
           extraction: { status: "not_applicable" },
         },
         share_url: `https://artifacts.example.test/a/${committed.token}`,
@@ -491,6 +523,6 @@ describe("publish_artifact", () => {
     });
 
     expect(fetch).toHaveBeenCalledTimes(3);
-    await expect(readFile(journalPath, "utf8")).resolves.not.toContain(committed?.token ?? "missing");
+    await expect(readFile(journalPath, "utf8")).resolves.toContain(committed?.token ?? "missing");
   });
 });

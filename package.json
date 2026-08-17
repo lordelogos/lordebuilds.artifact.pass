@@ -36,6 +36,7 @@
     "check": "pnpm --dir packages/agent-bridge build && pnpm plugin:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build"
   },
   "devDependencies": {
+    "@modelcontextprotocol/client": "2.0.0",
     "@playwright/test": "^1.62.1",
     "esbuild": "^0.28.1",
     "oxlint": "^1.78.0",

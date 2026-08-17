@@ -39,6 +39,15 @@ export const findSensitiveContent = (source) => {
   return findings;
 };
 
+export const findFirstSensitiveContent = (source) => {
+  for (const { label, pattern } of contentPatterns) {
+    pattern.lastIndex = 0;
+    const match = pattern.exec(source);
+    if (match !== null) return { label, index: match.index };
+  }
+  return null;
+};
+
 export const findSensitivePath = (path) => {
   const normalized = path.replaceAll("\\", "/");
   const segments = normalized.split("/").filter(Boolean);

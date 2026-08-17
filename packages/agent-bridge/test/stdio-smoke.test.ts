@@ -42,6 +42,8 @@ describe("built stdio bridge", () => {
           outputSchema: expect.objectContaining({ type: "object" }),
         }),
       ]));
+      expect(listed.tools.find((tool) => tool.name === "publish_artifact")?.annotations)
+        .not.toHaveProperty("idempotentHint");
 
       const result = await client.callTool({
         name: "read_artifact",

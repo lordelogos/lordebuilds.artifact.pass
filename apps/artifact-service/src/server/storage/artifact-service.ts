@@ -25,6 +25,8 @@ export interface ArtifactServiceOptions {
   readonly now?: () => number;
   readonly createId?: () => string;
   readonly createToken?: () => string;
+  readonly publicationRecoveryAttempts?: number;
+  readonly waitForPublication?: () => Promise<void>;
 }
 
 export const artifactRecordToManifest = (artifact: ArtifactRecord): ArtifactManifest =>
@@ -79,11 +81,17 @@ export class ArtifactApplicationService {
   private readonly now: () => number;
   private readonly createId: () => string;
   private readonly createToken: () => string;
+  private readonly publicationRecoveryAttempts: number;
+  private readonly waitForPublication: () => Promise<void>;
 
   public constructor(private readonly options: ArtifactServiceOptions) {
     this.now = options.now ?? Date.now;
     this.createId = options.createId ?? crypto.randomUUID.bind(crypto);
     this.createToken = options.createToken ?? createShareToken;
+    this.publicationRecoveryAttempts = options.publicationRecoveryAttempts ?? 100;
+    this.waitForPublication = options.waitForPublication ?? (async () => new Promise((resolve) => {
+      setTimeout(resolve, 50);
+    }));
   }
 
   public async create(input: ArtifactUploadInput): Promise<CreatedArtifact> {
@@ -192,23 +200,36 @@ export class ArtifactApplicationService {
     existing: ArtifactRecord,
     publication: PublicationRetry,
   ): Promise<CreatedArtifact> {
-    if (
-      existing.status !== "active" ||
-      this.now() >= existing.expiresAt ||
-      existing.payloadCommitment !== publication.payloadCommitment ||
-      existing.shareTokenHash !== await hashShareToken(publication.shareToken)
-    ) {
-      throw new ArtifactError(
-        "malformed_upload",
-        "Publication attempt conflicts with an existing artifact",
-        409,
+    const shareTokenHash = await hashShareToken(publication.shareToken);
+    let candidate: ArtifactRecord | null = existing;
+    for (let attempt = 0; attempt <= this.publicationRecoveryAttempts; attempt += 1) {
+      if (
+        candidate === null ||
+        this.now() >= candidate.expiresAt ||
+        candidate.payloadCommitment !== publication.payloadCommitment ||
+        candidate.shareTokenHash !== shareTokenHash
+      ) {
+        break;
+      }
+      if (candidate.status === "active") {
+        return {
+          manifest: artifactRecordToManifest(candidate),
+          shareToken: publication.shareToken,
+          created: false,
+        };
+      }
+      if (candidate.status !== "staging" || attempt === this.publicationRecoveryAttempts) break;
+      await this.waitForPublication();
+      candidate = await this.options.repository.findByPublication(
+        publication.publisherId,
+        publication.publicationAttempt,
       );
     }
-    return {
-      manifest: artifactRecordToManifest(existing),
-      shareToken: publication.shareToken,
-      created: false,
-    };
+    throw new ArtifactError(
+      "malformed_upload",
+      "Publication attempt conflicts with an existing artifact",
+      409,
+    );
   }
 
   public async resolve(shareToken: string): Promise<ArtifactRecord> {

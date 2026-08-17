@@ -10,6 +10,7 @@ import type { IdentityRule } from "./cloudflare/deployment";
 import { runDoctor } from "./doctor";
 import type { AgentHost } from "./hosts";
 import { openBrowser } from "./open-browser";
+import { installPortableIntegration } from "./portable-integration";
 
 const deploymentRoot = resolve(dirname(fileURLToPath(import.meta.url)), "deployment");
 const defaultMarketplace = resolve(dirname(fileURLToPath(import.meta.url)), "marketplace");
@@ -107,6 +108,11 @@ const main = async (): Promise<void> => {
     }
     const hosts = host === "both" ? undefined : [host as AgentHost];
     const marketplaceSource = optionalValue(args, "--marketplace") ?? defaultMarketplace;
+    const portableIntegration = installKnownHostAdapters
+      ? undefined
+      : await installPortableIntegration({
+          sourceRoot: resolve(marketplaceSource, "plugins/artifact-share"),
+        });
     const result = await connectHost({
       baseUrl: positional(args, 0),
       workspaceRoots: values(args, "--workspace-root").length > 0
@@ -120,13 +126,9 @@ const main = async (): Promise<void> => {
       deviceFlowDependencies: { openBrowser },
     });
     if (!installKnownHostAdapters) {
-      const portableRoot = resolve(marketplaceSource, "plugins/artifact-share");
       print({
         ...result,
-        portableIntegration: {
-          mcpConfig: resolve(portableRoot, ".mcp.json"),
-          skillsDirectory: resolve(portableRoot, "skills"),
-        },
+        portableIntegration,
         next: "Register the MCP configuration and Agent Skills directory in your agent system.",
       });
       return;

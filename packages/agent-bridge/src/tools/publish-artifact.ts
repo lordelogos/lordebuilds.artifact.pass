@@ -10,7 +10,10 @@ import {
 } from "artifact-protocol";
 import { extractPdfInNode, pdfPagesToText, type PdfExtractionResult } from "representation-pipeline";
 import { createPayloadCommitment } from "../../../../scripts/publication-commitment.mjs";
-import { findSensitiveContent, findSensitivePath } from "../../../../scripts/security-patterns.mjs";
+import {
+  findFirstSensitiveContent,
+  findSensitivePath,
+} from "../../../../scripts/security-patterns.mjs";
 
 import { assertDeploymentOrigin, fetchWithoutRedirects, responseError } from "../http/safe-fetch";
 import {
@@ -140,8 +143,8 @@ const validateBytes = (bytes: Uint8Array, mimeType: SupportedMimeType): string |
 
 const assertSafeContent = (content: string | Uint8Array, label = "Artifact content"): void => {
   const source = typeof content === "string" ? content : new TextDecoder().decode(content);
-  const finding = findSensitiveContent(source)[0];
-  if (finding !== undefined) {
+  const finding = findFirstSensitiveContent(source);
+  if (finding !== null) {
     throw new Error(`${label} may contain sensitive ${finding.label}`);
   }
 };
@@ -231,6 +234,9 @@ export const publishArtifact = async (
       bytes,
       authorizedDependencies.extractPdf ?? (async (pdfBytes) => extractPdfInNode({ bytes: pdfBytes })),
     );
+    if (mimeType === "application/pdf" && extraction.metadata.status !== "best_effort") {
+      throw new Error("PDF publishing requires successful text extraction so its safety scan can complete");
+    }
     if (extraction.derivedBytes !== undefined) {
       assertSafeContent(extraction.derivedText ?? extraction.derivedBytes, "Derived PDF text");
     }
@@ -245,7 +251,10 @@ export const publishArtifact = async (
       mimeType,
     });
     const journal = authorizedDependencies.journal ?? new MemoryPublicationJournal();
-    const publication = await journal.prepare(payloadCommitment);
+    const publication = await journal.prepare(
+      payloadCommitment,
+      Date.now() + input.expiresInSeconds * 1000,
+    );
     form.set("publication_attempt", publication.attemptId);
     form.set("share_token", publication.shareToken);
     form.set("payload_commitment", payloadCommitment);
@@ -274,7 +283,11 @@ export const publishArtifact = async (
     } catch {
       throw new Error("Artifact Share returned a foreign share origin");
     }
-    await journal.acknowledge(payloadCommitment, publication.attemptId);
+    await journal.acknowledge(
+      payloadCommitment,
+      publication.attemptId,
+      Date.parse(result.manifest.expires_at),
+    );
     return result;
   } finally {
     await file.close();

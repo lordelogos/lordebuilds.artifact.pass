@@ -264,6 +264,98 @@ describe("host connection", () => {
     });
   });
 
+  it("keeps an existing open development connection open", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifact-share-open-reconnect-test-"));
+    const configPath = resolve(root, "config.json");
+    await writeFile(configPath, JSON.stringify({
+      version: 1,
+      base_url: "http://127.0.0.1:8787/",
+      workspace_roots: [root],
+      open_development: true,
+    }));
+    const store = { get: vi.fn().mockResolvedValue(null), set: vi.fn(), delete: vi.fn() };
+
+    await expect(connectHost({
+      baseUrl: "http://127.0.0.1:8787",
+      workspaceRoots: [root],
+      marketplaceSource: "/trusted/repository",
+      configPath,
+      openDevelopment: true,
+      installKnownHostAdapters: false,
+    }, {
+      credentialStore: store,
+      deviceFlowDependencies: {
+        openBrowser: async () => undefined,
+        fetch: vi.fn(async () => new Response(JSON.stringify({
+          service: "lordebuilds.artifacts.share",
+          status: "ok",
+        }))),
+      },
+    })).resolves.toEqual({ hosts: [], configPath });
+
+    expect(store.get).not.toHaveBeenCalled();
+    expect(store.set).not.toHaveBeenCalled();
+    expect(store.delete).not.toHaveBeenCalled();
+    expect(JSON.parse(await readFile(configPath, "utf8"))).toEqual({
+      version: 1,
+      base_url: "http://127.0.0.1:8787/",
+      workspace_roots: [root],
+      open_development: true,
+    });
+  });
+
+  it("refuses to overwrite an authenticated hosted connection with open development", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifact-share-hosted-to-open-test-"));
+    const configPath = resolve(root, "config.json");
+    const hostedSettings = {
+      version: 1 as const,
+      base_url: "https://artifacts.example.test/",
+      workspace_roots: [root],
+    };
+    await writeFile(configPath, JSON.stringify(hostedSettings));
+    const hostedToken = `as_${"h".repeat(43)}`;
+    const store = {
+      get: vi.fn().mockResolvedValue(hostedToken),
+      set: vi.fn(),
+      delete: vi.fn(),
+    };
+    const runner: ProcessRunner = vi.fn(async () => {
+      throw new Error("host installation must not run");
+    });
+    const writeSettings = vi.fn();
+    const fetch = vi.fn(async () => new Response(JSON.stringify({
+      service: "lordebuilds.artifacts.share",
+      status: "ok",
+    })));
+
+    await expect(connectHost({
+      baseUrl: "http://127.0.0.1:8787",
+      workspaceRoots: [root],
+      hosts: ["codex"],
+      marketplaceSource: "/trusted/repository",
+      configPath,
+      openDevelopment: true,
+    }, {
+      runner,
+      credentialStore: store,
+      writeSettings,
+      deviceFlowDependencies: {
+        openBrowser: async () => undefined,
+        fetch,
+      },
+    })).rejects.toThrow(
+      "Disconnect the existing hosted Artifact Share connection before connecting to open development",
+    );
+
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(runner).not.toHaveBeenCalled();
+    expect(writeSettings).not.toHaveBeenCalled();
+    expect(store.get).toHaveBeenCalledOnce();
+    expect(store.set).not.toHaveBeenCalled();
+    expect(store.delete).not.toHaveBeenCalled();
+    expect(await readFile(configPath, "utf8")).toBe(JSON.stringify(hostedSettings));
+  });
+
   it("rejects a local HTTP connection unless open development is explicit", async () => {
     const runner = runnerFor(["codex"]);
 

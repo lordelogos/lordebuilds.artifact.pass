@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { relative, resolve } from "node:path";
 import { promisify } from "node:util";
 
+import { Client } from "@modelcontextprotocol/client";
+import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { sourceSha256 } from "./publication-commitment.mjs";
 
 const execute = promisify(execFile);
@@ -42,6 +44,47 @@ const assertPortableBytes = async (host, installedRoot, files) => {
     if (canonical !== installed) {
       throw new Error(`${host} installed different portable package bytes for ${file}`);
     }
+  }
+};
+
+const assertRuntimeConformance = async (host, installedRoot) => {
+  const configuration = JSON.parse(await readFile(resolve(installedRoot, ".mcp.json"), "utf8"));
+  const server = configuration.mcpServers?.["artifact-share"];
+  if (server?.command !== "node" || !Array.isArray(server.args)) {
+    throw new Error(`${host} installed an invalid Artifact Share MCP configuration`);
+  }
+  const command = process.execPath;
+  const args = server.args.map((argument) =>
+    argument.startsWith(".") ? resolve(installedRoot, argument) : argument
+  );
+  const unrelatedWorkingDirectory = resolve(temporaryRoot, `${host.toLowerCase().replaceAll(" ", "-")}-cwd`);
+  await mkdir(unrelatedWorkingDirectory);
+  const transport = new StdioClientTransport({
+    command,
+    args,
+    cwd: unrelatedWorkingDirectory,
+    env: {
+      ARTIFACT_SHARE_BASE_URL: "https://artifacts.example.test",
+      ARTIFACT_SHARE_TOKEN: `as_${"t".repeat(43)}`,
+      ARTIFACT_SHARE_WORKSPACE_ROOTS: temporaryRoot,
+    },
+    stderr: "pipe",
+  });
+  const client = new Client({ name: "artifact-share-host-conformance", version: "0.0.0" });
+  try {
+    await client.connect(transport);
+    const listed = await client.listTools();
+    const tools = listed.tools.map((tool) => tool.name).sort();
+    if (JSON.stringify(tools) !== JSON.stringify(["publish_artifact", "read_artifact"])) {
+      throw new Error(`${host} did not negotiate the portable Artifact Share MCP tools`);
+    }
+    const skillEntries = await readdir(resolve(installedRoot, "skills"), { withFileTypes: true });
+    const discoveredSkills = skillEntries.filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort();
+    if (JSON.stringify(discoveredSkills) !== JSON.stringify(["read-shared-artifact", "share-artifact"])) {
+      throw new Error(`${host} did not expose the portable Agent Skills`);
+    }
+  } finally {
+    await client.close();
   }
 };
 
@@ -89,9 +132,13 @@ try {
     assertPortableBytes("Codex", codexInstall.installedPath, files),
     assertPortableBytes("Claude Code", claudeInstall.installPath, files),
   ]);
+  await Promise.all([
+    assertRuntimeConformance("Codex", codexInstall.installedPath),
+    assertRuntimeConformance("Claude Code", claudeInstall.installPath),
+  ]);
 
   process.stdout.write(
-    `Agent host conformance passed: Codex and Claude Code installed the same ${files.length}-file portable MCP and Agent Skills package.\n`,
+    `Agent host conformance passed: Codex and Claude Code installed and launched the same ${files.length}-file portable MCP and Agent Skills package.\n`,
   );
 } finally {
   await rm(temporaryRoot, { recursive: true, force: true });

@@ -4,4 +4,5 @@ export interface SensitiveContentFinding {
 }
 
 export function findSensitiveContent(source: string): SensitiveContentFinding[];
+export function findFirstSensitiveContent(source: string): SensitiveContentFinding | null;
 export function findSensitivePath(path: string): string | null;

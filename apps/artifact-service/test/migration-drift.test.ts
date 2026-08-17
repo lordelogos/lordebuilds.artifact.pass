@@ -1,7 +1,9 @@
 import { env } from "cloudflare:workers";
 import { reset } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
+import { getTableConfig } from "drizzle-orm/sqlite-core";
 
+import { artifacts } from "../src/server/db/schema";
 import migration1 from "../migrations/0001-artifacts.sql?raw";
 import migration2 from "../migrations/0002-identity.sql?raw";
 import migration3 from "../migrations/0003-request-rate-limits.sql?raw";
@@ -42,5 +44,17 @@ describe("deployment migrations", () => {
       "publication_attempt",
       "payload_commitment",
     ]));
+
+    const publicationIndex = await env.ARTIFACT_DB.prepare(
+      "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?",
+    ).bind("artifacts_publisher_attempt_unique").first<{ readonly sql: string }>();
+    expect(publicationIndex?.sql).toContain(
+      "WHERE publisher_id IS NOT NULL AND publication_attempt IS NOT NULL",
+    );
+    expect(
+      getTableConfig(artifacts).indexes.find(
+        (candidate) => candidate.config.name === "artifacts_publisher_attempt_unique",
+      )?.config.where,
+    ).toBeDefined();
   });
 });

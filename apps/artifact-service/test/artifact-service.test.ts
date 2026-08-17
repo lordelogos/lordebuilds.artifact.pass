@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { createPayloadCommitment } from "../../../scripts/publication-commitment.mjs";
 
 import type { ArtifactRepository } from "../src/server/storage/artifact-repository";
 import { ArtifactApplicationService } from "../src/server/storage/artifact-service";
@@ -7,6 +8,7 @@ import type {
   ArtifactObjectStore,
   StoredObject,
 } from "../src/server/storage/r2-object-store";
+import { hashShareToken } from "../src/server/storage/crypto";
 
 const policy = {
   allowedExpirySeconds: [900],
@@ -43,6 +45,65 @@ const markdownInput = {
 };
 
 describe("staged artifact writes", () => {
+  it("waits for a matching concurrent publication to activate and returns its result", async () => {
+    const publicationAttempt = crypto.randomUUID();
+    const shareToken = "A".repeat(43);
+    const payloadCommitment = await createPayloadCommitment({
+      bytes: markdownInput.bytes,
+      expiresInSeconds: markdownInput.expiresInSeconds,
+      filename: markdownInput.filename,
+      mimeType: markdownInput.mimeType,
+    });
+    const input = {
+      ...markdownInput,
+      publisherId: "local:publisher-01",
+      publicationAttempt,
+      payloadCommitment,
+      shareToken,
+    };
+    let record: ArtifactRecord | null = null;
+    let releaseObjectWrite: (() => void) | undefined;
+    const objectWrite = new Promise<void>((resolve) => {
+      releaseObjectWrite = resolve;
+    });
+    let activated: (() => void) | undefined;
+    const activation = new Promise<void>((resolve) => {
+      activated = resolve;
+    });
+    const metadata = repository({
+      findByPublication: vi.fn(async () => record),
+      insertStaging: vi.fn(async (artifact) => {
+        record = artifact;
+      }),
+      activate: vi.fn(async () => {
+        record = record === null ? null : { ...record, status: "active" };
+        activated?.();
+      }),
+    });
+    const objects = objectStore({ put: vi.fn(async () => objectWrite) });
+    const service = new ArtifactApplicationService({
+      repository: metadata,
+      objectStore: objects,
+      policy,
+      createId: () => "11111111-1111-4111-8111-111111111111",
+      now: () => Date.parse("2026-08-16T12:00:00.000Z"),
+      waitForPublication: async () => activation,
+    });
+
+    const winner = service.create(input);
+    await vi.waitFor(() => expect(record?.status).toBe("staging"));
+    const retry = service.create(input);
+    releaseObjectWrite?.();
+
+    const [created, recovered] = await Promise.all([winner, retry]);
+    expect(created.created).toBe(true);
+    expect(recovered.created).toBe(false);
+    expect(recovered.shareToken).toBe(shareToken);
+    expect(metadata.insertStaging).toHaveBeenCalledTimes(1);
+    expect(objects.put).toHaveBeenCalledTimes(1);
+    expect((record as ArtifactRecord | null)?.shareTokenHash).toBe(await hashShareToken(shareToken));
+  });
+
   it("does not write an object when the staging metadata insert fails", async () => {
     const metadata = repository({
       insertStaging: vi.fn(async () => {
