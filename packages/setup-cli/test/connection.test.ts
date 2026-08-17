@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import { connectHost } from "../src/commands/connect";
-import { disconnectHost } from "../src/commands/disconnect";
+import { disconnectHost, selectDisconnectProfile } from "../src/commands/disconnect";
 import { completeDeviceFlow } from "../src/device-flow";
 import { detectHosts, installPluginForHosts } from "../src/hosts";
 import type { ProcessRunner } from "../src/process";
@@ -31,6 +31,94 @@ const runnerFor = (available: readonly string[]): ProcessRunner => vi.fn(async (
 });
 
 describe("host connection", () => {
+  it("resolves legacy disconnect URLs to the matching profile", () => {
+    const settings = {
+      version: 2 as const,
+      active_profile: "local",
+      profiles: {
+        local: {
+          base_url: "http://127.0.0.1:8787/",
+          workspace_roots: ["/tmp/artifacts"],
+          open_development: true as const,
+        },
+        production: {
+          base_url: "https://artifactpass.com/",
+          workspace_roots: ["/tmp/artifacts"],
+        },
+      },
+    };
+
+    expect(selectDisconnectProfile(settings, { baseUrl: "https://artifactpass.com" }).name)
+      .toBe("production");
+    expect(() => selectDisconnectProfile(settings, { baseUrl: "https://unknown.example" }))
+      .toThrow("No Artifact Share profile uses");
+    expect(() => selectDisconnectProfile(settings, {
+      profileName: "local",
+      baseUrl: "https://artifactpass.com",
+    })).toThrow("does not use");
+  });
+
+  it("keeps local and production connections as separate profiles", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifact-share-profile-connect-test-"));
+    const configPath = resolve(root, "config.json");
+    const localStore = { get: vi.fn(), set: vi.fn(), delete: vi.fn() };
+    const productionStore = { get: vi.fn().mockResolvedValue(null), set: vi.fn(), delete: vi.fn() };
+    const health = vi.fn(async (input: RequestInfo | URL) => {
+      const origin = new URL(input instanceof Request ? input.url : input.toString()).origin;
+      return new Response(JSON.stringify({
+        service: "lordebuilds.artifacts.share",
+        status: "ok",
+        ...(origin === "https://artifactpass.com"
+          ? { pdf_provenance_key_id: "artifactpass-primary" }
+          : {}),
+      }));
+    });
+
+    await connectHost({
+      profileName: "local",
+      baseUrl: "http://127.0.0.1:8787",
+      workspaceRoots: [root],
+      marketplaceSource: "/trusted/repository",
+      configPath,
+      openDevelopment: true,
+      installKnownHostAdapters: false,
+    }, {
+      credentialStore: localStore,
+      deviceFlowDependencies: { openBrowser: async () => undefined, fetch: health },
+    });
+    await connectHost({
+      profileName: "production",
+      baseUrl: "https://artifactpass.com",
+      workspaceRoots: [root],
+      marketplaceSource: "/trusted/repository",
+      configPath,
+      installKnownHostAdapters: false,
+    }, {
+      credentialStore: productionStore,
+      deviceFlow: vi.fn(async () => ({ accessToken: `as_${"p".repeat(43)}`, expiresIn: 3600 })),
+      deviceFlowDependencies: { openBrowser: async () => undefined, fetch: health },
+    });
+
+    expect(JSON.parse(await readFile(configPath, "utf8"))).toEqual({
+      version: 2,
+      active_profile: "production",
+      profiles: {
+        local: {
+          base_url: "http://127.0.0.1:8787/",
+          workspace_roots: [root],
+          open_development: true,
+        },
+        production: {
+          base_url: "https://artifactpass.com/",
+          workspace_roots: [root],
+          pdf_key_id: "artifactpass-primary",
+        },
+      },
+    });
+    expect(localStore.get).not.toHaveBeenCalled();
+    expect(productionStore.set).toHaveBeenCalledWith(`as_${"p".repeat(43)}`);
+  });
+
   it("detects Claude-only, Codex-only, and both-host machines", async () => {
     await expect(detectHosts(runnerFor(["claude"]))).resolves.toEqual(["claude"]);
     await expect(detectHosts(runnerFor(["codex"]))).resolves.toEqual(["codex"]);
@@ -74,13 +162,18 @@ describe("host connection", () => {
       },
     });
 
-    expect(result).toEqual({ hosts: [], configPath });
+    expect(result).toEqual({ hosts: [], profileName: "local", configPath });
     expect(runner).not.toHaveBeenCalled();
     expect(JSON.parse(await readFile(configPath, "utf8"))).toEqual({
-      version: 1,
-      base_url: "http://127.0.0.1:8787/",
-      workspace_roots: [root],
-      open_development: true,
+      version: 2,
+      active_profile: "local",
+      profiles: {
+        local: {
+          base_url: "http://127.0.0.1:8787/",
+          workspace_roots: [root],
+          open_development: true,
+        },
+      },
     });
   });
 
@@ -255,15 +348,20 @@ describe("host connection", () => {
       },
     });
 
-    expect(result).toEqual({ hosts: ["codex"], configPath });
+    expect(result).toEqual({ hosts: ["codex"], profileName: "local", configPath });
     expect(deviceFlow).not.toHaveBeenCalled();
     expect(store.get).not.toHaveBeenCalled();
     expect(store.set).not.toHaveBeenCalled();
     expect(JSON.parse(await readFile(configPath, "utf8"))).toEqual({
-      version: 1,
-      base_url: "http://127.0.0.1:8787/",
-      workspace_roots: [root],
-      open_development: true,
+      version: 2,
+      active_profile: "local",
+      profiles: {
+        local: {
+          base_url: "http://127.0.0.1:8787/",
+          workspace_roots: [root],
+          open_development: true,
+        },
+      },
     });
   });
 
@@ -294,16 +392,22 @@ describe("host connection", () => {
           status: "ok",
         }))),
       },
-    })).resolves.toEqual({ hosts: [], configPath });
+    })).resolves.toEqual({ hosts: [], profileName: "local", configPath });
 
     expect(store.get).not.toHaveBeenCalled();
     expect(store.set).not.toHaveBeenCalled();
     expect(store.delete).not.toHaveBeenCalled();
     expect(JSON.parse(await readFile(configPath, "utf8"))).toEqual({
-      version: 1,
-      base_url: "http://127.0.0.1:8787/",
-      workspace_roots: [root],
-      open_development: true,
+      version: 2,
+      active_profile: "local",
+      profiles: {
+        local: {
+          base_url: "http://127.0.0.1:8787/",
+          workspace_roots: [root],
+          open_development: true,
+          publication_state: "legacy",
+        },
+      },
     });
   });
 
@@ -332,6 +436,7 @@ describe("host connection", () => {
     })));
 
     await expect(connectHost({
+      profileName: "production",
       baseUrl: "http://127.0.0.1:8787",
       workspaceRoots: [root],
       hosts: ["codex"],
@@ -347,7 +452,7 @@ describe("host connection", () => {
         fetch,
       },
     })).rejects.toThrow(
-      "Disconnect the existing hosted Artifact Share connection before connecting to open development",
+      "Disconnect the existing hosted Artifact Share production profile before replacing it with open development",
     );
 
     expect(fetch).toHaveBeenCalledOnce();
@@ -378,7 +483,6 @@ describe("host connection", () => {
   it("does not treat a prior open connection as a token-bearing production connection", async () => {
     const root = await mkdtemp(resolve(tmpdir(), "artifact-share-open-transition-test-"));
     const configPath = resolve(root, "config.json");
-    const previousToken = `as_${"o".repeat(43)}`;
     const nextToken = `as_${"n".repeat(43)}`;
     await writeFile(configPath, JSON.stringify({
       version: 1,
@@ -387,7 +491,7 @@ describe("host connection", () => {
       open_development: true,
     }));
     const store = {
-      get: vi.fn().mockResolvedValue(previousToken),
+      get: vi.fn().mockResolvedValue(null),
       set: vi.fn(),
       delete: vi.fn(),
     };

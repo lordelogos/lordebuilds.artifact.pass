@@ -3,12 +3,19 @@ import { delimiter, resolve } from "node:path";
 import { McpServer } from "@modelcontextprotocol/server";
 import { serveStdio, type StdioServerHandle } from "@modelcontextprotocol/server/stdio";
 import {
+  agentCredentialAccountForProfile,
   EnvironmentCredentialStore,
   OsCredentialStore,
   resolveCredential,
   type CredentialStore,
 } from "./auth/credential-store";
-import { defaultLocalConfigPath, readLocalBridgeSettingsSync } from "./config/local-config";
+import {
+  defaultLocalConfigPath,
+  publicationStatePathForProfile,
+  readLocalBridgeSettingsSync,
+  selectLocalBridgeProfile,
+  validateProfileName,
+} from "./config/local-config";
 import { assertDeploymentOrigin } from "./http/safe-fetch";
 import {
   createRedactingLogger,
@@ -30,6 +37,7 @@ import {
 } from "./tool-contract";
 
 export interface BridgeConfiguration {
+  readonly profileName?: string;
   readonly baseUrl: URL;
   readonly workspaceRoots: readonly string[];
   readonly openDevelopment?: boolean;
@@ -80,6 +88,8 @@ export const createBridgeServer = (configuration: BridgeConfiguration): McpServe
     { capabilities: { tools: {} } },
   );
   const logger = configuration.logger ?? createRedactingLogger();
+  const profileName = configuration.profileName ?? "environment";
+  const connectionContext = ` Active connection: profile ${profileName} at ${configuration.baseUrl.origin} (${configuration.openDevelopment === true ? "open local development" : "authenticated deployment"}).`;
   const publicationJournal = configuration.publicationJournal ?? (
     configuration.publicationStatePath === undefined
       ? new MemoryPublicationJournal()
@@ -88,7 +98,7 @@ export const createBridgeServer = (configuration: BridgeConfiguration): McpServe
 
   server.registerTool("publish_artifact", {
     title: "Publish Artifact",
-    description: "Publish one approved local Markdown, HTML, or PDF file without placing its bytes in model context.",
+    description: "Publish one approved local Markdown, HTML, or PDF file without placing its bytes in model context." + connectionContext,
     inputSchema: publishArtifactInputSchema,
     outputSchema: publishArtifactOutputSchema,
     annotations: {
@@ -135,7 +145,7 @@ export const createBridgeServer = (configuration: BridgeConfiguration): McpServe
 
   server.registerTool("read_artifact", {
     title: "Read Artifact",
-    description: "Read a configured Artifact Share URL in bounded deterministic chunks with exact-source and PDF fidelity metadata.",
+    description: "Read a configured Artifact Share URL in bounded deterministic chunks with exact-source and PDF fidelity metadata." + connectionContext,
     inputSchema: readArtifactInputSchema,
     outputSchema: readArtifactOutputSchema,
     annotations: {
@@ -173,10 +183,19 @@ export const configurationFromEnvironment = (
   environment: Readonly<Record<string, string | undefined>> = process.env,
 ): BridgeConfiguration => {
   const localConfigPath = defaultLocalConfigPath(environment);
-  const localSettings = environment.ARTIFACT_SHARE_BASE_URL === undefined ||
+  const localConfiguration = environment.ARTIFACT_SHARE_BASE_URL === undefined ||
       environment.ARTIFACT_SHARE_WORKSPACE_ROOTS === undefined
     ? readLocalBridgeSettingsSync(localConfigPath)
     : undefined;
+  const selectedProfile = localConfiguration === undefined
+    ? undefined
+    : selectLocalBridgeProfile(localConfiguration, environment.ARTIFACT_SHARE_PROFILE);
+  const localSettings = selectedProfile?.settings;
+  const profileName = selectedProfile?.name ?? validateProfileName(
+    environment.ARTIFACT_SHARE_PROFILE ?? (
+      environment.ARTIFACT_SHARE_OPEN_DEVELOPMENT === "1" ? "environment" : "production"
+    ),
+  );
   const baseUrlValue = environment.ARTIFACT_SHARE_BASE_URL ?? localSettings?.base_url;
   if (baseUrlValue === undefined) throw new Error("ARTIFACT_SHARE_BASE_URL is required");
   const rootsValue = environment.ARTIFACT_SHARE_WORKSPACE_ROOTS;
@@ -197,7 +216,9 @@ export const configurationFromEnvironment = (
   const headless = environment.ARTIFACT_SHARE_TOKEN !== undefined;
   const publicationStatePathValue = environment.ARTIFACT_SHARE_STATE_PATH;
   const publicationStatePath = publicationStatePathValue === undefined
-    ? `${localConfigPath}.publication-state`
+    ? localConfiguration === undefined || localSettings?.publication_state === "legacy"
+      ? `${localConfigPath}.publication-state`
+      : publicationStatePathForProfile(localConfigPath, profileName)
     : resolve(publicationStatePathValue);
   const pdfProvenanceKeyId = environment.ARTIFACT_SHARE_PDF_KEY_ID;
   const pdfProvenancePrivateKey = environment.ARTIFACT_SHARE_PDF_PRIVATE_KEY;
@@ -205,6 +226,7 @@ export const configurationFromEnvironment = (
     throw new Error("ARTIFACT_SHARE_PDF_KEY_ID and ARTIFACT_SHARE_PDF_PRIVATE_KEY must be configured together");
   }
   return {
+    profileName,
     baseUrl: assertDeploymentOrigin(new URL(baseUrlValue), { openDevelopment }),
     workspaceRoots,
     openDevelopment,
@@ -226,7 +248,9 @@ export const configurationFromEnvironment = (
             privateKeyPkcs8Base64: pdfProvenancePrivateKey,
           },
         }),
-    ...(headless ? {} : { osStore: new OsCredentialStore() }),
+    ...(headless ? {} : {
+      osStore: new OsCredentialStore({ account: agentCredentialAccountForProfile(profileName) }),
+    }),
   };
 };
 

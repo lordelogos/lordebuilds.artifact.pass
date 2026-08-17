@@ -7,11 +7,137 @@ import { describe, expect, it } from "vitest";
 import {
   defaultLocalConfigPath,
   readLocalBridgeSettings,
+  selectLocalBridgeProfile,
+  setActiveLocalBridgeProfile,
+  upsertLocalBridgeProfile,
   writeLocalBridgeSettings,
 } from "../src/config/local-config";
 import { configurationFromEnvironment } from "../src/server";
+import { FilePublicationJournal } from "../src/state/publication-journal";
 
 describe("local bridge config", () => {
+  it("migrates a legacy local connection into the local profile without losing it", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifact-share-legacy-config-test-"));
+    const path = resolve(root, "config.json");
+    await writeFile(path, JSON.stringify({
+      version: 1,
+      base_url: "http://127.0.0.1:8787/",
+      workspace_roots: [root],
+      open_development: true,
+    }));
+
+    expect(await readLocalBridgeSettings(path)).toEqual({
+      version: 2,
+      active_profile: "local",
+      profiles: {
+        local: {
+          base_url: "http://127.0.0.1:8787/",
+          workspace_roots: [root],
+          open_development: true,
+          publication_state: "legacy",
+        },
+      },
+    });
+  });
+
+  it("keeps local and production profiles together and selects either explicitly", () => {
+    const local = {
+      base_url: "http://127.0.0.1:8787/",
+      workspace_roots: ["/tmp/artifacts"],
+      open_development: true as const,
+    };
+    const production = {
+      base_url: "https://artifactpass.com/",
+      workspace_roots: ["/tmp/artifacts"],
+      pdf_key_id: "artifactpass-primary",
+    };
+    const withLocal = upsertLocalBridgeProfile(null, "local", local);
+    const withBoth = upsertLocalBridgeProfile(withLocal, "production", production);
+
+    expect(withBoth.active_profile).toBe("production");
+    expect(withBoth.profiles).toEqual({ local, production });
+    expect(selectLocalBridgeProfile(withBoth, "local")).toEqual({ name: "local", settings: local });
+    expect(selectLocalBridgeProfile(withBoth, "production")).toEqual({
+      name: "production",
+      settings: production,
+    });
+    expect(setActiveLocalBridgeProfile(withBoth, "local").active_profile).toBe("local");
+    expect(() => selectLocalBridgeProfile(withBoth, "staging")).toThrow("Unknown Artifact Share profile");
+    expect(() => selectLocalBridgeProfile(withBoth, "constructor")).toThrow("Unknown Artifact Share profile");
+  });
+
+  it("rejects an inherited property as the active profile", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifact-share-profile-key-test-"));
+    const path = resolve(root, "config.json");
+    await writeFile(path, JSON.stringify({
+      version: 2,
+      active_profile: "constructor",
+      profiles: {
+        local: {
+          base_url: "http://127.0.0.1:8787/",
+          workspace_roots: [root],
+          open_development: true,
+        },
+      },
+    }));
+
+    await expect(readLocalBridgeSettings(path)).rejects.toThrow("Unknown Artifact Share profile: constructor");
+  });
+
+  it("keeps a legacy SQLite publication journal on its original path across upgrade", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifact-share-journal-migration-test-"));
+    const path = resolve(root, "config.json");
+    const legacyStatePath = `${path}.publication-state`;
+    await writeFile(path, JSON.stringify({
+      version: 1,
+      base_url: "http://127.0.0.1:8787/",
+      workspace_roots: [root],
+      open_development: true,
+    }));
+    const commitment = "a".repeat(64);
+    const expiresAt = Date.now() + 60_000;
+    const original = await new FilePublicationJournal(legacyStatePath).prepare(commitment, expiresAt);
+
+    const configuration = configurationFromEnvironment({ ARTIFACT_SHARE_CONFIG_PATH: path });
+
+    expect(configuration.publicationStatePath).toBe(legacyStatePath);
+    await expect(new FilePublicationJournal(configuration.publicationStatePath ?? "")
+      .prepare(commitment, expiresAt)).resolves.toEqual(original);
+    expect((await stat(`${legacyStatePath}.sqlite3`)).mode & 0o777).toBe(0o600);
+    await expect(stat(`${path}.local.publication-state.sqlite3`)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("uses ARTIFACT_SHARE_PROFILE without rewriting the active profile", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifact-share-profile-config-test-"));
+    const path = resolve(root, "config.json");
+    await writeLocalBridgeSettings(path, {
+      version: 2,
+      active_profile: "local",
+      profiles: {
+        local: {
+          base_url: "http://127.0.0.1:8787/",
+          workspace_roots: [root],
+          open_development: true,
+        },
+        production: {
+          base_url: "https://artifactpass.com/",
+          workspace_roots: [root],
+          pdf_key_id: "artifactpass-primary",
+        },
+      },
+    });
+
+    const configuration = configurationFromEnvironment({
+      ARTIFACT_SHARE_CONFIG_PATH: path,
+      ARTIFACT_SHARE_PROFILE: "production",
+    });
+
+    expect(configuration.profileName).toBe("production");
+    expect(configuration.baseUrl.origin).toBe("https://artifactpass.com");
+    expect(configuration.pdfProvenanceKeyId).toBe("artifactpass-primary");
+    expect((await readLocalBridgeSettings(path)).active_profile).toBe("local");
+  });
+
   it("writes only non-secret settings atomically with private permissions", async () => {
     const root = await mkdtemp(resolve(tmpdir(), "artifact-share-config-test-"));
     const path = resolve(root, "config.json");
@@ -22,10 +148,16 @@ describe("local bridge config", () => {
       pdf_key_id: "artifactpass-primary",
     });
     expect(await readLocalBridgeSettings(path)).toEqual({
-      version: 1,
-      base_url: "https://artifacts.example.test/",
-      workspace_roots: [root],
-      pdf_key_id: "artifactpass-primary",
+      version: 2,
+      active_profile: "production",
+      profiles: {
+        production: {
+          base_url: "https://artifacts.example.test/",
+          workspace_roots: [root],
+          pdf_key_id: "artifactpass-primary",
+          publication_state: "legacy",
+        },
+      },
     });
     expect((await readFile(path, "utf8"))).not.toContain("token");
     expect((await stat(path)).mode & 0o777).toBe(0o600);
@@ -42,10 +174,16 @@ describe("local bridge config", () => {
     });
 
     expect(await readLocalBridgeSettings(path)).toEqual({
-      version: 1,
-      base_url: "http://127.0.0.1:8787/",
-      workspace_roots: [root],
-      open_development: true,
+      version: 2,
+      active_profile: "local",
+      profiles: {
+        local: {
+          base_url: "http://127.0.0.1:8787/",
+          workspace_roots: [root],
+          open_development: true,
+          publication_state: "legacy",
+        },
+      },
     });
     expect(await readFile(path, "utf8")).not.toContain("token");
   });
@@ -97,6 +235,8 @@ describe("local bridge config", () => {
       ARTIFACT_SHARE_TOKEN: `as_${"t".repeat(43)}`,
     });
     expect(configuration.baseUrl.origin).toBe("https://environment.example.test");
+    expect(configuration.profileName).toBe("production");
+    expect(configuration.publicationStatePath).toBe(`${path}.publication-state`);
     expect(configuration.workspaceRoots).toHaveLength(2);
   });
 

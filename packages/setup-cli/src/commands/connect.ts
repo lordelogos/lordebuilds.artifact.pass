@@ -3,10 +3,13 @@ import { resolve } from "node:path";
 
 import {
   OsCredentialStore,
+  agentCredentialAccountForProfile,
   assertDeploymentOrigin,
   defaultLocalConfigPath,
   fetchWithoutRedirects,
   readLocalBridgeSettings,
+  upsertLocalBridgeProfile,
+  validateProfileName,
   writeLocalBridgeSettings,
   type CredentialStore,
   type LocalBridgeSettings,
@@ -36,6 +39,7 @@ const revokeToken = async (
 };
 
 export interface ConnectInput {
+  readonly profileName?: string;
   readonly baseUrl: string;
   readonly workspaceRoots: readonly string[];
   readonly openDevelopment?: boolean;
@@ -59,10 +63,12 @@ export const connectHost = async (
   dependencies: ConnectDependencies,
 ): Promise<{
   readonly hosts: readonly AgentHost[];
+  readonly profileName: string;
   readonly expiresIn?: number;
   readonly configPath: string;
 }> => {
   const openDevelopment = input.openDevelopment === true;
+  const profileName = validateProfileName(input.profileName ?? (openDevelopment ? "local" : "production"));
   const origin = assertDeploymentOrigin(new URL(input.baseUrl), { openDevelopment });
   const roots = input.workspaceRoots.map((root) => resolve(root));
   if (roots.length === 0) throw new Error("At least one workspace root is required");
@@ -88,11 +94,15 @@ export const connectHost = async (
     if (isMissingFile(error)) return null;
     throw error;
   });
-  if (openDevelopment && previousSettings !== null && previousSettings.open_development !== true) {
-    const previousToken = await (dependencies.credentialStore ?? new OsCredentialStore()).get();
+  const previousProfile = previousSettings?.profiles[profileName];
+  const store = dependencies.credentialStore ?? new OsCredentialStore({
+    account: agentCredentialAccountForProfile(profileName),
+  });
+  if (openDevelopment && previousProfile !== undefined && previousProfile.open_development !== true) {
+    const previousToken = await store.get();
     if (previousToken !== null) {
       throw new Error(
-        "Disconnect the existing hosted Artifact Share connection before connecting to open development",
+        `Disconnect the existing hosted Artifact Share ${profileName} profile before replacing it with open development`,
       );
     }
   }
@@ -106,18 +116,21 @@ export const connectHost = async (
     await installPluginForHosts(hosts, input.marketplaceSource, runner);
   }
   if (openDevelopment) {
-    await (dependencies.writeSettings ?? writeLocalBridgeSettings)(configPath, {
-      version: 1,
-      base_url: origin.toString(),
-      workspace_roots: roots,
-      open_development: true,
-    });
-    return { hosts, configPath };
+    await (dependencies.writeSettings ?? writeLocalBridgeSettings)(configPath, upsertLocalBridgeProfile(
+      previousSettings,
+      profileName,
+      {
+        base_url: origin.toString(),
+        workspace_roots: roots,
+        open_development: true,
+        ...(previousProfile?.publication_state === "legacy" ? { publication_state: "legacy" } : {}),
+      },
+    ));
+    return { hosts, profileName, configPath };
   }
-  const store = dependencies.credentialStore ?? new OsCredentialStore();
   const previousToken = await store.get();
-  if (previousToken !== null && previousSettings === null) {
-    throw new Error("The existing Artifact Share credential has no readable local configuration; disconnect it first");
+  if (previousToken !== null && previousProfile === undefined) {
+    throw new Error(`The existing Artifact Share ${profileName} credential has no matching profile; disconnect it first`);
   }
   const token = await (dependencies.deviceFlow ?? completeDeviceFlow)(
     origin.toString(),
@@ -125,23 +138,27 @@ export const connectHost = async (
   );
   let wroteConfig = false;
   try {
-    await (dependencies.writeSettings ?? writeLocalBridgeSettings)(configPath, {
-      version: 1,
-      base_url: origin.toString(),
-      workspace_roots: roots,
-      ...(healthBody.pdf_provenance_key_id === undefined
-        ? {}
-        : { pdf_key_id: healthBody.pdf_provenance_key_id }),
-    });
+    await (dependencies.writeSettings ?? writeLocalBridgeSettings)(configPath, upsertLocalBridgeProfile(
+      previousSettings,
+      profileName,
+      {
+        base_url: origin.toString(),
+        workspace_roots: roots,
+        ...(previousProfile?.publication_state === "legacy" ? { publication_state: "legacy" } : {}),
+        ...(healthBody.pdf_provenance_key_id === undefined
+          ? {}
+          : { pdf_key_id: healthBody.pdf_provenance_key_id }),
+      },
+    ));
     wroteConfig = true;
     await store.set(token.accessToken);
     if (
       previousToken !== null &&
-      previousSettings !== null &&
-      previousSettings.open_development !== true
+      previousProfile !== undefined &&
+      previousProfile.open_development !== true
     ) {
       await revokeToken(
-        assertDeploymentOrigin(new URL(previousSettings.base_url)),
+        assertDeploymentOrigin(new URL(previousProfile.base_url)),
         previousToken,
         fetchImplementation,
       );
@@ -167,5 +184,5 @@ export const connectHost = async (
     }
     throw error;
   }
-  return { hosts, expiresIn: token.expiresIn, configPath };
+  return { hosts, profileName, expiresIn: token.expiresIn, configPath };
 };

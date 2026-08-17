@@ -45,15 +45,15 @@ The complete values, command order, verification, and rollback checklist is in t
 Run the team command printed by deployment:
 
 ```sh
-pnpm dlx @artifact-share/setup connect https://artifacts.example.com
+pnpm dlx @artifact-share/setup connect https://artifacts.example.com --profile production
 ```
 
-The command detects Claude Code and Codex, installs the same plugin, opens the Access-protected device approval page, stores the scoped agent token in the operating-system credential store, and writes only the base URL, explicitly allowed workspace roots, and the non-secret PDF signing-key ID to the local Artifact Share config. A trusted host that creates controlled PDFs must also receive the matching private key through the team's secret manager; it is never downloaded from the service.
+The command detects Claude Code and Codex, installs the same plugin, opens the Access-protected device approval page, stores the scoped agent token in the production profile's operating-system credential account, and writes only non-secret profile settings locally. The existing local development profile is preserved. A trusted host that creates controlled PDFs must also receive the matching private key through the team's secret manager; it is never downloaded from the service.
 
 To revoke the current agent token and remove it from the credential store:
 
 ```sh
-pnpm dlx @artifact-share/setup disconnect
+pnpm dlx @artifact-share/setup disconnect --profile production
 ```
 
 ## Manual fallback

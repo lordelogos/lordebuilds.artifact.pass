@@ -6,6 +6,7 @@ export {
   type DeploymentOriginOptions,
 } from "./http/safe-fetch";
 export {
+  agentCredentialAccountForProfile,
   CredentialStoreCommandError,
   EnvironmentCredentialStore,
   OsCredentialStore,
@@ -15,9 +16,15 @@ export {
 } from "./auth/credential-store";
 export {
   defaultLocalConfigPath,
+  publicationStatePathForProfile,
   readLocalBridgeSettings,
   readLocalBridgeSettingsSync,
+  selectLocalBridgeProfile,
+  setActiveLocalBridgeProfile,
+  upsertLocalBridgeProfile,
+  validateProfileName,
   writeLocalBridgeSettings,
+  type LocalBridgeProfileSettings,
   type LocalBridgeSettings,
 } from "./config/local-config";
 export {

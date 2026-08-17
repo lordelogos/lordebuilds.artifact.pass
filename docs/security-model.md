@@ -8,13 +8,13 @@ Artifact Share protects upload authority and artifact confidentiality differentl
 - `/api/artifacts` accepts either an Access identity from the same origin or a scoped, revocable agent token.
 - `/a/<token>*` is intentionally public. Its high-entropy token is the only read credential and expires with the artifact.
 - D1 and R2 are private Worker bindings. Only token hashes are stored in D1.
-- Agent tokens live in macOS Keychain or Linux Secret Service. The local JSON file contains only the HTTPS origin and absolute approved workspace roots.
+- Agent tokens live in separate per-profile accounts in macOS Keychain or Linux Secret Service. The local JSON file contains only profile names, origins, absolute approved workspace roots, and non-secret PDF key IDs.
 
 Treat every share URL like a temporary secret. Do not post it in public logs, issues, analytics, or durable chat transcripts.
 
 ## Content isolation
 
-Markdown is parsed and sanitized before rendering. HTML is sanitized, placed in a sandboxed iframe with no permissions, and cannot run scripts or make external subresource requests. PDF preview and best-effort extracted text are distinct from the exact downloadable source. User filenames become metadata only and may not contain path separators or NUL bytes.
+Markdown is parsed and sanitized before rendering. HTML is sanitized, placed in a sandboxed iframe with no permissions, and cannot run scripts or make external subresource requests. PDF preview is distinct from the agent-readable representation: controlled PDFs expose their signed canonical source, while human and unknown PDFs expose no extracted content to agents. User filenames become metadata only and may not contain path separators or NUL bytes.
 
 The agent bridge resolves real paths and only opens regular files inside explicitly configured workspace roots. It rejects symlink escapes, unsupported extensions, invalid UTF-8, mismatched PDFs, changed-during-read files, oversized files, redirects, foreign origins, malformed cursors, and inconsistent source metadata. Automatic PDF publication also fails closed when images, vector rendering, custom or Type3 fonts, attachments, scripts, or extraction failures prevent the scanner from covering the rendered content; deliberate browser uploads retain broader PDF support.
 
@@ -32,7 +32,7 @@ Authorization checks use `now < expires_at`; at the exact cutoff every represent
 
 - Anyone who obtains a live share URL can read and redistribute its artifact.
 - Revoking an agent token stops future uploads but cannot retract already shared bytes before their selected expiry.
-- PDF extraction is best-effort and does not include OCR; it is never represented as exact source.
+- Human and unknown PDFs are intentionally human-only in this release; there is no click-through agent trust override.
 - macOS and Linux credential stores are supported in v1. Windows connection is not yet supported.
 - Cloudflare account administrators remain able to access the deployment's resources.
 

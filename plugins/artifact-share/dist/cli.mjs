@@ -91064,6 +91064,7 @@ function toError(value) {
 
 // src/auth/credential-store.ts
 import { spawn } from "node:child_process";
+var agentCredentialAccountForProfile = (profileName) => profileName === "production" ? "agent-token" : `agent-token:${profileName}`;
 var CredentialStoreCommandError = class extends Error {
   constructor(status) {
     super(`Credential store command failed with status ${status ?? "unknown"}`);
@@ -91215,13 +91216,21 @@ var resolveCredential = async (options) => {
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
-var validateSettings = (value) => {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("Artifact Share config must contain a JSON object");
+var profileNamePattern = /^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/u;
+var isRecord = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+var validateProfileName = (name) => {
+  if (!profileNamePattern.test(name)) {
+    throw new Error("Artifact Share profile names use 1-32 lowercase letters, numbers, or hyphens");
+  }
+  return name;
+};
+var validateProfile = (value) => {
+  if (!isRecord(value)) {
+    throw new Error("Artifact Share profile must contain a JSON object");
   }
   const candidate = value;
-  if (candidate.version !== 1 || typeof candidate.base_url !== "string") {
-    throw new Error("Artifact Share config has an unsupported format");
+  if (typeof candidate.base_url !== "string") {
+    throw new Error("Artifact Share profile requires a base URL");
   }
   if (!Array.isArray(candidate.workspace_roots) || candidate.workspace_roots.length === 0 || !candidate.workspace_roots.every((root) => typeof root === "string" && resolve(root) === root)) {
     throw new Error("Artifact Share config requires absolute workspace roots");
@@ -91232,14 +91241,51 @@ var validateSettings = (value) => {
   if (candidate.pdf_key_id !== void 0 && (typeof candidate.pdf_key_id !== "string" || !/^[A-Za-z0-9._-]{1,64}$/u.test(candidate.pdf_key_id))) {
     throw new Error("Artifact Share config contains an invalid PDF signing key ID");
   }
+  if (candidate.publication_state !== void 0 && candidate.publication_state !== "legacy") {
+    throw new Error("Artifact Share config contains an invalid publication state mode");
+  }
   return {
-    version: 1,
     base_url: candidate.base_url,
     workspace_roots: candidate.workspace_roots,
     ...candidate.open_development === true ? { open_development: true } : {},
-    ...typeof candidate.pdf_key_id === "string" ? { pdf_key_id: candidate.pdf_key_id } : {}
+    ...typeof candidate.pdf_key_id === "string" ? { pdf_key_id: candidate.pdf_key_id } : {},
+    ...candidate.publication_state === "legacy" ? { publication_state: "legacy" } : {}
   };
 };
+var validateSettings = (value) => {
+  if (!isRecord(value)) throw new Error("Artifact Share config must contain a JSON object");
+  if (value.version === 1) {
+    const profile = validateProfile(value);
+    const name = profile.open_development === true ? "local" : "production";
+    return {
+      version: 2,
+      active_profile: name,
+      profiles: { [name]: { ...profile, publication_state: "legacy" } }
+    };
+  }
+  if (value.version !== 2 || typeof value.active_profile !== "string" || !isRecord(value.profiles)) {
+    throw new Error("Artifact Share config has an unsupported format");
+  }
+  const entries = Object.entries(value.profiles);
+  if (entries.length === 0) throw new Error("Artifact Share config requires at least one profile");
+  const profiles = Object.fromEntries(entries.map(([name, profile]) => [
+    validateProfileName(name),
+    validateProfile(profile)
+  ]));
+  validateProfileName(value.active_profile);
+  if (!Object.hasOwn(profiles, value.active_profile)) {
+    throw new Error(`Unknown Artifact Share profile: ${value.active_profile}`);
+  }
+  return { version: 2, active_profile: value.active_profile, profiles };
+};
+var selectLocalBridgeProfile = (settings, requestedProfile) => {
+  const name = validateProfileName(requestedProfile ?? settings.active_profile);
+  if (!Object.hasOwn(settings.profiles, name)) throw new Error(`Unknown Artifact Share profile: ${name}`);
+  const profile = settings.profiles[name];
+  if (profile === void 0) throw new Error(`Unknown Artifact Share profile: ${name}`);
+  return { name, settings: profile };
+};
+var publicationStatePathForProfile = (configPath, profileName) => `${configPath}.${validateProfileName(profileName)}.publication-state`;
 var defaultLocalConfigPath = (environment = process.env, platform = process.platform) => {
   const explicit = environment.ARTIFACT_SHARE_CONFIG_PATH;
   if (explicit !== void 0 && explicit.length > 0) return resolve(explicit);
@@ -92745,10 +92791,12 @@ var createBridgeServer = (configuration) => {
     { capabilities: { tools: {} } }
   );
   const logger = configuration.logger ?? createRedactingLogger();
+  const profileName = configuration.profileName ?? "environment";
+  const connectionContext = ` Active connection: profile ${profileName} at ${configuration.baseUrl.origin} (${configuration.openDevelopment === true ? "open local development" : "authenticated deployment"}).`;
   const publicationJournal = configuration.publicationJournal ?? (configuration.publicationStatePath === void 0 ? new MemoryPublicationJournal() : new FilePublicationJournal(configuration.publicationStatePath));
   server.registerTool("publish_artifact", {
     title: "Publish Artifact",
-    description: "Publish one approved local Markdown, HTML, or PDF file without placing its bytes in model context.",
+    description: "Publish one approved local Markdown, HTML, or PDF file without placing its bytes in model context." + connectionContext,
     inputSchema: publishArtifactInputSchema,
     outputSchema: publishArtifactOutputSchema,
     annotations: {
@@ -92788,7 +92836,7 @@ var createBridgeServer = (configuration) => {
   });
   server.registerTool("read_artifact", {
     title: "Read Artifact",
-    description: "Read a configured Artifact Share URL in bounded deterministic chunks with exact-source and PDF fidelity metadata.",
+    description: "Read a configured Artifact Share URL in bounded deterministic chunks with exact-source and PDF fidelity metadata." + connectionContext,
     inputSchema: readArtifactInputSchema,
     outputSchema: readArtifactOutputSchema,
     annotations: {
@@ -92822,7 +92870,12 @@ var createBridgeServer = (configuration) => {
 };
 var configurationFromEnvironment = (environment = process.env) => {
   const localConfigPath = defaultLocalConfigPath(environment);
-  const localSettings = environment.ARTIFACT_SHARE_BASE_URL === void 0 || environment.ARTIFACT_SHARE_WORKSPACE_ROOTS === void 0 ? readLocalBridgeSettingsSync(localConfigPath) : void 0;
+  const localConfiguration = environment.ARTIFACT_SHARE_BASE_URL === void 0 || environment.ARTIFACT_SHARE_WORKSPACE_ROOTS === void 0 ? readLocalBridgeSettingsSync(localConfigPath) : void 0;
+  const selectedProfile = localConfiguration === void 0 ? void 0 : selectLocalBridgeProfile(localConfiguration, environment.ARTIFACT_SHARE_PROFILE);
+  const localSettings = selectedProfile?.settings;
+  const profileName = selectedProfile?.name ?? validateProfileName(
+    environment.ARTIFACT_SHARE_PROFILE ?? (environment.ARTIFACT_SHARE_OPEN_DEVELOPMENT === "1" ? "environment" : "production")
+  );
   const baseUrlValue = environment.ARTIFACT_SHARE_BASE_URL ?? localSettings?.base_url;
   if (baseUrlValue === void 0) throw new Error("ARTIFACT_SHARE_BASE_URL is required");
   const rootsValue = environment.ARTIFACT_SHARE_WORKSPACE_ROOTS;
@@ -92836,13 +92889,14 @@ var configurationFromEnvironment = (environment = process.env) => {
   const openDevelopment = openDevelopmentValue === "1" || openDevelopmentValue === void 0 && environment.ARTIFACT_SHARE_BASE_URL === void 0 && localSettings?.open_development === true;
   const headless = environment.ARTIFACT_SHARE_TOKEN !== void 0;
   const publicationStatePathValue = environment.ARTIFACT_SHARE_STATE_PATH;
-  const publicationStatePath = publicationStatePathValue === void 0 ? `${localConfigPath}.publication-state` : resolve3(publicationStatePathValue);
+  const publicationStatePath = publicationStatePathValue === void 0 ? localConfiguration === void 0 || localSettings?.publication_state === "legacy" ? `${localConfigPath}.publication-state` : publicationStatePathForProfile(localConfigPath, profileName) : resolve3(publicationStatePathValue);
   const pdfProvenanceKeyId = environment.ARTIFACT_SHARE_PDF_KEY_ID;
   const pdfProvenancePrivateKey = environment.ARTIFACT_SHARE_PDF_PRIVATE_KEY;
   if (pdfProvenanceKeyId === void 0 !== (pdfProvenancePrivateKey === void 0)) {
     throw new Error("ARTIFACT_SHARE_PDF_KEY_ID and ARTIFACT_SHARE_PDF_PRIVATE_KEY must be configured together");
   }
   return {
+    profileName,
     baseUrl: assertDeploymentOrigin(new URL(baseUrlValue), { openDevelopment }),
     workspaceRoots,
     openDevelopment,
@@ -92860,7 +92914,9 @@ var configurationFromEnvironment = (environment = process.env) => {
         privateKeyPkcs8Base64: pdfProvenancePrivateKey
       }
     },
-    ...headless ? {} : { osStore: new OsCredentialStore() }
+    ...headless ? {} : {
+      osStore: new OsCredentialStore({ account: agentCredentialAccountForProfile(profileName) })
+    }
   };
 };
 var serveBridgeStdio = (configuration = configurationFromEnvironment()) => serveStdio(() => createBridgeServer(configuration), {

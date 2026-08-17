@@ -44,6 +44,10 @@ describe("built stdio bridge", () => {
       ]));
       expect(listed.tools.find((tool) => tool.name === "publish_artifact")?.annotations)
         .not.toHaveProperty("idempotentHint");
+      for (const tool of listed.tools) {
+        expect(tool.description).toContain("profile production");
+        expect(tool.description).toContain("https://artifacts.example.test");
+      }
 
       const result = await client.callTool({
         name: "read_artifact",

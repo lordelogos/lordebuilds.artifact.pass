@@ -6,6 +6,11 @@ export interface CredentialStore {
   delete(): Promise<void>;
 }
 
+export const agentCredentialAccountForProfile = (profileName: string): string =>
+  profileName === "production"
+    ? "agent-token"
+    : `agent-token:${profileName}`;
+
 export interface CommandResult {
   readonly stdout: string;
 }

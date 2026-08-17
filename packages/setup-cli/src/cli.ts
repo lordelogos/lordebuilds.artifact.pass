@@ -1,11 +1,17 @@
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { readLocalBridgeSettings, defaultLocalConfigPath, redactSensitiveText } from "agent-bridge";
+import {
+  defaultLocalConfigPath,
+  readLocalBridgeSettings,
+  redactSensitiveText,
+  setActiveLocalBridgeProfile,
+  writeLocalBridgeSettings,
+} from "agent-bridge";
 
 import { runDeployCommand } from "./commands/deploy";
 import { connectHost } from "./commands/connect";
-import { disconnectHost } from "./commands/disconnect";
+import { disconnectHost, selectDisconnectProfile } from "./commands/disconnect";
 import type { IdentityRule } from "./cloudflare/deployment";
 import { runDoctor } from "./doctor";
 import type { AgentHost } from "./hosts";
@@ -44,13 +50,18 @@ const booleanFlag = (args: readonly string[], flag: string): boolean => {
   return count === 1;
 };
 
-const positional = (args: readonly string[], position: number): string => {
-  const positionals = args.filter((item, index) => index === 0 || !args[index - 1]?.startsWith("--"))
+const positionalValues = (args: readonly string[]): string[] =>
+  args.filter((item, index) => index === 0 || !args[index - 1]?.startsWith("--"))
     .filter((item) => !item.startsWith("--"));
-  const result = positionals[position];
+
+const positional = (args: readonly string[], position: number): string => {
+  const result = positionalValues(args)[position];
   if (result === undefined) throw new Error("A deployment URL is required");
   return result;
 };
+
+const optionalPositional = (args: readonly string[], position: number): string | undefined =>
+  positionalValues(args)[position];
 
 const print = (valueToPrint: unknown): void => {
   process.stdout.write(`${typeof valueToPrint === "string" ? valueToPrint : JSON.stringify(valueToPrint, null, 2)}\n`);
@@ -60,8 +71,10 @@ const help = `Artifact Share setup
 
 Commands:
   deploy --account-id <id> --zone-id <id> --hostname <host> --workers-subdomain <name> --pdf-key-id <id> --pdf-public-key <base64> (--allow-email <email> | --allow-domain <domain>) (--dry-run | --write-approval-manifest <path> | --approve-manifest <path>)
-  connect <base-url> [--workspace-root <path>] [--host codex|claude|both] [--no-host-install] [--marketplace <source>] [--open-development]
-  disconnect [<base-url>]
+  connect <base-url> [--profile <name>] [--workspace-root <path>] [--host codex|claude|both] [--no-host-install] [--marketplace <source>] [--open-development]
+  profile list
+  profile use <name>
+  disconnect [--profile <name>]
   doctor
 
 Cloudflare credentials come from CLOUDFLARE_API_TOKEN or Wrangler OAuth and are never persisted by Artifact Share.`;
@@ -124,7 +137,9 @@ const main = async (): Promise<void> => {
       : await installPortableIntegration({
           sourceRoot: resolve(marketplaceSource, "plugins/artifact-share"),
         });
+    const profileName = optionalValue(args, "--profile");
     const result = await connectHost({
+      ...(profileName === undefined ? {} : { profileName }),
       baseUrl: positional(args, 0),
       workspaceRoots: values(args, "--workspace-root").length > 0
         ? values(args, "--workspace-root")
@@ -147,10 +162,44 @@ const main = async (): Promise<void> => {
     print({ ...result, next: "Start a new agent session so the plugin and bridge reload." });
     return;
   }
+  if (command === "profile") {
+    const configPath = defaultLocalConfigPath();
+    const config = await readLocalBridgeSettings(configPath);
+    if (args[0] === "list" && args.length === 1) {
+      print({
+        active_profile: config.active_profile,
+        profiles: Object.entries(config.profiles).map(([name, profile]) => ({
+          name,
+          active: name === config.active_profile,
+          base_url: profile.base_url,
+          open_development: profile.open_development === true,
+        })),
+      });
+      return;
+    }
+    if (args[0] === "use" && args.length === 2) {
+      const next = setActiveLocalBridgeProfile(config, args[1] ?? "");
+      await writeLocalBridgeSettings(configPath, next);
+      print({ active_profile: next.active_profile, next: "Start a new agent session so the bridge reloads." });
+      return;
+    }
+    throw new Error("Use `profile list` or `profile use <name>`");
+  }
   if (command === "disconnect") {
     const config = await readLocalBridgeSettings(defaultLocalConfigPath());
-    await disconnectHost(args[0] ?? config.base_url);
-    print("Artifact Share token revoked and removed from the OS credential store.");
+    const profileName = optionalValue(args, "--profile");
+    const baseUrl = optionalPositional(args, 0);
+    if (optionalPositional(args, 1) !== undefined) throw new Error("disconnect accepts at most one deployment URL");
+    const selected = selectDisconnectProfile(config, {
+      ...(profileName === undefined ? {} : { profileName }),
+      ...(baseUrl === undefined ? {} : { baseUrl }),
+    });
+    if (selected.settings.open_development === true) {
+      print(`Artifact Share ${selected.name} profile is local development and has no agent token.`);
+      return;
+    }
+    await disconnectHost(selected.settings.base_url, { profileName: selected.name });
+    print(`Artifact Share ${selected.name} token revoked and removed from the OS credential store.`);
     return;
   }
   throw new Error(`Unknown command: ${command}`);

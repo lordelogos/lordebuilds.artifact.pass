@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createRedactingLogger } from "../src/logging/redacting-logger";
 import {
+  agentCredentialAccountForProfile,
   CredentialStoreCommandError,
   EnvironmentCredentialStore,
   OsCredentialStore,
@@ -12,6 +13,12 @@ const agentToken = `as_${"t".repeat(43)}`;
 const shareToken = "s".repeat(32);
 
 describe("credential and logging boundaries", () => {
+  it("preserves the legacy production account while isolating additional profiles", () => {
+    expect(agentCredentialAccountForProfile("production")).toBe("agent-token");
+    expect(agentCredentialAccountForProfile("environment")).toBe("agent-token:environment");
+    expect(agentCredentialAccountForProfile("staging")).toBe("agent-token:staging");
+  });
+
   it("uses environment credentials in headless mode without a plaintext fallback", async () => {
     const store = new EnvironmentCredentialStore("ARTIFACT_SHARE_TOKEN", {
       ARTIFACT_SHARE_TOKEN: agentToken,

@@ -11,7 +11,7 @@ Artifact Share is self-hosted in your Cloudflare account. The exact source stays
 - Preserves exact source bytes and SHA-256 metadata.
 - Renders sanitized Markdown, sandboxes sanitized HTML without permissions, and previews PDFs.
 - Gives agents deterministic 64 KiB source chunks so large files can be reconstructed exactly.
-- Labels PDF text as best-effort and keeps the exact PDF available separately. OCR is not included.
+- Keeps human and externally sourced PDFs human-only for agents. Controlled PDFs expose only the signed canonical source used to render them.
 - Ships one MCP server and one Agent Skills bundle for every compatible agent system. Ecosystem plugins only register that shared package.
 
 There is no account system, dashboard, history, billing, entitlement layer, or multi-tenant control plane.
@@ -39,6 +39,7 @@ After deployment, run the command printed by the deployer from each developer ma
 
 ```sh
 pnpm dlx @artifact-share/setup connect https://artifacts.example.com \
+  --profile production \
   --workspace-root /absolute/path/to/approved/workspace
 ```
 
@@ -48,6 +49,7 @@ For any other MCP and Agent Skills compatible system, configure the same package
 
 ```sh
 pnpm dlx @artifact-share/setup connect https://artifacts.example.com \
+  --profile production \
   --no-host-install \
   --workspace-root /absolute/path/to/approved/workspace
 ```
@@ -67,7 +69,7 @@ pnpm demo
 
 The command applies local migrations, opens `http://127.0.0.1:8787/upload`, and
 prints a second URL for other devices on the same network. Demo artifacts stay
-under the ignored `.wrangler/demo-state` directory. Upload and agent routes are
+under the ignored `apps/artifact-service/.wrangler/demo-state` directory. Upload and agent routes are
 open in this separate development Worker so the complete share/read behavior can
 be tested before authentication is configured; the production Worker and its
 Cloudflare Access boundary are unchanged.
@@ -78,14 +80,25 @@ device authorization or a token:
 ```sh
 pnpm --dir packages/setup-cli build
 node packages/setup-cli/dist/cli.mjs connect http://127.0.0.1:8787 \
+  --profile local \
   --open-development \
   --workspace-root /absolute/path/to/approved/workspace
 ```
 
-The explicit flag permits the local HTTP/private origin and persists non-secret
-open-development mode in the bridge configuration. Restart the agent session so
-the installed plugin reloads it. Omit the flag for production connections; they
-continue to require HTTPS and device authorization.
+The explicit flag permits the local HTTP/private origin and stores it as the
+`local` profile. Production is stored separately as `production`; connecting or
+selecting either profile never deletes the other. Switch the bridge explicitly,
+then restart the agent session so it reloads the selected profile:
+
+```sh
+node packages/setup-cli/dist/cli.mjs profile list
+node packages/setup-cli/dist/cli.mjs profile use local
+node packages/setup-cli/dist/cli.mjs profile use production
+```
+
+`ARTIFACT_SHARE_PROFILE=production` selects a profile for one bridge process
+without changing the saved active profile. Production continues to require HTTPS
+and device authorization.
 
 Use the printed network URL as the `connect` base URL to test from another
 machine; ordinary loopback and LAN demo uploads stay open. To expose the running
