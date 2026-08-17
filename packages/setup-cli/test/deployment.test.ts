@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
@@ -20,6 +20,8 @@ const input: DeployInput = {
   zoneId,
   hostname: "artifacts.example.com",
   identities: [{ kind: "domain", value: "example.com" }],
+  pdfKeyId: "test-key",
+  pdfPublicKey: `${"A".repeat(43)}=`,
   dryRun: false,
 };
 
@@ -145,6 +147,53 @@ describe("Cloudflare deployment", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it("writes an authenticated state-bound approval manifest without mutations", async () => {
+    const root = await deploymentRoot();
+    const manifestPath = resolve(root, "approval.json");
+    const client = fakeClient({ existing: true });
+    const runner = vi.fn();
+    const result = await deployArtifactShare({
+      ...input,
+      writeApprovalManifest: manifestPath,
+    }, {
+      client: client.client,
+      deploymentRoot: root,
+      runner,
+    });
+
+    expect(result.approvalManifest).toBe(manifestPath);
+    expect(result.changed).toEqual([]);
+    expect(runner).not.toHaveBeenCalled();
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    expect(manifest).toMatchObject({
+      version: 1,
+      binding: {
+        input: { hostname: "artifacts.example.com", pdfKeyId: "test-key" },
+        bundleSha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
+        remote: { database: { uuid: "db-id" } },
+      },
+    });
+  });
+
+  it("aborts before mutation when an approved bundle changes", async () => {
+    const root = await deploymentRoot();
+    const manifestPath = resolve(root, "approval.json");
+    const client = fakeClient({ existing: true });
+    await deployArtifactShare({ ...input, writeApprovalManifest: manifestPath }, {
+      client: client.client,
+      deploymentRoot: root,
+    });
+    await writeFile(resolve(root, "storage-lifecycle.json"), "{\"changed\":true}");
+    const runner = vi.fn();
+
+    await expect(deployArtifactShare({ ...input, approveManifest: manifestPath }, {
+      client: client.client,
+      deploymentRoot: root,
+      runner,
+    })).rejects.toThrow("no longer matches");
+    expect(runner).not.toHaveBeenCalled();
+  });
+
   it("rejects missing identity, invalid IDs, and a hostname outside the zone", async () => {
     expect(() => deploymentPlan({ ...input, identities: [] })).toThrow("allowed identity");
     expect(() => deploymentPlan({ ...input, accountId: "wrong" })).toThrow("32 lowercase");
@@ -153,6 +202,19 @@ describe("Cloudflare deployment", () => {
       client: client.client,
       deploymentRoot: await deploymentRoot(),
     })).rejects.toThrow("selected active");
+  });
+
+  it("accepts the active zone apex as the Worker Custom Domain", async () => {
+    const root = await deploymentRoot();
+    const client = fakeClient({ existing: true });
+    await expect(deployArtifactShare({
+      ...input,
+      hostname: "example.com",
+      writeApprovalManifest: resolve(root, "apex-approval.json"),
+    }, {
+      client: client.client,
+      deploymentRoot: root,
+    })).resolves.toMatchObject({ changed: [] });
   });
 
   it("refuses a custom-hostname collision before running Wrangler", async () => {

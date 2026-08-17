@@ -57,6 +57,9 @@ export const createArtifactApplication = (options: ArtifactApplicationOptions = 
     context.json({
       service: "lordebuilds.artifacts.share",
       status: "ok",
+      ...(context.env.PDF_PROVENANCE_KEY_ID === undefined
+        ? {}
+        : { pdf_provenance_key_id: context.env.PDF_PROVENANCE_KEY_ID }),
     }),
   );
 

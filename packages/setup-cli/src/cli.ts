@@ -59,7 +59,7 @@ const print = (valueToPrint: unknown): void => {
 const help = `Artifact Share setup
 
 Commands:
-  deploy --account-id <id> --zone-id <id> --hostname <host> (--allow-email <email> | --allow-domain <domain>) [--dry-run]
+  deploy --account-id <id> --zone-id <id> --hostname <host> --pdf-key-id <id> --pdf-public-key <base64> (--allow-email <email> | --allow-domain <domain>) (--dry-run | --write-approval-manifest <path> | --approve-manifest <path>)
   connect <base-url> [--workspace-root <path>] [--host codex|claude|both] [--no-host-install] [--marketplace <source>] [--open-development]
   disconnect [<base-url>]
   doctor
@@ -79,6 +79,12 @@ const main = async (): Promise<void> => {
     return;
   }
   if (command === "deploy") {
+    const dryRun = booleanFlag(args, "--dry-run");
+    const writeApprovalManifest = optionalValue(args, "--write-approval-manifest");
+    const approveManifest = optionalValue(args, "--approve-manifest");
+    if ([dryRun, writeApprovalManifest !== undefined, approveManifest !== undefined].filter(Boolean).length !== 1) {
+      throw new Error("Choose exactly one of --dry-run, --write-approval-manifest, or --approve-manifest");
+    }
     const identities: IdentityRule[] = [
       ...values(args, "--allow-email").map((identityValue) => ({ kind: "email" as const, value: identityValue })),
       ...values(args, "--allow-domain").map((identityValue) => ({ kind: "domain" as const, value: identityValue })),
@@ -87,8 +93,12 @@ const main = async (): Promise<void> => {
       accountId: value(args, "--account-id"),
       zoneId: value(args, "--zone-id"),
       hostname: value(args, "--hostname"),
+      pdfKeyId: value(args, "--pdf-key-id"),
+      pdfPublicKey: value(args, "--pdf-public-key"),
       identities,
-      dryRun: args.includes("--dry-run"),
+      dryRun,
+      ...(writeApprovalManifest === undefined ? {} : { writeApprovalManifest: resolve(writeApprovalManifest) }),
+      ...(approveManifest === undefined ? {} : { approveManifest: resolve(approveManifest) }),
     }, {
       deploymentRoot,
       ...(process.env.CLOUDFLARE_API_TOKEN === undefined

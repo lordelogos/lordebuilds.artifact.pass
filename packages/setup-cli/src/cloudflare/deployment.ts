@@ -1,4 +1,5 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
@@ -17,7 +18,11 @@ export interface DeployInput {
   readonly hostname: string;
   readonly identities: readonly IdentityRule[];
   readonly dryRun: boolean;
+  readonly pdfKeyId: string;
+  readonly pdfPublicKey: string;
   readonly serviceName?: string;
+  readonly writeApprovalManifest?: string;
+  readonly approveManifest?: string;
 }
 
 export interface DeploymentResult {
@@ -25,6 +30,7 @@ export interface DeploymentResult {
   readonly teamCommand: string;
   readonly plan: readonly string[];
   readonly changed: readonly string[];
+  readonly approvalManifest?: string;
 }
 
 interface Database { readonly uuid: string; readonly name: string }
@@ -38,6 +44,24 @@ interface AccessApplication {
 interface AccessOrganization { readonly auth_domain: string }
 interface WorkerDomain { readonly hostname: string; readonly service: string }
 
+interface ApprovalManifest {
+  readonly version: 1;
+  readonly generated_at: string;
+  readonly binding: {
+    readonly input: {
+      readonly accountId: string;
+      readonly zoneId: string;
+      readonly hostname: string;
+      readonly identities: readonly IdentityRule[];
+      readonly serviceName: string;
+      readonly pdfKeyId: string;
+      readonly pdfPublicKeySha256: string;
+    };
+    readonly bundleSha256: string;
+    readonly remote: unknown;
+  };
+}
+
 const identifier = /^[a-f0-9]{32}$/u;
 const hostnamePattern = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/u;
 
@@ -46,6 +70,10 @@ export const deploymentPlan = (input: DeployInput): readonly string[] => {
     throw new Error("Cloudflare account and zone IDs must be 32 lowercase hexadecimal characters");
   }
   if (!hostnamePattern.test(input.hostname)) throw new Error("Choose a valid lowercase hostname");
+  if (!/^[A-Za-z0-9._-]{1,64}$/u.test(input.pdfKeyId)) throw new Error("Choose a valid PDF signing key ID");
+  if (!/^[A-Za-z0-9+/]{43}=$/u.test(input.pdfPublicKey)) {
+    throw new Error("PDF public key must be one base64-encoded Ed25519 raw key");
+  }
   if (input.identities.length === 0) throw new Error("At least one allowed identity is required");
   for (const identity of input.identities) {
     const valid = identity.kind === "email"
@@ -77,6 +105,76 @@ const identityIncludes = (identities: readonly IdentityRule[]) => identities.map
 const canonicalJson = (value: readonly unknown[]): string =>
   JSON.stringify([...value].sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right))));
 
+const deploymentFiles = async (root: string, directory = root): Promise<readonly string[]> => {
+  const entries = await readdir(directory);
+  const files: string[] = [];
+  for (const entry of entries.sort()) {
+    const path = resolve(directory, entry);
+    if ((await stat(path)).isDirectory()) files.push(...await deploymentFiles(root, path));
+    else files.push(path.slice(root.length + 1));
+  }
+  return files;
+};
+
+const deploymentSha256 = async (root: string): Promise<string> => {
+  const hash = createHash("sha256");
+  for (const path of await deploymentFiles(root)) {
+    hash.update(path);
+    hash.update("\0");
+    hash.update(await readFile(resolve(root, path)));
+    hash.update("\0");
+  }
+  return hash.digest("hex");
+};
+
+const approvalBinding = async (
+  input: DeployInput,
+  serviceName: string,
+  dependencies: DeployDependencies,
+): Promise<ApprovalManifest["binding"]> => {
+  const [zone, domains, databases, buckets, organization, applications] = await Promise.all([
+    dependencies.client.request<{ readonly name: string; readonly status: string }>(`/zones/${input.zoneId}`),
+    dependencies.client.request<readonly WorkerDomain[]>(`/accounts/${input.accountId}/workers/domains`),
+    dependencies.client.request<readonly Database[]>(
+      `/accounts/${input.accountId}/d1/database?name=${encodeURIComponent(serviceName)}`,
+    ),
+    dependencies.client.request<{ readonly buckets: readonly Bucket[] }>(
+      `/accounts/${input.accountId}/r2/buckets`,
+    ),
+    dependencies.client.request<AccessOrganization>(`/accounts/${input.accountId}/access/organizations`),
+    dependencies.client.request<readonly AccessApplication[]>(`/accounts/${input.accountId}/access/apps`),
+  ]);
+  const application = applications.find((candidate) => candidate.name === serviceName);
+  const policies = application === undefined
+    ? []
+    : await dependencies.client.request<readonly {
+        readonly id: string;
+        readonly name: string;
+        readonly include?: readonly unknown[];
+      }[]>(`/accounts/${input.accountId}/access/apps/${application.id}/policies`);
+  return {
+    input: {
+      accountId: input.accountId,
+      zoneId: input.zoneId,
+      hostname: input.hostname,
+      identities: input.identities,
+      serviceName,
+      pdfKeyId: input.pdfKeyId,
+      pdfPublicKeySha256: createHash("sha256").update(input.pdfPublicKey).digest("hex"),
+    },
+    bundleSha256: await deploymentSha256(dependencies.deploymentRoot),
+    remote: {
+      zone,
+      domain: domains.find((candidate) => candidate.hostname === input.hostname) ?? null,
+      database: databases.find((candidate) => candidate.name === serviceName) ?? null,
+      bucket: buckets.buckets.find((candidate) => candidate.name === serviceName) ?? null,
+      organization,
+      application: application ?? null,
+      policy: policies.find((candidate) => candidate.name === "Artifact Share uploaders") ?? null,
+    },
+  };
+};
+
 export interface DeployDependencies {
   readonly client: CloudflareClient;
   readonly runner?: ProcessRunner;
@@ -98,10 +196,35 @@ export const deployArtifactShare = async (
   const changed: string[] = [];
   const verified = await dependencies.client.verifyToken();
   if (verified.status !== "active") throw new Error("Cloudflare API token is not active");
+  if (input.writeApprovalManifest !== undefined || input.approveManifest !== undefined) {
+    const binding = await approvalBinding(input, serviceName, dependencies);
+    if (input.writeApprovalManifest !== undefined) {
+      const manifest: ApprovalManifest = {
+        version: 1,
+        generated_at: new Date().toISOString(),
+        binding,
+      };
+      await writeFile(input.writeApprovalManifest, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
+      return {
+        baseUrl,
+        teamCommand,
+        plan,
+        changed: [],
+        approvalManifest: input.writeApprovalManifest,
+      };
+    }
+    const approved = JSON.parse(await readFile(input.approveManifest ?? "", "utf8")) as ApprovalManifest;
+    if (approved.version !== 1 || JSON.stringify(approved.binding) !== JSON.stringify(binding)) {
+      throw new Error("Hosted approval manifest no longer matches the deployment bundle or Cloudflare state");
+    }
+  }
   const zone = await dependencies.client.request<{ readonly name: string; readonly status: string }>(
     `/zones/${input.zoneId}`,
   );
-  if (zone.status !== "active" || !input.hostname.endsWith(`.${zone.name}`)) {
+  if (
+    zone.status !== "active" ||
+    (input.hostname !== zone.name && !input.hostname.endsWith(`.${zone.name}`))
+  ) {
     throw new Error("Hostname must belong to the selected active Cloudflare zone");
   }
   const domains = await dependencies.client.request<readonly WorkerDomain[]>(
@@ -222,6 +345,9 @@ export const deployArtifactShare = async (
   template.routes = [{ pattern: input.hostname, custom_domain: true }];
   template.vars.ACCESS_TEAM_DOMAIN = `https://${organization.auth_domain}`;
   template.vars.ACCESS_AUD = application.aud;
+  template.vars.PDF_PROVENANCE_KEY_ID = input.pdfKeyId;
+  template.vars.PDF_PROVENANCE_PUBLIC_KEYS = JSON.stringify({ [input.pdfKeyId]: input.pdfPublicKey });
+  template.vars.PDF_PROVENANCE_RENDERERS = "artifact-share-qualified-pdf@1";
   const temporaryRoot = await mkdtemp(resolve(tmpdir(), "artifact-share-deploy-"));
   const configurationPath = resolve(temporaryRoot, "wrangler.json");
   try {

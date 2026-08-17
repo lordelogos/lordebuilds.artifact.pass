@@ -227,7 +227,7 @@ const addExtraction = async (
     });
     const derivedBytes = qualified.canonicalSource;
     const derivedText = new TextDecoder("utf-8", { fatal: true }).decode(derivedBytes);
-    form.set("derived_text", new File([derivedBytes], `${basename("artifact.pdf")}.txt`, {
+    form.set("derived_text", new File([Uint8Array.from(derivedBytes).buffer], `${basename("artifact.pdf")}.txt`, {
       type: "text/plain;charset=utf-8",
     }));
     form.set("pdf_provenance", JSON.stringify(qualified.receipt));

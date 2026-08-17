@@ -19,9 +19,9 @@ Monitor Worker error rate, D1 failures, R2 failures, Access denials, and schedul
 3. Authenticate Wrangler using its OS-keychain option or expose a short-lived API token only to the deployment process.
 4. Deploy with one or more explicit `--allow-email` or `--allow-domain` rules.
 5. Rerun the identical deploy and confirm it reuses resources without duplicates.
-6. Confirm `/health` is public, `/upload` is Access-protected, R2 is private, all five D1 migrations are applied, and the R2 lifecycle is present.
+6. Confirm `/health` is public, `/upload` is Access-protected, R2 is private, all six D1 migrations are applied, the trusted PDF public key is configured, and the R2 lifecycle is present.
 7. Connect a fresh Codex host and a fresh Claude Code host through the printed team command.
-8. Upload Markdown, hostile HTML, a born-digital PDF, and an image-only PDF; verify safe browser reads and exact downloads.
+8. Upload Markdown, hostile HTML, a human PDF, and a controlled PDF with its exact canonical source. Verify human PDFs remain human-only and controlled PDFs return only the signed canonical source to agents.
 9. Run the live two-agent handoff gate below.
 10. Verify exact-cutoff denial in controlled-time tests and observe scheduled cleanup on the disposable deployment.
 

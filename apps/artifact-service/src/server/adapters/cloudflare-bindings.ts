@@ -12,6 +12,7 @@ export interface ArtifactServiceBindings {
   readonly LOCAL_TEST_CONTROL_TOKEN?: string;
   readonly PDF_PROVENANCE_PUBLIC_KEYS?: string;
   readonly PDF_PROVENANCE_RENDERERS?: string;
+  readonly PDF_PROVENANCE_KEY_ID?: string;
 }
 
 export const createD1Database = (database: D1Database): DrizzleD1Database =>

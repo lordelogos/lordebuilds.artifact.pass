@@ -6,19 +6,20 @@ Localhost, LAN testing, and a temporary Cloudflare Quick Tunnel need no domain o
 
 ## Decisions and values
 
-Fill this in before the hosted run:
+Approved values for the first private hosted run:
 
 | Item | Decision or value |
 | --- | --- |
-| Cloudflare account ID | 32-character account ID: `________________` |
-| Domain and zone | Buy or choose a domain, add it to Cloudflare, and wait for the zone to become active |
-| Cloudflare zone ID | 32-character ID for that active zone: `________________` |
-| Hosted hostname | Recommended: `artifacts.<domain>`: `________________` |
-| Uploaders | One or more exact `--allow-email` or `--allow-domain` values: `________________` |
-| Zero Trust organization | Must already exist in the same account with an identity provider; team domain is read from Cloudflare |
-| Access team domain | Expected after deployment: `https://<team>.cloudflareaccess.com`; the deployer stores it as `ACCESS_TEAM_DOMAIN` |
+| Cloudflare account ID | `f6fe4d3cfdb44e35b801c8f62b1bc14c` |
+| Domain and zone | `artifactpass.com` — active on Cloudflare |
+| Cloudflare zone ID | `cd12a03a0c7d5e311c4d878ef551dbcb` |
+| Hosted hostname | `artifactpass.com` |
+| Uploaders | `paulehiks@gmail.com` |
+| Zero Trust organization | Active in the selected account |
+| Access team domain | `https://artifactpass.cloudflareaccess.com` |
 | Access audience | Created or reused Access application's AUD tag; the deployer stores it as `ACCESS_AUD` |
 | DNS | Use a Worker Custom Domain. Cloudflare creates its DNS record and certificate; the chosen hostname must not already have a conflicting CNAME or Worker |
+| PDF provenance | Key ID `artifactpass-primary`; private Ed25519 key is stored only in macOS Keychain services `artifactpass-pdf-signing-key` and its public half in `artifactpass-pdf-public-key` |
 | Repository | Keep `lordelogos/lordebuilds.artifacts.share` **private** until the user explicitly changes that decision |
 | Git destination | On approval, push the reviewed branch to the private GitHub repository; do not push during local readiness work |
 | Package/release destination | Recommended first release: private GitHub Actions artifacts from a reviewed tag. Do not publish `@artifact-share/setup` to a registry until the user explicitly chooses a registry and visibility |
@@ -69,32 +70,52 @@ Run from the repository root.
 
    Expected: local files under `packages/setup-cli/dist`; no Cloudflare mutation.
 
-3. Preview the exact plan with the filled values:
+3. Preview the exact plan without credentials or network access:
 
    ```sh
    node packages/setup-cli/dist/cli.mjs deploy \
-     --account-id <account-id> \
-     --zone-id <zone-id> \
-     --hostname <hostname> \
-     --allow-email <uploader@example.com> \
+     --account-id f6fe4d3cfdb44e35b801c8f62b1bc14c \
+     --zone-id cd12a03a0c7d5e311c4d878ef551dbcb \
+     --hostname artifactpass.com \
+     --allow-email paulehiks@gmail.com \
+     --pdf-key-id artifactpass-primary \
+     --pdf-public-key "$(security find-generic-password -w -s artifactpass-pdf-public-key -a "$USER")" \
      --dry-run
    ```
 
    Use `--allow-domain <domain>` instead, or repeat either flag, when appropriate. Expected: seven planned actions, an empty changed-resource list, and no credentials or Cloudflare API calls.
 
-4. Stop here. The first approval-gated hosted command is the same command **without** `--dry-run`:
+4. Create an authenticated read-only, state-bound approval manifest. This performs API reads only:
 
    ```sh
+   CLOUDFLARE_API_TOKEN="$(security find-generic-password -w -s artifactpass-cloudflare-api-token -a "$USER")" \
    node packages/setup-cli/dist/cli.mjs deploy \
-     --account-id <account-id> \
-     --zone-id <zone-id> \
-     --hostname <hostname> \
-     --allow-email <uploader@example.com>
+     --account-id f6fe4d3cfdb44e35b801c8f62b1bc14c \
+     --zone-id cd12a03a0c7d5e311c4d878ef551dbcb \
+     --hostname artifactpass.com \
+     --allow-email paulehiks@gmail.com \
+     --pdf-key-id artifactpass-primary \
+     --pdf-public-key "$(security find-generic-password -w -s artifactpass-pdf-public-key -a "$USER")" \
+     --write-approval-manifest /tmp/artifactpass-hosted-approval.json
    ```
 
-   This is the mutation boundary. Before it runs, the user must explicitly approve the values, scopes, identity rule, and hosted deployment, and authenticate Wrangler or provide the short-lived token. It may create or update the named D1, R2, Access, policy, Worker, Custom Domain, migrations, and R2 lifecycle resources.
+5. The mutation boundary uses that exact manifest. It aborts if the bundle or remote resource state changed:
 
-5. Keep Git and release actions separately approval-gated. After hosted verification, the user chooses whether to push the reviewed branch, merge to private `main`, create a tag, and retain the resulting GitHub Actions artifacts. Package registry publication and public repository visibility are separate decisions and default to **no**.
+   ```sh
+   CLOUDFLARE_API_TOKEN="$(security find-generic-password -w -s artifactpass-cloudflare-api-token -a "$USER")" \
+   node packages/setup-cli/dist/cli.mjs deploy \
+     --account-id f6fe4d3cfdb44e35b801c8f62b1bc14c \
+     --zone-id cd12a03a0c7d5e311c4d878ef551dbcb \
+     --hostname artifactpass.com \
+     --allow-email paulehiks@gmail.com \
+     --pdf-key-id artifactpass-primary \
+     --pdf-public-key "$(security find-generic-password -w -s artifactpass-pdf-public-key -a "$USER")" \
+     --approve-manifest /tmp/artifactpass-hosted-approval.json
+   ```
+
+   The user approved these named resources and the private hosted run in this roadmap session. The manifest makes that approval state-specific; any drift stops before mutation.
+
+6. Keep Git and release actions separately approval-gated. After hosted verification, the user chooses whether to push the reviewed branch, merge to private `main`, create a tag, and retain the resulting GitHub Actions artifacts. Package registry publication and public repository visibility are separate decisions and default to **no**.
 
 ## Verify
 
@@ -103,7 +124,7 @@ After the live deploy succeeds:
 1. `curl --fail --silent https://<hostname>/health` returns service `lordebuilds.artifacts.share` with status `ok`.
 2. An anonymous request to `/upload` redirects to Access or returns 401/403.
 3. An anonymous `POST /api/artifacts` returns 404; there is no list endpoint.
-4. Cloudflare shows one Worker, D1 database, private R2 bucket, Access application/policy, Custom Domain, all D1 migrations, and the R2 lifecycle under the canonical name.
+4. Cloudflare shows one Worker, D1 database, private R2 bucket, Access application/policy, Custom Domain, all six D1 migrations, and the R2 lifecycle under the canonical name.
 5. Rerun the identical deployment command. It reuses resources and creates no duplicates.
 6. Connect one clean compatible agent using the shared MCP and Agent Skills package, then test Markdown, self-contained HTML, and PDF publish/read handoffs. Codex and Claude Code are representative examples, not separate implementations.
 7. Run the live browser gate from [operations](operations.md), then verify expiry denial and scheduled cleanup on the disposable deployment.
