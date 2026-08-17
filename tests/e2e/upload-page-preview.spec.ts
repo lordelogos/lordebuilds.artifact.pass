@@ -37,7 +37,7 @@ const mockUploadService = async (page: Page, onUpload?: (body: string) => void) 
       contentType: "application/json",
       body: JSON.stringify({
         protocol_version: 1,
-        share_url: `https://artifacts.example/a/${shareToken}`,
+        share_url: new URL(`/a/${shareToken}`, previewUrl).href,
         manifest: {
           protocol_version: 1,
           artifact_id: "00000000-0000-4000-8000-000000000004",
