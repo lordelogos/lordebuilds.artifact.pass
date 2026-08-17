@@ -59,7 +59,7 @@ const print = (valueToPrint: unknown): void => {
 const help = `Artifact Share setup
 
 Commands:
-  deploy --account-id <id> --zone-id <id> --hostname <host> --pdf-key-id <id> --pdf-public-key <base64> (--allow-email <email> | --allow-domain <domain>) (--dry-run | --write-approval-manifest <path> | --approve-manifest <path>)
+  deploy --account-id <id> --zone-id <id> --hostname <host> --workers-subdomain <name> --pdf-key-id <id> --pdf-public-key <base64> (--allow-email <email> | --allow-domain <domain>) (--dry-run | --write-approval-manifest <path> | --approve-manifest <path>)
   connect <base-url> [--workspace-root <path>] [--host codex|claude|both] [--no-host-install] [--marketplace <source>] [--open-development]
   disconnect [<base-url>]
   doctor
@@ -95,6 +95,7 @@ const main = async (): Promise<void> => {
       hostname: value(args, "--hostname"),
       pdfKeyId: value(args, "--pdf-key-id"),
       pdfPublicKey: value(args, "--pdf-public-key"),
+      workersSubdomain: value(args, "--workers-subdomain"),
       identities,
       dryRun,
       ...(writeApprovalManifest === undefined ? {} : { writeApprovalManifest: resolve(writeApprovalManifest) }),

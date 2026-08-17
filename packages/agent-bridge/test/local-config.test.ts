@@ -19,11 +19,13 @@ describe("local bridge config", () => {
       version: 1,
       base_url: "https://artifacts.example.test/",
       workspace_roots: [root],
+      pdf_key_id: "artifactpass-primary",
     });
     expect(await readLocalBridgeSettings(path)).toEqual({
       version: 1,
       base_url: "https://artifacts.example.test/",
       workspace_roots: [root],
+      pdf_key_id: "artifactpass-primary",
     });
     expect((await readFile(path, "utf8"))).not.toContain("token");
     expect((await stat(path)).mode & 0o777).toBe(0o600);
@@ -61,6 +63,23 @@ describe("local bridge config", () => {
     await expect(readLocalBridgeSettings(path)).rejects.toThrow(
       "open_development must be true when enabled",
     );
+  });
+
+  it("loads the hosted PDF key from the OS credential store without persisting it", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifact-share-pdf-config-test-"));
+    const path = resolve(root, "config.json");
+    await writeLocalBridgeSettings(path, {
+      version: 1,
+      base_url: "https://artifacts.example.test/",
+      workspace_roots: [root],
+      pdf_key_id: "artifactpass-primary",
+    });
+
+    const configuration = configurationFromEnvironment({ ARTIFACT_SHARE_CONFIG_PATH: path });
+
+    expect(configuration.pdfProvenanceKeyId).toBe("artifactpass-primary");
+    expect(configuration.pdfProvenanceStore).toBeDefined();
+    expect(await readFile(path, "utf8")).not.toContain("private");
   });
 
   it("lets environment variables override the local config", async () => {

@@ -74,6 +74,7 @@ export const connectHost = async (
   const healthBody = await health.clone().json().catch(() => null) as {
     readonly service?: string;
     readonly status?: string;
+    readonly pdf_provenance_key_id?: string;
   } | null;
   if (
     !health.ok ||
@@ -128,6 +129,9 @@ export const connectHost = async (
       version: 1,
       base_url: origin.toString(),
       workspace_roots: roots,
+      ...(healthBody.pdf_provenance_key_id === undefined
+        ? {}
+        : { pdf_key_id: healthBody.pdf_provenance_key_id }),
     });
     wroteConfig = true;
     await store.set(token.accessToken);

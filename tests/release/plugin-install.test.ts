@@ -62,7 +62,8 @@ describe("dual-host plugin package", () => {
     ].map((path) => readFileSync(resolve(repositoryRoot, path), "utf8")).join("\n").toLowerCase();
     expect(skillText).toContain("exact expiry cutoff");
     expect(skillText).toContain("exact source");
-    expect(skillText).toContain("best effort");
+    expect(skillText).toContain("human-only");
+    expect(skillText).toContain("canonical source");
     expect(skillText).toContain("bearer capability");
     expect(skillText).toContain("next_cursor");
     expect(skillText).not.toContain("`done`");

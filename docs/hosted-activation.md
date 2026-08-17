@@ -1,8 +1,8 @@
 # Hosted activation packet
 
-This packet is for the later hosted run. It does not deploy, push, publish, or change repository visibility.
+This packet records the completed first hosted run and remains the replay procedure for a future approved deployment. The deployment is live; no Git push, package publication, or repository visibility change was performed.
 
-Localhost, LAN testing, and a temporary Cloudflare Quick Tunnel need no domain or Cloudflare credentials. The permanent hosted URL waits until there is an active domain zone in the Cloudflare account. Quick Tunnel URLs are temporary and are not the production hostname.
+Localhost, LAN testing, and a temporary Cloudflare Quick Tunnel still need no domain or Cloudflare credentials. The permanent hosted URL is `https://artifactpass.com`; Quick Tunnel URLs remain temporary and are not the production hostname.
 
 ## Decisions and values
 
@@ -17,9 +17,10 @@ Approved values for the first private hosted run:
 | Uploaders | `paulehiks@gmail.com` |
 | Zero Trust organization | Active in the selected account |
 | Access team domain | `https://artifactpass.cloudflareaccess.com` |
+| Workers account subdomain | `artifactpass`; initialized only because Cloudflare requires an account subdomain for cron schedules, while this Worker keeps `workers_dev` and preview URLs disabled |
 | Access audience | Created or reused Access application's AUD tag; the deployer stores it as `ACCESS_AUD` |
 | DNS | Use a Worker Custom Domain. Cloudflare creates its DNS record and certificate; the chosen hostname must not already have a conflicting CNAME or Worker |
-| PDF provenance | Key ID `artifactpass-primary`; private Ed25519 key is stored only in macOS Keychain services `artifactpass-pdf-signing-key` and its public half in `artifactpass-pdf-public-key` |
+| PDF provenance | Key ID `artifactpass-primary`; the deployment copy of the private Ed25519 key is in macOS Keychain service `artifactpass-pdf-signing-key`, the bridge copy is in service `lordebuilds.artifacts.share` account `pdf-signing-key:artifactpass-primary`, and the public half is in `artifactpass-pdf-public-key` |
 | Repository | Keep `lordelogos/lordebuilds.artifacts.share` **private** until the user explicitly changes that decision |
 | Git destination | On approval, push the reviewed branch to the private GitHub repository; do not push during local readiness work |
 | Package/release destination | Recommended first release: private GitHub Actions artifacts from a reviewed tag. Do not publish `@artifact-share/setup` to a registry until the user explicitly chooses a registry and visibility |
@@ -77,6 +78,7 @@ Run from the repository root.
      --account-id f6fe4d3cfdb44e35b801c8f62b1bc14c \
      --zone-id cd12a03a0c7d5e311c4d878ef551dbcb \
      --hostname artifactpass.com \
+     --workers-subdomain artifactpass \
      --allow-email paulehiks@gmail.com \
      --pdf-key-id artifactpass-primary \
      --pdf-public-key "$(security find-generic-password -w -s artifactpass-pdf-public-key -a "$USER")" \
@@ -93,6 +95,7 @@ Run from the repository root.
      --account-id f6fe4d3cfdb44e35b801c8f62b1bc14c \
      --zone-id cd12a03a0c7d5e311c4d878ef551dbcb \
      --hostname artifactpass.com \
+     --workers-subdomain artifactpass \
      --allow-email paulehiks@gmail.com \
      --pdf-key-id artifactpass-primary \
      --pdf-public-key "$(security find-generic-password -w -s artifactpass-pdf-public-key -a "$USER")" \
@@ -107,6 +110,7 @@ Run from the repository root.
      --account-id f6fe4d3cfdb44e35b801c8f62b1bc14c \
      --zone-id cd12a03a0c7d5e311c4d878ef551dbcb \
      --hostname artifactpass.com \
+     --workers-subdomain artifactpass \
      --allow-email paulehiks@gmail.com \
      --pdf-key-id artifactpass-primary \
      --pdf-public-key "$(security find-generic-password -w -s artifactpass-pdf-public-key -a "$USER")" \
@@ -116,6 +120,17 @@ Run from the repository root.
    The user approved these named resources and the private hosted run in this roadmap session. The manifest makes that approval state-specific; any drift stops before mutation.
 
 6. Keep Git and release actions separately approval-gated. After hosted verification, the user chooses whether to push the reviewed branch, merge to private `main`, create a tag, and retain the resulting GitHub Actions artifacts. Package registry publication and public repository visibility are separate decisions and default to **no**.
+
+7. On a trusted agent host, install the controlled-PDF signing key in the bridge's OS credential store before connecting. For this first macOS host, copy the already-created deployment key without printing it:
+
+   ```sh
+   security add-generic-password -U \
+     -s lordebuilds.artifacts.share \
+     -a pdf-signing-key:artifactpass-primary \
+     -w "$(security find-generic-password -w -s artifactpass-pdf-signing-key -a "$USER")"
+   ```
+
+   The hosted `/health` response supplies only the non-secret key ID. `connect` records that ID in the local bridge config; the private key stays in Keychain. Other trusted hosts need the same private key transferred through an approved secret manager. Hosts without it can still publish Markdown, HTML, and human-only PDFs, but cannot claim controlled PDF provenance.
 
 ## Verify
 

@@ -120,7 +120,10 @@ const assertRuntimeConformance = async (host, installedRoot, resolvedServer) => 
       publish_artifact: {
         input: {
           required: ["path"],
-          properties: { path: ["string"], expires_in_seconds: ["integer"] },
+          properties: {
+            path: ["string"], canonical_source_path: ["string"],
+            expires_in_seconds: ["integer"],
+          },
         },
         output: {
           required: ["protocol_version", "manifest", "share_url"],
@@ -139,14 +142,16 @@ const assertRuntimeConformance = async (host, installedRoot, resolvedServer) => 
         },
         output: {
           required: [
-            "manifest", "representation", "encoding", "byte_offset", "byte_length",
-            "total_size", "sha256", "data", "next_cursor",
+            "content_trust", "safety_boundary", "manifest", "representation", "encoding",
+            "byte_offset", "byte_length", "total_size", "sha256", "data", "next_cursor",
           ],
           properties: {
+            content_trust: ["string"], safety_boundary: ["string"],
             manifest: ["object"], representation: ["string"], encoding: ["string"],
             byte_offset: ["integer"], byte_length: ["integer"], total_size: ["integer"],
             sha256: ["string"], data: ["string"], text: ["string"],
             next_cursor: ["null", "string"], exact_source_url: ["string"],
+            safety_notice: ["string"],
           },
         },
       },

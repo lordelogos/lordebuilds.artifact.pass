@@ -69,6 +69,7 @@ describe("host connection", () => {
         fetch: vi.fn(async () => new Response(JSON.stringify({
           service: "lordebuilds.artifacts.share",
           status: "ok",
+          pdf_provenance_key_id: "artifactpass-primary",
         }))),
       },
     });
@@ -216,6 +217,7 @@ describe("host connection", () => {
         fetch: vi.fn(async () => new Response(JSON.stringify({
           service: "lordebuilds.artifacts.share",
           status: "ok",
+          pdf_provenance_key_id: "artifactpass-primary",
         }))),
       },
     });
@@ -223,6 +225,7 @@ describe("host connection", () => {
     expect(store.set).toHaveBeenCalledWith(token);
     const persisted = await readFile(configPath, "utf8");
     expect(persisted).toContain("https://artifacts.example.test/");
+    expect(persisted).toContain('"pdf_key_id": "artifactpass-primary"');
     expect(persisted).not.toContain(token);
   });
 

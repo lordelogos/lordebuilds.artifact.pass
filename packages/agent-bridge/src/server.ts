@@ -44,7 +44,25 @@ export interface BridgeConfiguration {
     readonly keyId: string;
     readonly privateKeyPkcs8Base64: string;
   };
+  readonly pdfProvenanceKeyId?: string;
+  readonly pdfProvenanceStore?: CredentialStore;
 }
+
+const resolvePdfProvenance = async (
+  configuration: BridgeConfiguration,
+): Promise<BridgeConfiguration["pdfProvenance"]> => {
+  if (configuration.pdfProvenance !== undefined) return configuration.pdfProvenance;
+  if (configuration.pdfProvenanceKeyId === undefined || configuration.pdfProvenanceStore === undefined) {
+    return undefined;
+  }
+  const privateKeyPkcs8Base64 = await configuration.pdfProvenanceStore.get();
+  if (privateKeyPkcs8Base64 === null) {
+    throw new Error(
+      `No PDF signing credential is stored for key ${configuration.pdfProvenanceKeyId}`,
+    );
+  }
+  return { keyId: configuration.pdfProvenanceKeyId, privateKeyPkcs8Base64 };
+};
 
 const errorResult = (error: unknown) => ({
   isError: true,
@@ -87,6 +105,9 @@ export const createBridgeServer = (configuration: BridgeConfiguration): McpServe
           environmentStore: configuration.environmentStore,
           ...(configuration.osStore === undefined ? {} : { osStore: configuration.osStore }),
         });
+      const pdfProvenance = canonicalSourcePath === undefined
+        ? undefined
+        : await resolvePdfProvenance(configuration);
       const result = await publishArtifact({
         path,
         expiresInSeconds,
@@ -97,9 +118,9 @@ export const createBridgeServer = (configuration: BridgeConfiguration): McpServe
         ...(token === undefined ? {} : { token }),
         openDevelopment: configuration.openDevelopment === true,
         journal: publicationJournal,
-        ...(configuration.pdfProvenance === undefined
+        ...(pdfProvenance === undefined
           ? {}
-          : { pdfProvenance: configuration.pdfProvenance }),
+          : { pdfProvenance }),
         ...(configuration.fetch === undefined ? {} : { fetch: configuration.fetch }),
       });
       return {
@@ -191,7 +212,14 @@ export const configurationFromEnvironment = (
     environmentStore,
     publicationStatePath,
     ...(pdfProvenanceKeyId === undefined || pdfProvenancePrivateKey === undefined
-      ? {}
+      ? localSettings?.pdf_key_id === undefined
+        ? {}
+        : {
+            pdfProvenanceKeyId: localSettings.pdf_key_id,
+            pdfProvenanceStore: new OsCredentialStore({
+              account: `pdf-signing-key:${localSettings.pdf_key_id}`,
+            }),
+          }
       : {
           pdfProvenance: {
             keyId: pdfProvenanceKeyId,

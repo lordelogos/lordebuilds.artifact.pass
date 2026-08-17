@@ -8,6 +8,7 @@ export interface LocalBridgeSettings {
   readonly base_url: string;
   readonly workspace_roots: readonly string[];
   readonly open_development?: true;
+  readonly pdf_key_id?: string;
 }
 
 const validateSettings = (value: unknown): LocalBridgeSettings => {
@@ -28,11 +29,18 @@ const validateSettings = (value: unknown): LocalBridgeSettings => {
   if (candidate.open_development !== undefined && candidate.open_development !== true) {
     throw new Error("Artifact Share config open_development must be true when enabled");
   }
+  if (
+    candidate.pdf_key_id !== undefined &&
+    (typeof candidate.pdf_key_id !== "string" || !/^[A-Za-z0-9._-]{1,64}$/u.test(candidate.pdf_key_id))
+  ) {
+    throw new Error("Artifact Share config contains an invalid PDF signing key ID");
+  }
   return {
     version: 1,
     base_url: candidate.base_url,
     workspace_roots: candidate.workspace_roots as string[],
     ...(candidate.open_development === true ? { open_development: true } : {}),
+    ...(typeof candidate.pdf_key_id === "string" ? { pdf_key_id: candidate.pdf_key_id } : {}),
   };
 };
 

@@ -91164,8 +91164,9 @@ var OsCredentialStore = class {
         this.service,
         "-a",
         this.account,
-        "-w"
-      ], { input: value });
+        "-w",
+        value
+      ]);
       return;
     }
     await this.runner(
@@ -91228,11 +91229,15 @@ var validateSettings = (value) => {
   if (candidate.open_development !== void 0 && candidate.open_development !== true) {
     throw new Error("Artifact Share config open_development must be true when enabled");
   }
+  if (candidate.pdf_key_id !== void 0 && (typeof candidate.pdf_key_id !== "string" || !/^[A-Za-z0-9._-]{1,64}$/u.test(candidate.pdf_key_id))) {
+    throw new Error("Artifact Share config contains an invalid PDF signing key ID");
+  }
   return {
     version: 1,
     base_url: candidate.base_url,
     workspace_roots: candidate.workspace_roots,
-    ...candidate.open_development === true ? { open_development: true } : {}
+    ...candidate.open_development === true ? { open_development: true } : {},
+    ...typeof candidate.pdf_key_id === "string" ? { pdf_key_id: candidate.pdf_key_id } : {}
   };
 };
 var defaultLocalConfigPath = (environment = process.env, platform = process.platform) => {
@@ -92512,7 +92517,7 @@ var addExtraction = async (form, mimeType, bytes, extractPdf, controlled) => {
     });
     const derivedBytes = qualified.canonicalSource;
     const derivedText = new TextDecoder("utf-8", { fatal: true }).decode(derivedBytes);
-    form.set("derived_text", new File([derivedBytes], `${basename("artifact.pdf")}.txt`, {
+    form.set("derived_text", new File([Buffer.from(derivedBytes)], `${basename("artifact.pdf")}.txt`, {
       type: "text/plain;charset=utf-8"
     }));
     form.set("pdf_provenance", JSON.stringify(qualified.receipt));
@@ -92714,6 +92719,19 @@ var readArtifactOutputSchema = external_exports.object({
 });
 
 // src/server.ts
+var resolvePdfProvenance = async (configuration) => {
+  if (configuration.pdfProvenance !== void 0) return configuration.pdfProvenance;
+  if (configuration.pdfProvenanceKeyId === void 0 || configuration.pdfProvenanceStore === void 0) {
+    return void 0;
+  }
+  const privateKeyPkcs8Base64 = await configuration.pdfProvenanceStore.get();
+  if (privateKeyPkcs8Base64 === null) {
+    throw new Error(
+      `No PDF signing credential is stored for key ${configuration.pdfProvenanceKeyId}`
+    );
+  }
+  return { keyId: configuration.pdfProvenanceKeyId, privateKeyPkcs8Base64 };
+};
 var errorResult = (error51) => ({
   isError: true,
   content: [{
@@ -92745,6 +92763,7 @@ var createBridgeServer = (configuration) => {
         environmentStore: configuration.environmentStore,
         ...configuration.osStore === void 0 ? {} : { osStore: configuration.osStore }
       });
+      const pdfProvenance = canonicalSourcePath === void 0 ? void 0 : await resolvePdfProvenance(configuration);
       const result = await publishArtifact({
         path,
         expiresInSeconds,
@@ -92755,7 +92774,7 @@ var createBridgeServer = (configuration) => {
         ...token === void 0 ? {} : { token },
         openDevelopment: configuration.openDevelopment === true,
         journal: publicationJournal,
-        ...configuration.pdfProvenance === void 0 ? {} : { pdfProvenance: configuration.pdfProvenance },
+        ...pdfProvenance === void 0 ? {} : { pdfProvenance },
         ...configuration.fetch === void 0 ? {} : { fetch: configuration.fetch }
       });
       return {
@@ -92830,7 +92849,12 @@ var configurationFromEnvironment = (environment = process.env) => {
     headless,
     environmentStore,
     publicationStatePath,
-    ...pdfProvenanceKeyId === void 0 || pdfProvenancePrivateKey === void 0 ? {} : {
+    ...pdfProvenanceKeyId === void 0 || pdfProvenancePrivateKey === void 0 ? localSettings?.pdf_key_id === void 0 ? {} : {
+      pdfProvenanceKeyId: localSettings.pdf_key_id,
+      pdfProvenanceStore: new OsCredentialStore({
+        account: `pdf-signing-key:${localSettings.pdf_key_id}`
+      })
+    } : {
       pdfProvenance: {
         keyId: pdfProvenanceKeyId,
         privateKeyPkcs8Base64: pdfProvenancePrivateKey

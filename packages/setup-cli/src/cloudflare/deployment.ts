@@ -20,6 +20,7 @@ export interface DeployInput {
   readonly dryRun: boolean;
   readonly pdfKeyId: string;
   readonly pdfPublicKey: string;
+  readonly workersSubdomain: string;
   readonly serviceName?: string;
   readonly writeApprovalManifest?: string;
   readonly approveManifest?: string;
@@ -56,6 +57,7 @@ interface ApprovalManifest {
       readonly serviceName: string;
       readonly pdfKeyId: string;
       readonly pdfPublicKeySha256: string;
+      readonly workersSubdomain: string;
     };
     readonly bundleSha256: string;
     readonly remote: unknown;
@@ -74,6 +76,9 @@ export const deploymentPlan = (input: DeployInput): readonly string[] => {
   if (!/^[A-Za-z0-9+/]{43}=$/u.test(input.pdfPublicKey)) {
     throw new Error("PDF public key must be one base64-encoded Ed25519 raw key");
   }
+  if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u.test(input.workersSubdomain)) {
+    throw new Error("Choose a valid Workers account subdomain");
+  }
   if (input.identities.length === 0) throw new Error("At least one allowed identity is required");
   for (const identity of input.identities) {
     const valid = identity.kind === "email"
@@ -82,7 +87,7 @@ export const deploymentPlan = (input: DeployInput): readonly string[] => {
     if (!valid) throw new Error(`Allowed ${identity.kind} is invalid`);
   }
   return [
-    "verify the short-lived Cloudflare API token and selected zone",
+    "verify the short-lived Cloudflare API token, selected zone, and Workers account subdomain",
     "reuse or create the private D1 database and R2 bucket",
     "reuse or create one path-scoped Access application and allow policy",
     "prepare the Worker configuration with its custom domain and private bindings",
@@ -127,12 +132,27 @@ const deploymentSha256 = async (root: string): Promise<string> => {
   return hash.digest("hex");
 };
 
+const readWorkersSubdomain = async (
+  input: DeployInput,
+  dependencies: DeployDependencies,
+): Promise<{ readonly subdomain: string } | null> => {
+  try {
+    return await dependencies.client.request<{ readonly subdomain: string }>(
+      `/accounts/${input.accountId}/workers/subdomain`,
+    );
+  } catch (error) {
+    if (error instanceof CloudflareApiError && error.status === 404) return null;
+    throw error;
+  }
+};
+
 const approvalBinding = async (
   input: DeployInput,
   serviceName: string,
   dependencies: DeployDependencies,
 ): Promise<ApprovalManifest["binding"]> => {
-  const [zone, domains, databases, buckets, organization, applications] = await Promise.all([
+  const [workersSubdomain, zone, domains, databases, buckets, organization, applications] = await Promise.all([
+    readWorkersSubdomain(input, dependencies),
     dependencies.client.request<{ readonly name: string; readonly status: string }>(`/zones/${input.zoneId}`),
     dependencies.client.request<readonly WorkerDomain[]>(`/accounts/${input.accountId}/workers/domains`),
     dependencies.client.request<readonly Database[]>(
@@ -161,10 +181,12 @@ const approvalBinding = async (
       serviceName,
       pdfKeyId: input.pdfKeyId,
       pdfPublicKeySha256: createHash("sha256").update(input.pdfPublicKey).digest("hex"),
+      workersSubdomain: input.workersSubdomain,
     },
     bundleSha256: await deploymentSha256(dependencies.deploymentRoot),
     remote: {
       zone,
+      workersSubdomain,
       domain: domains.find((candidate) => candidate.hostname === input.hostname) ?? null,
       database: databases.find((candidate) => candidate.name === serviceName) ?? null,
       bucket: buckets.buckets.find((candidate) => candidate.name === serviceName) ?? null,
@@ -217,6 +239,16 @@ export const deployArtifactShare = async (
     if (approved.version !== 1 || JSON.stringify(approved.binding) !== JSON.stringify(binding)) {
       throw new Error("Hosted approval manifest no longer matches the deployment bundle or Cloudflare state");
     }
+  }
+  const workersSubdomain = await readWorkersSubdomain(input, dependencies);
+  if (workersSubdomain === null) {
+    await dependencies.client.request(`/accounts/${input.accountId}/workers/subdomain`, {
+      method: "PUT",
+      body: JSON.stringify({ subdomain: input.workersSubdomain }),
+    });
+    changed.push("Workers account subdomain");
+  } else if (workersSubdomain.subdomain !== input.workersSubdomain) {
+    throw new Error(`Workers account subdomain is already ${workersSubdomain.subdomain}`);
   }
   const zone = await dependencies.client.request<{ readonly name: string; readonly status: string }>(
     `/zones/${input.zoneId}`,
@@ -343,6 +375,8 @@ export const deployArtifactShare = async (
   };
   template.r2_buckets[0] = { binding: "ARTIFACTS", bucket_name: serviceName };
   template.routes = [{ pattern: input.hostname, custom_domain: true }];
+  template.workers_dev = false;
+  template.preview_urls = false;
   template.vars.ACCESS_TEAM_DOMAIN = `https://${organization.auth_domain}`;
   template.vars.ACCESS_AUD = application.aud;
   template.vars.PDF_PROVENANCE_KEY_ID = input.pdfKeyId;

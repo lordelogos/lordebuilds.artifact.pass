@@ -48,7 +48,7 @@ Run the team command printed by deployment:
 pnpm dlx @artifact-share/setup connect https://artifacts.example.com
 ```
 
-The command detects Claude Code and Codex, installs the same plugin, opens the Access-protected device approval page, stores the scoped agent token in the operating-system credential store, and writes only the base URL and explicitly allowed workspace roots to the local Artifact Share config.
+The command detects Claude Code and Codex, installs the same plugin, opens the Access-protected device approval page, stores the scoped agent token in the operating-system credential store, and writes only the base URL, explicitly allowed workspace roots, and the non-secret PDF signing-key ID to the local Artifact Share config. A trusted host that creates controlled PDFs must also receive the matching private key through the team's secret manager; it is never downloaded from the service.
 
 To revoke the current agent token and remove it from the credential store:
 

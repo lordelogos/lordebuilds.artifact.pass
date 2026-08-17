@@ -22,6 +22,7 @@ const input: DeployInput = {
   identities: [{ kind: "domain", value: "example.com" }],
   pdfKeyId: "test-key",
   pdfPublicKey: `${"A".repeat(43)}=`,
+  workersSubdomain: "artifact-share-test",
   dryRun: false,
 };
 
@@ -54,6 +55,10 @@ const fakeClient = (options: {
       throw error;
     }
     if (path === "/user/tokens/verify") return { status: "active" };
+    if (path.endsWith("/workers/subdomain") && init.method === "PUT") {
+      return { subdomain: "artifact-share-test" };
+    }
+    if (path.endsWith("/workers/subdomain")) return { subdomain: "artifact-share-test" };
     if (path === `/zones/${zoneId}`) return { name: "example.com", status: "active" };
     if (path.includes("/d1/database?")) return options.existing ? [{ uuid: "db-id", name: "lordebuilds-artifacts-share" }] : [];
     if (path.endsWith("/d1/database")) return { uuid: "db-id", name: "lordebuilds-artifacts-share" };

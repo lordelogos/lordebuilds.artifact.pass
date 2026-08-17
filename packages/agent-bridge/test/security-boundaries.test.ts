@@ -24,9 +24,9 @@ describe("credential and logging boundaries", () => {
     })).rejects.toThrow(/environment/u);
   });
 
-  it.each(["darwin", "linux"] as const)("passes secrets to the %s OS store over stdin", async (platform) => {
+  it("passes secrets to the Linux OS store over stdin", async () => {
     const runner = vi.fn().mockResolvedValue({ stdout: "" });
-    const store = new OsCredentialStore({ platform, runner });
+    const store = new OsCredentialStore({ platform: "linux", runner });
     const token = agentToken;
 
     await store.set(token);
@@ -34,6 +34,18 @@ describe("credential and logging boundaries", () => {
     expect(runner).toHaveBeenCalledTimes(1);
     expect(runner.mock.calls[0]?.[1]).not.toContain(token);
     expect(runner.mock.calls[0]?.[2]).toEqual({ input: token });
+  });
+
+  it("passes the macOS password as the value required by security(1)", async () => {
+    const runner = vi.fn().mockResolvedValue({ stdout: "" });
+    const store = new OsCredentialStore({ platform: "darwin", runner });
+
+    await store.set(agentToken);
+
+    expect(runner).toHaveBeenCalledWith("/usr/bin/security", [
+      "add-generic-password", "-U", "-s", "lordebuilds.artifacts.share",
+      "-a", "agent-token", "-w", agentToken,
+    ]);
   });
 
   it("distinguishes a missing macOS credential from a credential-store outage", async () => {

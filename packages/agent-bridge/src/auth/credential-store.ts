@@ -116,8 +116,8 @@ export class OsCredentialStore implements CredentialStore {
   public async set(value: string): Promise<void> {
     if (this.platform === "darwin") {
       await this.runner("/usr/bin/security", [
-        "add-generic-password", "-U", "-s", this.service, "-a", this.account, "-w",
-      ], { input: value });
+        "add-generic-password", "-U", "-s", this.service, "-a", this.account, "-w", value,
+      ]);
       return;
     }
     await this.runner(
