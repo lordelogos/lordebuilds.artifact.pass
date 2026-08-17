@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { mkdir, open, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, open, readFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 
 export interface PublicationAttempt {
   readonly publisherId: string;
@@ -30,8 +31,6 @@ interface JournalState {
 export interface PublicationJournalOptions {
   readonly now?: () => number;
   readonly lockTimeoutMilliseconds?: number;
-  readonly lockStaleMilliseconds?: number;
-  readonly lockRetryMilliseconds?: number;
 }
 
 const commitmentPattern = /^[a-f0-9]{64}$/u;
@@ -40,8 +39,6 @@ const attemptPattern = /^[0-9a-f]{8}-[0-9a-f-]{27,45}$/u;
 const tokenPattern = /^[A-Za-z0-9_-]{43}$/u;
 const maximumEntries = 32;
 const defaultLockTimeoutMilliseconds = 5_000;
-const defaultLockStaleMilliseconds = 30_000;
-const defaultLockRetryMilliseconds = 20;
 
 const isErrorCode = (error: unknown, code: string): boolean =>
   error instanceof Error && "code" in error && error.code === code;
@@ -66,30 +63,8 @@ const remember = (
   }
 };
 
-const boundedRecord = (
-  entries: Readonly<Record<string, JournalEntry>>,
-): Readonly<Record<string, JournalEntry>> =>
-  Object.fromEntries(
-    Object.entries(entries)
-      .sort((left, right) => left[1].updated_at - right[1].updated_at)
-      .slice(-maximumEntries),
-  );
-
-const activeEntries = (
-  entries: Readonly<Record<string, JournalEntry>>,
-  now: number,
-): Readonly<Record<string, JournalEntry>> =>
-  Object.fromEntries(Object.entries(entries).filter(([, entry]) => now < entry.expires_at));
-
 const opaqueToken = (): string => randomBytes(32).toString("base64url");
 const publisherId = (): string => `local_${randomBytes(18).toString("base64url")}`;
-
-const emptyState = (): JournalState => ({
-  version: 2,
-  publisher_id: publisherId(),
-  pending: {},
-  acknowledged: {},
-});
 
 const validateEntryMap = (
   value: unknown,
@@ -158,18 +133,6 @@ const validateState = (value: unknown): JournalState => {
   };
 };
 
-const processIsAlive = (pid: number): boolean => {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return !isErrorCode(error, "ESRCH");
-  }
-};
-
-const delay = (milliseconds: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, milliseconds));
-
 export class MemoryPublicationJournal implements PublicationJournal {
   private readonly publisher = publisherId();
   private readonly pending = new Map<string, JournalEntry>();
@@ -237,12 +200,18 @@ export class MemoryPublicationJournal implements PublicationJournal {
   }
 }
 
+interface DatabaseEntry {
+  readonly attempt_id: string;
+  readonly share_token: string;
+  readonly updated_at: number;
+  readonly expires_at: number;
+  readonly acknowledged: number;
+}
+
 export class FilePublicationJournal implements PublicationJournal {
-  private operation: Promise<unknown> = Promise.resolve();
   private readonly now: () => number;
   private readonly lockTimeoutMilliseconds: number;
-  private readonly lockStaleMilliseconds: number;
-  private readonly lockRetryMilliseconds: number;
+  private databasePromise: Promise<DatabaseSync> | undefined;
 
   public constructor(
     private readonly path: string,
@@ -250,17 +219,9 @@ export class FilePublicationJournal implements PublicationJournal {
   ) {
     this.now = options.now ?? Date.now;
     this.lockTimeoutMilliseconds = options.lockTimeoutMilliseconds ?? defaultLockTimeoutMilliseconds;
-    this.lockStaleMilliseconds = options.lockStaleMilliseconds ?? defaultLockStaleMilliseconds;
-    this.lockRetryMilliseconds = options.lockRetryMilliseconds ?? defaultLockRetryMilliseconds;
   }
 
-  private serialized<T>(operation: () => Promise<T>): Promise<T> {
-    const next = this.operation.then(operation, operation);
-    this.operation = next.catch(() => undefined);
-    return next;
-  }
-
-  private async load(): Promise<JournalState> {
+  private async readLegacyState(): Promise<JournalState | undefined> {
     try {
       const source = await readFile(this.path, "utf8");
       if (Buffer.byteLength(source) > 32 * 1024) {
@@ -268,79 +229,115 @@ export class FilePublicationJournal implements PublicationJournal {
       }
       return validateState(JSON.parse(source));
     } catch (error) {
-      if (isErrorCode(error, "ENOENT")) return emptyState();
+      if (isErrorCode(error, "ENOENT")) return undefined;
       throw error;
     }
   }
 
-  private async save(state: JournalState): Promise<void> {
-    const temporary = `${this.path}.${process.pid}.${randomUUID()}.tmp`;
-    await writeFile(temporary, `${JSON.stringify(state)}\n`, { mode: 0o600, flag: "wx" });
+  private async initializeDatabase(): Promise<DatabaseSync> {
+    const databasePath = `${this.path}.sqlite3`;
+    await mkdir(dirname(databasePath), { recursive: true, mode: 0o700 });
+    const legacy = await this.readLegacyState();
+    const databaseFile = await open(databasePath, "a", 0o600);
+    await databaseFile.close();
+    await chmod(databasePath, 0o600);
+    const database = new DatabaseSync(databasePath, {
+      timeout: this.lockTimeoutMilliseconds,
+    });
     try {
-      await rename(temporary, this.path);
-    } catch (error) {
-      await rm(temporary, { force: true });
-      throw error;
-    }
-  }
-
-  private async clearStaleLock(lockPath: string): Promise<boolean> {
-    let lockStat;
-    try {
-      lockStat = await stat(lockPath);
-    } catch (error) {
-      if (isErrorCode(error, "ENOENT")) return true;
-      throw error;
-    }
-    if (Date.now() - lockStat.mtimeMs < this.lockStaleMilliseconds) return false;
-    let ownerPid: number | undefined;
-    try {
-      const owner = JSON.parse(await readFile(lockPath, "utf8")) as { pid?: unknown };
-      if (typeof owner.pid === "number" && Number.isSafeInteger(owner.pid) && owner.pid > 0) {
-        ownerPid = owner.pid;
+      database.exec("PRAGMA synchronous = FULL");
+      database.exec(
+        "CREATE TABLE IF NOT EXISTS publication_metadata (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL)",
+      );
+      database.exec(
+        "CREATE TABLE IF NOT EXISTS publication_entries (" +
+        "payload_commitment TEXT PRIMARY KEY NOT NULL, " +
+        "attempt_id TEXT NOT NULL, share_token TEXT NOT NULL, " +
+        "updated_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, " +
+        "acknowledged INTEGER NOT NULL CHECK (acknowledged IN (0, 1)))",
+      );
+      database.exec("BEGIN IMMEDIATE");
+      const existingPublisher = database
+        .prepare("SELECT value FROM publication_metadata WHERE key = 'publisher_id'")
+        .get() as { readonly value: string } | undefined;
+      if (existingPublisher === undefined) {
+        database.prepare(
+          "INSERT INTO publication_metadata (key, value) VALUES ('publisher_id', ?)",
+        ).run(legacy?.publisher_id ?? publisherId());
       }
-    } catch {
-      ownerPid = undefined;
-    }
-    if (ownerPid !== undefined && processIsAlive(ownerPid)) return false;
-    await rm(lockPath, { force: true });
-    return true;
-  }
-
-  private async withLock<T>(operation: () => Promise<T>): Promise<T> {
-    await mkdir(dirname(this.path), { recursive: true, mode: 0o700 });
-    const lockPath = `${this.path}.lock`;
-    const deadline = Date.now() + this.lockTimeoutMilliseconds;
-    let lockHandle: Awaited<ReturnType<typeof open>>;
-    while (true) {
-      try {
-        lockHandle = await open(lockPath, "wx", 0o600);
-        try {
-          await lockHandle.writeFile(`${JSON.stringify({ pid: process.pid, created_at: Date.now() })}\n`);
-        } catch (error) {
-          await lockHandle.close().catch(() => undefined);
-          await rm(lockPath, { force: true }).catch(() => undefined);
-          throw error;
+      if (legacy !== undefined) {
+        const insert = database.prepare(
+          "INSERT OR IGNORE INTO publication_entries (" +
+          "payload_commitment, attempt_id, share_token, updated_at, expires_at, acknowledged" +
+          ") VALUES (?, ?, ?, ?, ?, ?)",
+        );
+        for (const [commitment, entry] of Object.entries(legacy.pending)) {
+          insert.run(
+            commitment,
+            entry.attempt_id,
+            entry.share_token,
+            entry.updated_at,
+            entry.expires_at,
+            0,
+          );
         }
-        break;
-      } catch (error) {
-        if (!isErrorCode(error, "EEXIST")) throw error;
-        if (await this.clearStaleLock(lockPath)) continue;
-        const remaining = deadline - Date.now();
-        if (remaining <= 0) throw new Error("Timed out waiting for the Artifact Share publication journal lock");
-        await delay(Math.min(this.lockRetryMilliseconds, remaining));
+        for (const [commitment, entry] of Object.entries(legacy.acknowledged)) {
+          insert.run(
+            commitment,
+            entry.attempt_id,
+            entry.share_token,
+            entry.updated_at,
+            entry.expires_at,
+            1,
+          );
+        }
       }
-    }
-    try {
-      return await operation();
-    } finally {
-      await lockHandle.close().catch(() => undefined);
-      await rm(lockPath, { force: true }).catch(() => undefined);
+      database.exec("COMMIT");
+      return database;
+    } catch (error) {
+      try {
+        database.exec("ROLLBACK");
+      } catch {
+        // The failure occurred before a transaction was opened.
+      }
+      database.close();
+      throw error;
     }
   }
 
-  private transaction<T>(operation: () => Promise<T>): Promise<T> {
-    return this.serialized(() => this.withLock(operation));
+  private database(): Promise<DatabaseSync> {
+    this.databasePromise ??= this.initializeDatabase();
+    return this.databasePromise;
+  }
+
+  private async transaction<T>(operation: (database: DatabaseSync) => T): Promise<T> {
+    const database = await this.database();
+    database.exec("BEGIN IMMEDIATE");
+    try {
+      const result = operation(database);
+      database.exec("COMMIT");
+      return result;
+    } catch (error) {
+      try {
+        database.exec("ROLLBACK");
+      } catch {
+        // Preserve the original transaction failure.
+      }
+      throw error;
+    }
+  }
+
+  private static trimEntries(database: DatabaseSync): void {
+    const row = database
+      .prepare("SELECT COUNT(*) AS count FROM publication_entries")
+      .get() as { readonly count: number };
+    const overflow = row.count - maximumEntries;
+    if (overflow <= 0) return;
+    database.prepare(
+      "DELETE FROM publication_entries WHERE payload_commitment IN (" +
+      "SELECT payload_commitment FROM publication_entries " +
+      "ORDER BY updated_at ASC, payload_commitment ASC LIMIT ?)",
+    ).run(overflow);
   }
 
   public prepare(payloadCommitment: string, expiresAt: number): Promise<PublicationAttempt> {
@@ -352,23 +349,23 @@ export class FilePublicationJournal implements PublicationJournal {
     } catch (error) {
       return Promise.reject(error);
     }
-    return this.transaction(async () => {
+    return this.transaction((database) => {
       const now = this.now();
       if (expiresAt <= now) throw new Error("Artifact publication expiry must be in the future");
-      const loaded = await this.load();
-      const pending = activeEntries(loaded.pending, now);
-      const acknowledged = activeEntries(loaded.acknowledged, now);
-      const state = { ...loaded, pending, acknowledged };
-      const existing = acknowledged[payloadCommitment] ?? pending[payloadCommitment];
+      database.prepare("DELETE FROM publication_entries WHERE expires_at <= ?").run(now);
+      const publisher = database
+        .prepare("SELECT value FROM publication_metadata WHERE key = 'publisher_id'")
+        .get() as { readonly value: string } | undefined;
+      if (publisher === undefined || !publisherPattern.test(publisher.value)) {
+        throw new Error("Artifact Share publication state is malformed");
+      }
+      const existing = database.prepare(
+        "SELECT attempt_id, share_token, updated_at, expires_at, acknowledged " +
+        "FROM publication_entries WHERE payload_commitment = ?",
+      ).get(payloadCommitment) as DatabaseEntry | undefined;
       if (existing !== undefined) {
-        if (
-          Object.keys(pending).length !== Object.keys(loaded.pending).length ||
-          Object.keys(acknowledged).length !== Object.keys(loaded.acknowledged).length
-        ) {
-          await this.save(state);
-        }
         return {
-          publisherId: state.publisher_id,
+          publisherId: publisher.value,
           attemptId: existing.attempt_id,
           shareToken: existing.share_token,
         };
@@ -379,12 +376,20 @@ export class FilePublicationJournal implements PublicationJournal {
         updated_at: now,
         expires_at: expiresAt,
       };
-      await this.save({
-        ...state,
-        pending: boundedRecord({ ...pending, [payloadCommitment]: entry }),
-      });
+      database.prepare(
+        "INSERT INTO publication_entries (" +
+        "payload_commitment, attempt_id, share_token, updated_at, expires_at, acknowledged" +
+        ") VALUES (?, ?, ?, ?, ?, 0)",
+      ).run(
+        payloadCommitment,
+        entry.attempt_id,
+        entry.share_token,
+        entry.updated_at,
+        entry.expires_at,
+      );
+      FilePublicationJournal.trimEntries(database);
       return {
-        publisherId: state.publisher_id,
+        publisherId: publisher.value,
         attemptId: entry.attempt_id,
         shareToken: entry.share_token,
       };
@@ -396,46 +401,28 @@ export class FilePublicationJournal implements PublicationJournal {
     attemptId: string,
     expiresAt: number,
   ): Promise<void> {
+    if (!commitmentPattern.test(payloadCommitment) || !attemptPattern.test(attemptId)) {
+      return Promise.reject(new Error("Artifact publication acknowledgement is malformed"));
+    }
     try {
       assertExpiry(expiresAt);
     } catch (error) {
       return Promise.reject(error);
     }
-    return this.transaction(async () => {
+    return this.transaction((database) => {
       const now = this.now();
-      const loaded = await this.load();
-      const pending = { ...activeEntries(loaded.pending, now) };
-      const acknowledged = { ...activeEntries(loaded.acknowledged, now) };
-      const matching = pending[payloadCommitment]?.attempt_id === attemptId
-        ? pending[payloadCommitment]
-        : acknowledged[payloadCommitment]?.attempt_id === attemptId
-          ? acknowledged[payloadCommitment]
-          : undefined;
-      if (matching === undefined) {
-        if (
-          Object.keys(pending).length !== Object.keys(loaded.pending).length ||
-          Object.keys(acknowledged).length !== Object.keys(loaded.acknowledged).length
-        ) {
-          await this.save({ ...loaded, pending, acknowledged });
-        }
+      database.prepare("DELETE FROM publication_entries WHERE expires_at <= ?").run(now);
+      if (now >= expiresAt) {
+        database.prepare(
+          "DELETE FROM publication_entries WHERE payload_commitment = ? AND attempt_id = ?",
+        ).run(payloadCommitment, attemptId);
         return;
       }
-      delete pending[payloadCommitment];
-      delete acknowledged[payloadCommitment];
-      await this.save({
-        ...loaded,
-        pending,
-        acknowledged: now < expiresAt
-          ? boundedRecord({
-              ...acknowledged,
-              [payloadCommitment]: {
-                ...matching,
-                updated_at: now,
-                expires_at: expiresAt,
-              },
-            })
-          : acknowledged,
-      });
+      database.prepare(
+        "UPDATE publication_entries SET acknowledged = 1, updated_at = ?, expires_at = ? " +
+        "WHERE payload_commitment = ? AND attempt_id = ?",
+      ).run(now, expiresAt, payloadCommitment, attemptId);
+      FilePublicationJournal.trimEntries(database);
     });
   }
 }

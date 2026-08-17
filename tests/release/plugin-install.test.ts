@@ -16,7 +16,7 @@ describe("dual-host plugin package", () => {
     expect(readFileSync(resolve(pluginRoot, "dist/cli.mjs")).subarray(0, 19).toString()).toContain("#!/usr/bin/env node");
   });
 
-  test("both host manifests expose the same skills and MCP configuration", () => {
+  test("both host manifests expose the same skills and shared MCP runtime", () => {
     const codex = readJson("plugins/artifact-share/.codex-plugin/plugin.json");
     const claude = readJson("plugins/artifact-share/.claude-plugin/plugin.json");
     expect(codex.name).toBe("artifact-share");
@@ -24,8 +24,12 @@ describe("dual-host plugin package", () => {
     expect(claude.version).toBe(codex.version);
     expect(claude.skills).toBe("./skills/");
     expect(codex.skills).toBe(claude.skills);
-    expect(claude.mcpServers).toBe("./.mcp.json");
-    expect(codex.mcpServers).toBe(claude.mcpServers);
+    expect(claude.mcpServers).toBe("./.claude-plugin/mcp.json");
+    expect(codex.mcpServers).toBe("./.mcp.json");
+    const claudeMcp = readJson("plugins/artifact-share/.claude-plugin/mcp.json");
+    expect(claudeMcp.mcpServers["artifact-share"].args).toEqual([
+      "${CLAUDE_PLUGIN_ROOT}/dist/cli.mjs",
+    ]);
   });
 
   test("marketplaces resolve the same in-repository plugin", () => {

@@ -1,6 +1,8 @@
 import { execFileSync } from "node:child_process";
 
 const allowedLicenses = new Set([
+  "(MIT AND Zlib)",
+  "0BSD",
   "Apache-2.0",
   "BSD-2-Clause",
   "CC0-1.0",

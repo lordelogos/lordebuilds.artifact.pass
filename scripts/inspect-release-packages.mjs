@@ -56,6 +56,7 @@ try {
   }).trim().split("\n").filter(Boolean);
   const allowedPluginPaths = [
     /^plugins\/artifact-share\/\.claude-plugin\/plugin\.json$/u,
+    /^plugins\/artifact-share\/\.claude-plugin\/mcp\.json$/u,
     /^plugins\/artifact-share\/\.codex-plugin\/plugin\.json$/u,
     /^plugins\/artifact-share\/\.mcp\.json$/u,
     /^plugins\/artifact-share\/dist\/cli\.mjs$/u,

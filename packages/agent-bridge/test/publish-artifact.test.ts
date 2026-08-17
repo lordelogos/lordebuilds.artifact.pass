@@ -532,7 +532,7 @@ describe("publish_artifact", () => {
       journal: new FilePublicationJournal(journalPath),
     })).rejects.toThrow("connection closed after commit");
 
-    expect((await stat(journalPath)).mode & 0o777).toBe(0o600);
+    expect((await stat(`${journalPath}.sqlite3`)).mode & 0o777).toBe(0o600);
     const recoveredJournal = new FilePublicationJournal(journalPath);
     await expect(publishArtifact({ path, expiresInSeconds: 3600 }, {
       baseUrl: new URL("https://artifacts.example.test"),
@@ -554,6 +554,7 @@ describe("publish_artifact", () => {
     });
 
     expect(fetch).toHaveBeenCalledTimes(3);
-    await expect(readFile(journalPath, "utf8")).resolves.toContain(committed?.token ?? "missing");
+    await expect(readFile(`${journalPath}.sqlite3`, "utf8"))
+      .resolves.toContain(committed?.token ?? "missing");
   });
 });

@@ -1,6 +1,7 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -66,10 +67,12 @@ describe("FilePublicationJournal", () => {
     const original = await originalJournal.prepare(commitment, 5_000);
     await originalJournal.acknowledge(commitment, original.attemptId, 4_000);
 
-    const persisted = JSON.parse(await readFile(path, "utf8")) as {
-      acknowledged?: Readonly<Record<string, { readonly expires_at?: number }>>;
-    };
-    expect(persisted.acknowledged?.[commitment]?.expires_at).toBe(4_000);
+    const persistedDatabase = new DatabaseSync(`${path}.sqlite3`, { readOnly: true });
+    const persisted = persistedDatabase.prepare(
+      "SELECT expires_at, acknowledged FROM publication_entries WHERE payload_commitment = ?",
+    ).get(commitment);
+    persistedDatabase.close();
+    expect(persisted).toEqual({ expires_at: 4_000, acknowledged: 1 });
 
     now = 3_999;
     const restarted = new FilePublicationJournal(path, options);
@@ -85,14 +88,13 @@ describe("FilePublicationJournal", () => {
   it("preserves concurrent updates from separate journal instances", async () => {
     const root = await workspace();
     const path = join(root, "publication-state.json");
-    const journals = [new FilePublicationJournal(path), new FilePublicationJournal(path)];
     const commitments = Array.from({ length: 16 }, (_, index) =>
       index.toString(16).padStart(64, "0")
     );
     const expiresAt = Date.now() + 60_000;
 
-    const attempts = await Promise.all(commitments.map((commitment, index) =>
-      journals[index % journals.length]!.prepare(commitment, expiresAt)
+    const attempts = await Promise.all(commitments.map((commitment) =>
+      new FilePublicationJournal(path).prepare(commitment, expiresAt)
     ));
     const verifier = new FilePublicationJournal(path);
     const recovered = await Promise.all(commitments.map((commitment) =>
@@ -103,32 +105,46 @@ describe("FilePublicationJournal", () => {
     expect(new Set(recovered.map((attempt) => attempt.publisherId)).size).toBe(1);
   });
 
-  it("recovers a stale lock owned by a dead process", async () => {
+  it("imports the previous bounded JSON journal without changing its publisher or attempt", async () => {
     const root = await workspace();
     const path = join(root, "publication-state.json");
-    await writeFile(`${path}.lock`, JSON.stringify({ pid: 999_999 }));
-    const journal = new FilePublicationJournal(path, {
-      lockStaleMilliseconds: 0,
-      lockTimeoutMilliseconds: 100,
-      lockRetryMilliseconds: 1,
-    });
+    const commitment = "c".repeat(64);
+    const attemptId = crypto.randomUUID();
+    const shareToken = "C".repeat(43);
+    const expiresAt = Date.now() + 60_000;
+    await writeFile(path, JSON.stringify({
+      version: 2,
+      publisher_id: "local_legacy-publisher",
+      pending: {},
+      acknowledged: {
+        [commitment]: {
+          attempt_id: attemptId,
+          share_token: shareToken,
+          updated_at: Date.now(),
+          expires_at: expiresAt,
+        },
+      },
+    }));
 
-    await expect(journal.prepare("c".repeat(64), Date.now() + 60_000)).resolves.toMatchObject({
-      publisherId: expect.stringMatching(/^local_/u),
-    });
+    await expect(new FilePublicationJournal(path).prepare(commitment, expiresAt + 1_000))
+      .resolves.toEqual({
+        publisherId: "local_legacy-publisher",
+        attemptId,
+        shareToken,
+      });
   });
 
-  it("bounds lock acquisition when the owner is still alive", async () => {
+  it("bounds SQLite transaction acquisition when another connection holds the writer lock", async () => {
     const root = await workspace();
     const path = join(root, "publication-state.json");
-    await writeFile(`${path}.lock`, JSON.stringify({ pid: process.pid }));
-    const journal = new FilePublicationJournal(path, {
-      lockStaleMilliseconds: 0,
-      lockTimeoutMilliseconds: 20,
-      lockRetryMilliseconds: 1,
-    });
+    await new FilePublicationJournal(path).prepare("d".repeat(64), Date.now() + 60_000);
+    const blocker = new DatabaseSync(`${path}.sqlite3`);
+    blocker.exec("BEGIN IMMEDIATE");
+    const journal = new FilePublicationJournal(path, { lockTimeoutMilliseconds: 20 });
 
-    await expect(journal.prepare("d".repeat(64), Date.now() + 60_000))
-      .rejects.toThrow(/Timed out.*journal lock/u);
+    await expect(journal.prepare("e".repeat(64), Date.now() + 60_000))
+      .rejects.toThrow(/locked/iu);
+    blocker.exec("ROLLBACK");
+    blocker.close();
   });
 });

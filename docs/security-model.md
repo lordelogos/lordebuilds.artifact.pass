@@ -16,7 +16,7 @@ Treat every share URL like a temporary secret. Do not post it in public logs, is
 
 Markdown is parsed and sanitized before rendering. HTML is sanitized, placed in a sandboxed iframe with no permissions, and cannot run scripts or make external subresource requests. PDF preview and best-effort extracted text are distinct from the exact downloadable source. User filenames become metadata only and may not contain path separators or NUL bytes.
 
-The agent bridge resolves real paths and only opens regular files inside explicitly configured workspace roots. It rejects symlink escapes, unsupported extensions, invalid UTF-8, mismatched PDFs, changed-during-read files, oversized files, redirects, foreign origins, malformed cursors, and inconsistent source metadata.
+The agent bridge resolves real paths and only opens regular files inside explicitly configured workspace roots. It rejects symlink escapes, unsupported extensions, invalid UTF-8, mismatched PDFs, changed-during-read files, oversized files, redirects, foreign origins, malformed cursors, and inconsistent source metadata. Automatic PDF publication also fails closed when images, vector rendering, custom or Type3 fonts, attachments, scripts, or extraction failures prevent the scanner from covering the rendered content; deliberate browser uploads retain broader PDF support.
 
 ## Tokens and logging
 

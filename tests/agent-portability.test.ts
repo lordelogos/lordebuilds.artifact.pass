@@ -71,15 +71,26 @@ describe("portable agent package", () => {
   });
 
   it("keeps ecosystem manifests as thin references to the same MCP and skills", async () => {
-    const manifests = await Promise.all([
+    const [codexManifest, claudeManifest, claudeMcp] = await Promise.all([
       readJson(resolve(pluginRoot, ".codex-plugin/plugin.json")),
       readJson(resolve(pluginRoot, ".claude-plugin/plugin.json")),
+      readJson(resolve(pluginRoot, ".claude-plugin/mcp.json")),
     ]);
 
-    for (const manifest of manifests) {
+    for (const manifest of [codexManifest, claudeManifest]) {
       expect(manifest.skills).toBe("./skills/");
-      expect(manifest.mcpServers).toBe("./.mcp.json");
       expect(JSON.stringify(manifest)).not.toContain("dist/cli.mjs");
     }
+
+    expect(codexManifest.mcpServers).toBe("./.mcp.json");
+    expect(claudeManifest.mcpServers).toBe("./.claude-plugin/mcp.json");
+    expect(claudeMcp).toEqual({
+      mcpServers: {
+        "artifact-share": {
+          command: "node",
+          args: ["${CLAUDE_PLUGIN_ROOT}/dist/cli.mjs"],
+        },
+      },
+    });
   });
 });

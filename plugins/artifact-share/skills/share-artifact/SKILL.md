@@ -22,7 +22,7 @@ Call `publish_artifact` with the exact path and a deployment expiry preset. Star
 
 The handoff must include the artifact format, byte size, SHA-256 checksum, exact expiry cutoff, and share URL from the tool result. Do not infer or invent any of these fields.
 
-For PDF, describe extraction as best effort: the browser preserves the original PDF, while agent-readable text may lose layout, ordering, images, or scanned content. Do not claim perfect conversion, permanent history, public access, paid features, or support for formats outside the tool schema.
+For PDF, describe extraction as best effort: the browser preserves the original PDF, while agent-readable text may lose layout or ordering. Automatic publication refuses PDFs whose images, vector graphics, custom fonts, attachments, scripts, or failed text extraction prevent a complete sensitive-content scan. Do not claim perfect conversion, permanent history, public access, paid features, or support for formats outside the tool schema.
 
 If the tool reports a path, authorization, size, or network error, report that error without trying to bypass workspace roots, redirects, access controls, or file-size limits.
 Never invent a URL or imply publication succeeded after an error. Keep the local artifact available as the truthful fallback.

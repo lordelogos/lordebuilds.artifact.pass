@@ -24,6 +24,50 @@ interface PositionedText {
   readonly height: number;
 }
 
+interface PdfFontInfo {
+  readonly isType3Font?: boolean;
+  readonly missingFile?: boolean;
+  readonly name?: string;
+  readonly systemFontInfo?: { readonly baseFontName?: string } | null;
+}
+
+const standardPdfFonts = new Set([
+  "Courier",
+  "Courier-Bold",
+  "Courier-BoldOblique",
+  "Courier-Oblique",
+  "Helvetica",
+  "Helvetica-Bold",
+  "Helvetica-BoldOblique",
+  "Helvetica-Oblique",
+  "Symbol",
+  "Times-Bold",
+  "Times-BoldItalic",
+  "Times-Italic",
+  "Times-Roman",
+  "ZapfDingbats",
+]);
+
+const isCoveredFont = (font: PdfFontInfo): boolean => {
+  const name = font.systemFontInfo?.baseFontName ?? font.name ?? "";
+  return font.isType3Font === false && font.missingFile === true && standardPdfFonts.has(name);
+};
+
+const hasCustomUnicodeMapping = async (bytes: Uint8Array): Promise<boolean> => {
+  const { PDFDict, PDFDocument, PDFName } = await import("pdf-lib");
+  const document = await PDFDocument.load(bytes, { updateMetadata: false });
+  for (const page of document.getPages()) {
+    const resources = page.node.Resources();
+    const fonts = resources?.lookupMaybe(PDFName.of("Font"), PDFDict);
+    if (fonts === undefined) continue;
+    for (const key of fonts.keys()) {
+      const font = fonts.lookupMaybe(key, PDFDict);
+      if (font?.has(PDFName.of("ToUnicode")) === true) return true;
+    }
+  }
+  return false;
+};
+
 const pageText = (items: readonly PositionedText[]): { readonly text: string; readonly complex: boolean } => {
   const lines: PositionedText[][] = [];
   for (const item of [...items].sort((left, right) => {
@@ -112,11 +156,21 @@ export const extractPdfInNode = async (
     hasUnsupportedRendering ||= operatorList.fnArray.some((operation) =>
       unsupportedRenderingOperations.has(operation)
     );
+    for (const [identifier, value] of page.commonObjs) {
+      if (
+        typeof identifier === "string" &&
+        identifier.includes("_f") &&
+        (value === null || typeof value !== "object" || !isCoveredFont(value as PdfFontInfo))
+      ) {
+        hasUnsupportedRendering = true;
+      }
+    }
   }
   const [attachments, javaScriptActions] = await Promise.all([
     document.getAttachments(),
     document.getJSActions(),
   ]);
+  hasUnsupportedRendering ||= await hasCustomUnicodeMapping(request.bytes);
   const safetyCoverage = result.metadata.status === "best_effort" &&
       !hasUnsupportedRendering &&
       (attachments === null || attachments.size === 0) &&

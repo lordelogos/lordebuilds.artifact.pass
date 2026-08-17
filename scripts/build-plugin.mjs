@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -35,7 +35,15 @@ const generated = new Map([
     author: { name: metadata.developerName },
     homepage: metadata.homepage,
     skills: "./skills/",
-    mcpServers: "./.mcp.json",
+    mcpServers: "./.claude-plugin/mcp.json",
+  })],
+  [resolve(pluginRoot, ".claude-plugin/mcp.json"), json({
+    mcpServers: {
+      "artifact-share": {
+        command: "node",
+        args: ["${CLAUDE_PLUGIN_ROOT}/dist/cli.mjs"],
+      },
+    },
   })],
   [resolve(pluginRoot, ".mcp.json"), json({
     mcpServers: {
@@ -88,15 +96,13 @@ for (const [path, expected] of generated) {
 
 const bridgeSource = resolve(repositoryRoot, "packages/agent-bridge/dist/cli.mjs");
 const bridgeTarget = resolve(pluginRoot, "dist/cli.mjs");
+const bridge = (await readFile(bridgeSource, "utf8")).replace(/[ \t]+$/gmu, "");
 if (!checkOnly) {
   await mkdir(dirname(bridgeTarget), { recursive: true });
-  await copyFile(bridgeSource, bridgeTarget);
+  await writeFile(bridgeTarget, bridge);
 } else {
-  const [source, target] = await Promise.all([
-    readFile(bridgeSource),
-    readFile(bridgeTarget).catch(() => undefined),
-  ]);
-  if (target === undefined || !source.equals(target)) stale.push(bridgeTarget);
+  const target = await readFile(bridgeTarget, "utf8").catch(() => undefined);
+  if (target === undefined || target !== bridge) stale.push(bridgeTarget);
 }
 
 if (stale.length > 0) {
