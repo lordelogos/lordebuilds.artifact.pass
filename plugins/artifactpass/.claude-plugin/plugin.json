@@ -6,7 +6,7 @@
   "author": {
     "name": "Lorde Builds"
   },
-  "homepage": "https://github.com/lordelogos/artifactpass",
+  "homepage": "https://github.com/lordelogos/lordebuilds.artifact.pass",
   "skills": "./skills/",
   "mcpServers": "./.claude-plugin/mcp.json"
 }
