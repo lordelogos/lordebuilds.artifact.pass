@@ -29,6 +29,7 @@ try {
     !entry.startsWith("package/dist/"));
   if (unexpected.length > 0) fail(`unexpected setup CLI files: ${unexpected.join(", ")}`);
   if (!entries.includes("package/dist/cli.mjs")) fail("setup CLI entrypoint is missing");
+  if (!entries.includes("package/dist/install-receipt.schema.json")) fail("install receipt schema is missing");
   if (!entries.includes("package/dist/deployment/index.js")) fail("Worker deployment bundle is missing");
   if (!entries.includes("package/dist/marketplace/plugins/artifactpass/dist/cli.mjs")) {
     fail("attested plugin bundle is missing from setup CLI");
@@ -43,7 +44,10 @@ try {
     fail("published setup manifest contains a workspace dependency");
   }
   if (
-    JSON.stringify(packedManifest.dependencies) !== JSON.stringify({ wrangler: "4.123.0" })
+    JSON.stringify(packedManifest.dependencies) !== JSON.stringify({
+      "@modelcontextprotocol/client": "2.0.0",
+      wrangler: "4.123.0",
+    })
   ) fail("setup CLI runtime dependencies differ from the reviewed manifest");
   if (packedManifest.scripts?.preinstall !== undefined || packedManifest.scripts?.postinstall !== undefined) {
     fail("setup CLI contains an install lifecycle script");

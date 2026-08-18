@@ -12,6 +12,7 @@ export interface DeviceFlowDependencies {
   readonly openBrowser: (url: string) => Promise<void>;
   readonly wait?: (milliseconds: number) => Promise<void>;
   readonly signal?: AbortSignal;
+  readonly onManualApprovalRequired?: (url: string) => Promise<void> | void;
 }
 
 interface DeviceResponse {
@@ -48,7 +49,12 @@ export const completeDeviceFlow = async (
   const approval = new URL(device.verification_uri);
   approval.searchParams.set("user_code", device.user_code);
   approval.searchParams.set("format", "html");
-  await dependencies.openBrowser(approval.toString());
+  try {
+    await dependencies.openBrowser(approval.toString());
+  } catch (error) {
+    if (dependencies.onManualApprovalRequired === undefined) throw error;
+    await dependencies.onManualApprovalRequired(approval.toString());
+  }
 
   const deadline = Date.now() + device.expires_in * 1000;
   let interval = device.interval;

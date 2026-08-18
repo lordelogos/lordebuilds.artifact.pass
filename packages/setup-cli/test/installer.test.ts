@@ -1,0 +1,264 @@
+import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { resolve } from "node:path";
+
+import { describe, expect, it, vi } from "vitest";
+
+import {
+  ArtifactpassInstallError,
+  renderInstallReceipt,
+  runArtifactpassInstall,
+} from "../src/installer";
+
+const portableFixture = async (root: string) => {
+  const rootDirectory = resolve(root, "portable");
+  const skillsDirectory = resolve(rootDirectory, "plugin", "skills");
+  for (const name of ["read-shared-artifact", "share-artifact"]) {
+    const directory = resolve(skillsDirectory, name);
+    await mkdir(directory, { recursive: true });
+    await writeFile(resolve(directory, "SKILL.md"), `---\nname: ${name}\ndescription: test\n---\n`);
+  }
+  const mcpConfig = resolve(rootDirectory, "mcp.json");
+  await writeFile(mcpConfig, "{}");
+  return {
+    digest: "a".repeat(64),
+    rootDirectory,
+    mcpConfig,
+    skillsDirectory,
+  };
+};
+
+describe("one-command ArtifactPass installer", () => {
+  it("returns one private, redacted receipt after connection and MCP verification", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifactpass-installer-success-"));
+    const workspace = resolve(root, "workspace");
+    await mkdir(workspace);
+    const configPath = resolve(root, "config", "config.json");
+    const portable = await portableFixture(root);
+    const connect = vi.fn(async (input, dependencies) => {
+      await dependencies.verifyConnection?.({
+        configPath,
+        profileName: "production",
+        hosts: ["codex", "claude"],
+      });
+      return {
+        hosts: ["codex", "claude"] as const,
+        profileName: "production",
+        configPath,
+        expiresIn: 3600,
+        credentialAction: "created" as const,
+        migration: {
+          operationId: "migration-operation",
+          actions: ["config"],
+          legacyPreserved: true,
+        },
+      };
+    });
+
+    const receipt = await runArtifactpassInstall({
+      marketplaceSource: "/package/marketplace",
+      workspaceRoot: workspace,
+      configPath,
+    }, {
+      connect,
+      connectDependencies: { deviceFlowDependencies: { openBrowser: async () => undefined } },
+      installPortable: vi.fn().mockResolvedValue(portable),
+      smoke: vi.fn().mockResolvedValue({
+        negotiated: true,
+        tools: ["publish_artifact", "read_artifact"],
+        representativeInvocation: true,
+      }),
+      skipCredentialStorePreflight: true,
+      operationId: () => "install-operation",
+    });
+
+    expect(receipt).toMatchObject({
+      receipt_version: 1,
+      product: "ArtifactPass",
+      operation_id: "install-operation",
+      status: "success",
+      profile: "production",
+      origin: "https://artifactpass.com",
+      workspace_roots: [workspace],
+      adapters: ["codex", "claude"],
+      portable_bundle: {
+        sha256: "a".repeat(64),
+        host_registration: "installed",
+      },
+      mcp: {
+        negotiated: true,
+        tools: ["publish_artifact", "read_artifact"],
+        representative_invocation: true,
+      },
+      skills: {
+        verified: true,
+        names: ["read-shared-artifact", "share-artifact"],
+      },
+      credential: "created",
+      migration: { actions: ["config"], legacy_preserved: true },
+      restart_required: true,
+      rollback: "not-required",
+    });
+    expect(receipt.portable_bundle).not.toHaveProperty("mcp_config");
+    expect(renderInstallReceipt(receipt)).toContain("Start a new agent session");
+    const persisted = await readFile(receipt.receipt_path, "utf8");
+    expect(JSON.parse(persisted)).toEqual(receipt);
+    expect((await stat(receipt.receipt_path)).mode & 0o777).toBe(0o600);
+    expect(persisted).not.toMatch(/as_[A-Za-z0-9_-]{43}/u);
+    expect(persisted).not.toContain("private-key-material");
+  });
+
+  it("reports exact portable registration paths when no adapter is available", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifactpass-installer-portable-"));
+    const workspace = resolve(root, "workspace");
+    await mkdir(workspace);
+    const configPath = resolve(root, "config.json");
+    const portable = await portableFixture(root);
+    const connect = vi.fn(async (_input, dependencies) => {
+      await dependencies.verifyConnection?.({
+        configPath,
+        profileName: "production",
+        hosts: [],
+        portableIntegration: portable,
+      });
+      return {
+        hosts: [] as const,
+        profileName: "production",
+        configPath,
+        credentialAction: "reused" as const,
+      };
+    });
+
+    const receipt = await runArtifactpassInstall({
+      marketplaceSource: "/package/marketplace",
+      workspaceRoot: workspace,
+      configPath,
+    }, {
+      connect,
+      connectDependencies: { deviceFlowDependencies: { openBrowser: async () => undefined } },
+      installPortable: vi.fn().mockResolvedValue(portable),
+      smoke: vi.fn().mockResolvedValue({
+        negotiated: true,
+        tools: ["publish_artifact", "read_artifact"],
+        representativeInvocation: true,
+      }),
+      skipCredentialStorePreflight: true,
+      operationId: () => "portable-operation",
+    });
+
+    expect(receipt.portable_bundle).toEqual({
+      sha256: portable.digest,
+      host_registration: "manual-required",
+      mcp_config: portable.mcpConfig,
+      skills_directory: portable.skillsDirectory,
+    });
+    expect(renderInstallReceipt(receipt)).toContain(portable.mcpConfig);
+  });
+
+  it("fails before connection for unsafe roots and emits the same receipt shape", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifactpass-installer-preflight-"));
+    const connect = vi.fn();
+    let failure: ArtifactpassInstallError | undefined;
+    try {
+      await runArtifactpassInstall({
+        marketplaceSource: "/package/marketplace",
+        workspaceRoot: root,
+        configPath: resolve(root, "config.json"),
+      }, {
+        connect,
+        connectDependencies: { deviceFlowDependencies: { openBrowser: async () => undefined } },
+        homeDirectory: root,
+        skipCredentialStorePreflight: true,
+        operationId: () => "failed-operation",
+      });
+    } catch (error) {
+      if (error instanceof ArtifactpassInstallError) failure = error;
+      else throw error;
+    }
+
+    expect(failure?.receipt).toMatchObject({
+      receipt_version: 1,
+      status: "failed",
+      failed_stage: "preflight",
+      rollback: "complete",
+      operation_id: "failed-operation",
+    });
+    expect(connect).not.toHaveBeenCalled();
+    expect(JSON.parse(await readFile(failure?.receipt.receipt_path ?? "", "utf8")))
+      .toEqual(failure?.receipt);
+  });
+
+  it.each([
+    ["missing credential store", "linux" as const, vi.fn().mockRejectedValue(new Error("missing secret-tool"))],
+    ["unsupported platform", "win32" as const, vi.fn()],
+  ])("fails preflight for %s", async (_label, platform, runner) => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifactpass-installer-platform-"));
+    const workspace = resolve(root, "workspace");
+    await mkdir(workspace);
+    const connect = vi.fn();
+
+    await expect(runArtifactpassInstall({
+      marketplaceSource: "/package/marketplace",
+      workspaceRoot: workspace,
+      configPath: resolve(root, "config.json"),
+    }, {
+      connect,
+      connectDependencies: { deviceFlowDependencies: { openBrowser: async () => undefined } },
+      platform,
+      runner,
+      operationId: () => `preflight-${platform}`,
+    })).rejects.toMatchObject({
+      receipt: { status: "failed", failed_stage: "preflight" },
+    });
+    expect(connect).not.toHaveBeenCalled();
+  });
+
+  it("records and resumes an interrupted operation under a new operation ID", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifactpass-installer-resume-"));
+    const workspace = resolve(root, "workspace");
+    await mkdir(workspace);
+    const configPath = resolve(root, "config.json");
+    await writeFile(`${configPath}.install.json`, JSON.stringify({
+      version: 1,
+      operation_id: "interrupted-operation",
+      status: "in-progress",
+      stage: "connection",
+      started_at: 1,
+    }));
+    const portable = await portableFixture(root);
+    const connect = vi.fn(async (_input, dependencies) => {
+      await dependencies.verifyConnection?.({
+        configPath,
+        profileName: "production",
+        hosts: ["codex"],
+      });
+      return {
+        hosts: ["codex"] as const,
+        profileName: "production",
+        configPath,
+        credentialAction: "reused" as const,
+      };
+    });
+
+    const receipt = await runArtifactpassInstall({
+      marketplaceSource: "/package/marketplace",
+      workspaceRoot: workspace,
+      configPath,
+    }, {
+      connect,
+      connectDependencies: { deviceFlowDependencies: { openBrowser: async () => undefined } },
+      installPortable: vi.fn().mockResolvedValue(portable),
+      smoke: vi.fn().mockResolvedValue({
+        negotiated: true,
+        tools: ["publish_artifact", "read_artifact"],
+        representativeInvocation: true,
+      }),
+      skipCredentialStorePreflight: true,
+      operationId: () => "resumed-operation",
+    });
+
+    expect(receipt.resumed_from).toBe("interrupted-operation");
+    expect(JSON.parse(await readFile(`${configPath}.install.json`, "utf8")))
+      .toMatchObject({ status: "committed", operation_id: "resumed-operation" });
+  });
+});

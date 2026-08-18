@@ -91380,7 +91380,8 @@ var readCompatibleLocalBridgeSettingsSync = (environment = process.env, platform
   const artifactpassPath = defaultLocalConfigPath(environment, platform);
   const legacyPath = legacyLocalConfigPath(environment, platform);
   const artifactpassExists = existsSync(artifactpassPath);
-  const legacyExists = artifactpassPath !== legacyPath && existsSync(legacyPath);
+  const shouldReadLegacy = environment.ARTIFACTPASS_CONFIG_PATH === void 0 || environment.ARTIFACT_SHARE_CONFIG_PATH !== void 0;
+  const legacyExists = shouldReadLegacy && artifactpassPath !== legacyPath && existsSync(legacyPath);
   if (artifactpassExists) {
     const settings = readLocalBridgeSettingsSync(artifactpassPath);
     if (legacyExists) {

@@ -28,6 +28,7 @@
     "test:network:live": "node scripts/test-network-demo.mjs",
     "test:agent-contract": "pnpm --dir packages/agent-bridge build && pnpm --dir packages/agent-bridge exec vitest run test/stdio-smoke.test.ts && vitest run --config tests/vitest.config.ts tests/agent-portability.test.ts",
     "test:agent-hosts": "pnpm plugin:build && node scripts/test-agent-hosts.mjs",
+    "test:packed-install": "pnpm --dir packages/setup-cli build && node scripts/test-packed-install.mjs",
     "test:protocol": "pnpm --dir packages/artifact-protocol test",
     "test:worker": "pnpm --dir apps/artifact-service test",
     "tunnel": "node scripts/network-demo.mjs",

@@ -18,6 +18,11 @@ import type { AgentHost } from "./hosts";
 import { openBrowser } from "./open-browser";
 import { installPortableIntegration } from "./portable-integration";
 import { migrateDefaultLocalState } from "./local-state-migration";
+import {
+  ArtifactpassInstallError,
+  renderInstallReceipt,
+  runArtifactpassInstall,
+} from "./installer";
 
 const deploymentRoot = resolve(dirname(fileURLToPath(import.meta.url)), "deployment");
 const defaultMarketplace = resolve(dirname(fileURLToPath(import.meta.url)), "marketplace");
@@ -71,6 +76,7 @@ const print = (valueToPrint: unknown): void => {
 const help = `Artifact Share setup
 
 Commands:
+  artifactpass [--json]
   deploy --account-id <id> --zone-id <id> --hostname <host> --workers-subdomain <name> --pdf-key-id <id> --pdf-public-key <base64> (--allow-email <email> | --allow-domain <domain>) (--dry-run | --write-approval-manifest <path> | --approve-manifest <path>)
   connect <base-url> [--profile <name>] [--workspace-root <path>] [--host codex|claude|both] [--no-host-install] [--marketplace <source>] [--open-development]
   profile list
@@ -80,9 +86,45 @@ Commands:
 
 Cloudflare credentials come from CLOUDFLARE_API_TOKEN or Wrangler OAuth and are never persisted by Artifact Share.`;
 
+let jsonOutputRequested = false;
+
 const main = async (): Promise<void> => {
   const [command, ...args] = process.argv.slice(2);
-  if (command === undefined || command === "help" || command === "--help") {
+  if (command === undefined || command === "install" || command === "--json") {
+    const installArgs = command === "install" ? args : process.argv.slice(2);
+    jsonOutputRequested = booleanFlag(installArgs, "--json");
+    const valuedFlags = new Set(["--base-url", "--profile", "--workspace-root"]);
+    const booleanFlags = new Set(["--json", "--open-development", "--no-host-install"]);
+    const unexpected = installArgs.filter((argument, index) => {
+      if (booleanFlags.has(argument) || valuedFlags.has(argument)) return false;
+      return index === 0 || !valuedFlags.has(installArgs[index - 1] ?? "");
+    });
+    if (unexpected.length > 0) throw new Error(`Unknown install option: ${unexpected[0]}`);
+    const baseUrl = optionalValue(installArgs, "--base-url");
+    const profileName = optionalValue(installArgs, "--profile");
+    const workspaceRoot = optionalValue(installArgs, "--workspace-root");
+    const openDevelopment = booleanFlag(installArgs, "--open-development");
+    const receipt = await runArtifactpassInstall({
+      marketplaceSource: defaultMarketplace,
+      ...(baseUrl === undefined ? {} : { baseUrl }),
+      ...(profileName === undefined ? {} : { profileName }),
+      ...(workspaceRoot === undefined ? {} : { workspaceRoot }),
+      openDevelopment,
+      installKnownHostAdapters: !booleanFlag(installArgs, "--no-host-install"),
+    }, {
+      connectDependencies: {
+        deviceFlowDependencies: {
+          openBrowser,
+          onManualApprovalRequired: (url) => {
+            process.stderr.write(`Open this URL to approve ArtifactPass:\n${url}\n`);
+          },
+        },
+      },
+    });
+    print(jsonOutputRequested ? receipt : renderInstallReceipt(receipt));
+    return;
+  }
+  if (command === "help" || command === "--help") {
     print(help);
     return;
   }
@@ -150,7 +192,12 @@ const main = async (): Promise<void> => {
       marketplaceSource,
       openDevelopment: booleanFlag(args, "--open-development"),
     }, {
-      deviceFlowDependencies: { openBrowser },
+      deviceFlowDependencies: {
+        openBrowser,
+        onManualApprovalRequired: (url) => {
+          process.stderr.write(`Open this URL to approve ArtifactPass:\n${url}\n`);
+        },
+      },
     });
     if (!installKnownHostAdapters || result.portableIntegration !== undefined) {
       print({
@@ -209,6 +256,11 @@ const main = async (): Promise<void> => {
 };
 
 void main().catch((error: unknown) => {
+  if (error instanceof ArtifactpassInstallError) {
+    print(jsonOutputRequested ? error.receipt : renderInstallReceipt(error.receipt));
+    process.exitCode = 1;
+    return;
+  }
   process.stderr.write(`${error instanceof Error ? redactSensitiveText(error.message) : "Artifact Share setup failed"}\n`);
   process.exitCode = 1;
 });

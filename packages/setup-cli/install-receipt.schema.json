@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://artifactpass.com/schemas/install-receipt-v1.json",
+  "title": "ArtifactPass install receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "receipt_version",
+    "product",
+    "product_version",
+    "operation_id",
+    "status",
+    "profile",
+    "origin",
+    "workspace_roots",
+    "adapters",
+    "portable_bundle",
+    "mcp",
+    "skills",
+    "credential",
+    "migration",
+    "outcomes",
+    "restart_required",
+    "rollback",
+    "receipt_path"
+  ],
+  "properties": {
+    "receipt_version": { "const": 1 },
+    "product": { "const": "ArtifactPass" },
+    "product_version": { "type": "string", "minLength": 1 },
+    "operation_id": { "type": "string", "minLength": 1 },
+    "status": { "enum": ["success", "failed"] },
+    "profile": { "type": "string", "pattern": "^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$" },
+    "origin": { "type": "string", "format": "uri" },
+    "workspace_roots": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "adapters": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "enum": ["codex", "claude"] }
+    },
+    "portable_bundle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sha256", "host_registration"],
+      "properties": {
+        "sha256": { "type": "string", "pattern": "^(?:[a-f0-9]{64})?$" },
+        "host_registration": { "enum": ["installed", "manual-required", "not-reached"] },
+        "mcp_config": { "type": "string", "minLength": 1 },
+        "skills_directory": { "type": "string", "minLength": 1 }
+      }
+    },
+    "mcp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["negotiated", "tools", "representative_invocation"],
+      "properties": {
+        "negotiated": { "type": "boolean" },
+        "tools": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["publish_artifact", "read_artifact"] }
+        },
+        "representative_invocation": { "type": "boolean" }
+      }
+    },
+    "skills": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verified", "names"],
+      "properties": {
+        "verified": { "type": "boolean" },
+        "names": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["read-shared-artifact", "share-artifact"] }
+        }
+      }
+    },
+    "credential": { "enum": ["reused", "created", "rotated", "none", "not-reached"] },
+    "migration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actions", "legacy_preserved"],
+      "properties": {
+        "actions": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "legacy_preserved": { "type": "boolean" }
+      }
+    },
+    "outcomes": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "restart_required": { "type": "boolean" },
+    "rollback": { "enum": ["not-required", "complete"] },
+    "failed_stage": { "enum": ["preflight", "bundle", "connection", "verified", "receipt", "committed"] },
+    "resumed_from": { "type": "string", "minLength": 1 },
+    "receipt_path": { "type": "string", "minLength": 1 }
+  }
+}

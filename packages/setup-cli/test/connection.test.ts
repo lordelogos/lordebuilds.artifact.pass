@@ -267,6 +267,42 @@ describe("host connection", () => {
     expect(runner).toHaveBeenCalledTimes(1);
   });
 
+  it("restores previously installed host registrations when a later host fails", async () => {
+    let claudeUserInstallAttempts = 0;
+    let codexInstallAttempts = 0;
+    const runner: ProcessRunner = vi.fn(async (command, args) => {
+      const joined = args.join(" ");
+      if (command === "codex" && joined === "plugin marketplace list --json") {
+        return { stdout: JSON.stringify({ marketplaces: [{ name: "artifactpass" }] }), stderr: "" };
+      }
+      if (command === "codex" && joined === "plugin list --json") {
+        return { stdout: JSON.stringify({ installed: [{ pluginId: "artifactpass@artifactpass" }] }), stderr: "" };
+      }
+      if (command === "claude" && joined === "plugin marketplace list --json") {
+        return { stdout: JSON.stringify([{ name: "artifactpass" }]), stderr: "" };
+      }
+      if (command === "claude" && joined === "plugin list --json") {
+        return { stdout: JSON.stringify([{ id: "artifactpass@artifactpass", scope: "local" }]), stderr: "" };
+      }
+      if (command === "claude" && joined === "plugin install artifactpass@artifactpass --scope user") {
+        claudeUserInstallAttempts += 1;
+        if (claudeUserInstallAttempts === 1) throw new Error("injected Claude install failure");
+      }
+      if (command === "codex" && joined === "plugin add artifactpass@artifactpass --json") {
+        codexInstallAttempts += 1;
+      }
+      return { stdout: "{}", stderr: "" };
+    });
+
+    await expect(installPluginForHosts(["codex", "claude"], "/trusted/repository", runner))
+      .rejects.toThrow("injected Claude install failure");
+
+    expect(codexInstallAttempts).toBe(2);
+    expect(runner).toHaveBeenCalledWith("claude", [
+      "plugin", "install", "artifactpass@artifactpass", "--scope", "local",
+    ]);
+  });
+
   it("completes pending device authorization without exposing the token in the browser URL", async () => {
     const opened: string[] = [];
     const responses = [
@@ -288,6 +324,31 @@ describe("host connection", () => {
     expect(result.accessToken).toMatch(/^as_/u);
     expect(opened[0]).toContain("user_code=");
     expect(opened[0]).not.toContain(result.accessToken);
+  });
+
+  it("continues with a copyable approval URL when the browser cannot open", async () => {
+    const manual: string[] = [];
+    const responses = [
+      new Response(JSON.stringify({
+        device_code: "d".repeat(43),
+        user_code: "u".repeat(12),
+        verification_uri: "https://artifactpass.com/connect/approve",
+        expires_in: 600,
+        interval: 1,
+      }), { status: 201 }),
+      new Response(JSON.stringify({ access_token: `as_${"t".repeat(43)}`, expires_in: 100 })),
+    ];
+
+    await expect(completeDeviceFlow("https://artifactpass.com", {
+      fetch: vi.fn(async () => responses.shift() ?? new Response(null, { status: 500 })),
+      openBrowser: async () => { throw new Error("no browser"); },
+      onManualApprovalRequired: (url) => { manual.push(url); },
+      wait: async () => undefined,
+    })).resolves.toMatchObject({ expiresIn: 100 });
+
+    expect(manual).toHaveLength(1);
+    expect(manual[0]).toContain("user_code=");
+    expect(manual[0]).not.toContain("as_");
   });
 
   it("retries the same device exchange after a lost token response", async () => {
@@ -375,6 +436,63 @@ describe("host connection", () => {
     expect(persisted).toContain("https://artifacts.example.test/");
     expect(persisted).toContain('"pdf_key_id": "artifactpass-primary"');
     expect(persisted).not.toContain(token);
+  });
+
+  it("reuses a valid scoped credential without opening browser approval", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifactpass-reuse-connection-test-"));
+    const configPath = resolve(root, "config.json");
+    await writeFile(configPath, JSON.stringify({
+      version: 2,
+      active_profile: "production",
+      profiles: {
+        production: {
+          base_url: "https://artifactpass.com/",
+          workspace_roots: [root],
+          credential_namespace: "artifactpass",
+        },
+      },
+    }));
+    const token = `as_${"t".repeat(43)}`;
+    const store = {
+      get: vi.fn().mockResolvedValue(token),
+      set: vi.fn(),
+      delete: vi.fn(),
+    };
+    const deviceFlow = vi.fn();
+    const expiresAt = Date.parse("2026-08-18T00:00:00.000Z");
+    const now = Date.parse("2026-08-17T23:00:00.000Z");
+    const fetch = vi.fn<typeof globalThis.fetch>(async (input) => {
+      const url = new URL(input instanceof Request ? input.url : input.toString());
+      return url.pathname === "/health"
+        ? new Response(JSON.stringify({ service: "lordebuilds.artifacts.share", status: "ok" }))
+        : new Response(JSON.stringify({
+            protocol_version: 1,
+            status: "active",
+            scope: "artifact:create",
+            expires_at: expiresAt,
+          }));
+    });
+
+    const result = await connectHost({
+      baseUrl: "https://artifactpass.com",
+      workspaceRoots: [root],
+      marketplaceSource: "/trusted/repository",
+      configPath,
+      installKnownHostAdapters: false,
+    }, {
+      credentialStore: store,
+      deviceFlow,
+      now: () => now,
+      deviceFlowDependencies: { openBrowser: async () => undefined, fetch },
+    });
+
+    expect(result).toMatchObject({
+      credentialAction: "reused",
+      expiresIn: 3600,
+    });
+    expect(deviceFlow).not.toHaveBeenCalled();
+    expect(store.set).not.toHaveBeenCalled();
+    expect(store.delete).not.toHaveBeenCalled();
   });
 
   it("connects an open development origin without resolving or storing a token", async () => {
@@ -643,6 +761,54 @@ describe("host connection", () => {
     expect(store.set).not.toHaveBeenCalled();
   });
 
+  it("rolls back plugin, config, and new credential when MCP verification fails", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifactpass-smoke-rollback-test-"));
+    const configPath = resolve(root, "config.json");
+    const token = `as_${"n".repeat(43)}`;
+    const store = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn(),
+      delete: vi.fn().mockResolvedValue(undefined),
+    };
+    const runner = runnerFor(["codex"]);
+    const fetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : input.toString());
+      if (url.pathname === "/health") {
+        return new Response(JSON.stringify({ service: "lordebuilds.artifacts.share", status: "ok" }));
+      }
+      expect(init?.method).toBe("DELETE");
+      return new Response(null, { status: 204 });
+    });
+
+    await expect(connectHost({
+      baseUrl: "https://artifactpass.com",
+      workspaceRoots: [root],
+      hosts: ["codex"],
+      marketplaceSource: "/trusted/repository",
+      configPath,
+    }, {
+      runner,
+      credentialStore: store,
+      deviceFlow: vi.fn(async () => ({ accessToken: token, expiresIn: 3600 })),
+      verifyConnection: async () => { throw new Error("MCP smoke failed"); },
+      deviceFlowDependencies: { openBrowser: async () => undefined, fetch },
+    })).rejects.toThrow("MCP smoke failed");
+
+    expect(store.set).toHaveBeenCalledWith(token);
+    expect(store.delete).toHaveBeenCalledOnce();
+    await expect(readFile(configPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    expect(runner).toHaveBeenCalledWith("codex", [
+      "plugin", "remove", "artifactpass@artifactpass",
+    ]);
+    expect(runner).toHaveBeenCalledWith("codex", [
+      "plugin", "marketplace", "remove", "artifactpass",
+    ]);
+    expect(fetch).toHaveBeenCalledWith(
+      new URL("https://artifactpass.com/api/connection"),
+      expect.objectContaining({ method: "DELETE" }),
+    );
+  });
+
   it("rolls a reconnect back if the previous token cannot be revoked", async () => {
     const root = await mkdtemp(resolve(tmpdir(), "artifact-share-reconnect-test-"));
     const configPath = resolve(root, "config.json");
@@ -663,6 +829,9 @@ describe("host connection", () => {
       const url = new URL(input instanceof Request ? input.url : input.toString());
       if (url.pathname === "/health") {
         return new Response(JSON.stringify({ service: "lordebuilds.artifacts.share", status: "ok" }));
+      }
+      if (url.pathname === "/api/connection" && init?.method !== "DELETE") {
+        return new Response(null, { status: 404 });
       }
       const authorization = new Headers(init?.headers).get("authorization");
       return new Response(null, { status: authorization === `Bearer ${previousToken}` ? 500 : 204 });

@@ -17,8 +17,13 @@ await build({
   bundle: true,
   platform: "node",
   format: "esm",
+  external: ["@modelcontextprotocol/client", "@modelcontextprotocol/client/stdio"],
   banner: { js: "#!/usr/bin/env node" },
 });
+await cp(
+  resolve(packageRoot, "install-receipt.schema.json"),
+  resolve(outputRoot, "install-receipt.schema.json"),
+);
 
 const deploymentRoot = resolve(outputRoot, "deployment");
 await mkdir(deploymentRoot, { recursive: true });

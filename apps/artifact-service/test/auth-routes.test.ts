@@ -577,6 +577,24 @@ describe("route credential matrix", () => {
     ).toBe(201);
   });
 
+  it("reports a valid scoped connection without exposing its identity", async () => {
+    const agent = await createAgentToken();
+    const response = await request("/api/connection", {
+      headers: { authorization: `Bearer ${agent.access_token}` },
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toContain("no-store");
+    const body = await response.text();
+    expect(body).not.toContain("developer@example.com");
+    expect(JSON.parse(body)).toEqual({
+      protocol_version: 1,
+      status: "active",
+      scope: "artifact:create",
+      expires_at: expect.any(Number),
+    });
+  });
+
   it("rejects expired and revoked scoped agent tokens", async () => {
     const agent = await createAgentToken();
     const tokenHash = await sha256(agent.access_token);

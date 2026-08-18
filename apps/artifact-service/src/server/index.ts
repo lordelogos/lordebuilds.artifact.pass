@@ -94,6 +94,15 @@ export const createArtifactApplication = (options: ArtifactApplicationOptions = 
     "/upload/artifacts",
     createArtifactsRouter((bindings) => createService(bindings, options), authorizationOptions),
   );
+  app.get("/api/connection", requireAgent(authorizationOptions), (context) => {
+    const principal = context.get("agentPrincipal");
+    return context.json({
+      protocol_version: PROTOCOL_VERSION,
+      status: "active",
+      scope: principal.scope,
+      expires_at: principal.expiresAt,
+    }, 200, { "Cache-Control": "private, no-store, max-age=0" });
+  });
   app.delete("/api/connection", requireAgent(authorizationOptions), async (context) => {
     const revoked = await new AgentTokenRepository(
       context.env.ARTIFACT_DB,

@@ -12,6 +12,7 @@ export interface AgentPrincipal {
   readonly subject: string;
   readonly email: string;
   readonly scope: typeof AGENT_TOKEN_SCOPE;
+  readonly expiresAt: number;
 }
 
 interface AgentTokenRow {
@@ -54,6 +55,7 @@ export class AgentTokenRepository {
       subject: row.identity_subject,
       email: row.identity_email,
       scope: AGENT_TOKEN_SCOPE,
+      expiresAt: row.expires_at,
     };
   }
 
@@ -65,4 +67,3 @@ export class AgentTokenRepository {
     return result.meta.changes === 1;
   }
 }
-
