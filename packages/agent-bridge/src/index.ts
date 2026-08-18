@@ -7,16 +7,23 @@ export {
 } from "./http/safe-fetch";
 export {
   agentCredentialAccountForProfile,
+  ARTIFACTPASS_CREDENTIAL_SERVICE,
+  LEGACY_ARTIFACT_SHARE_CREDENTIAL_SERVICE,
+  CompatibleCredentialStore,
+  CompatibleEnvironmentCredentialStore,
   CredentialStoreCommandError,
   EnvironmentCredentialStore,
   OsCredentialStore,
   resolveCredential,
   type CommandRunner,
   type CredentialStore,
+  type CompatibleCredentialStoreOptions,
 } from "./auth/credential-store";
 export {
   defaultLocalConfigPath,
+  legacyLocalConfigPath,
   publicationStatePathForProfile,
+  readCompatibleLocalBridgeSettingsSync,
   readLocalBridgeSettings,
   readLocalBridgeSettingsSync,
   selectLocalBridgeProfile,
@@ -26,6 +33,7 @@ export {
   writeLocalBridgeSettings,
   type LocalBridgeProfileSettings,
   type LocalBridgeSettings,
+  type CompatibleLocalBridgeSettings,
 } from "./config/local-config";
 export {
   FilePublicationJournal,

@@ -1,4 +1,7 @@
 import {
+  ARTIFACTPASS_CREDENTIAL_SERVICE,
+  CompatibleCredentialStore,
+  LEGACY_ARTIFACT_SHARE_CREDENTIAL_SERVICE,
   OsCredentialStore,
   agentCredentialAccountForProfile,
   assertSafeDeploymentOrigin,
@@ -42,8 +45,17 @@ export const disconnectHost = async (
     readonly profileName?: string;
   } = {},
 ): Promise<void> => {
-  const store = options.credentialStore ?? new OsCredentialStore({
-    account: agentCredentialAccountForProfile(options.profileName ?? "production"),
+  const account = agentCredentialAccountForProfile(options.profileName ?? "production");
+  const store = options.credentialStore ?? new CompatibleCredentialStore({
+    artifactpassStore: new OsCredentialStore({
+      service: ARTIFACTPASS_CREDENTIAL_SERVICE,
+      account,
+    }),
+    legacyStore: new OsCredentialStore({
+      service: LEGACY_ARTIFACT_SHARE_CREDENTIAL_SERVICE,
+      account,
+    }),
+    migrationCommitted: true,
   });
   const token = await store.get();
   if (token === null) return;

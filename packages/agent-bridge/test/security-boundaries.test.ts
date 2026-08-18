@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import { createRedactingLogger } from "../src/logging/redacting-logger";
 import {
   agentCredentialAccountForProfile,
+  CompatibleCredentialStore,
+  CompatibleEnvironmentCredentialStore,
   CredentialStoreCommandError,
   EnvironmentCredentialStore,
   OsCredentialStore,
@@ -31,6 +33,41 @@ describe("credential and logging boundaries", () => {
     })).rejects.toThrow(/environment/u);
   });
 
+  it("uses matching environment aliases and rejects conflicting secrets", async () => {
+    await expect(new CompatibleEnvironmentCredentialStore(
+      "ARTIFACTPASS_TOKEN",
+      "ARTIFACT_SHARE_TOKEN",
+      { ARTIFACTPASS_TOKEN: agentToken, ARTIFACT_SHARE_TOKEN: agentToken },
+    ).get()).resolves.toBe(agentToken);
+    await expect(new CompatibleEnvironmentCredentialStore(
+      "ARTIFACTPASS_TOKEN",
+      "ARTIFACT_SHARE_TOKEN",
+      { ARTIFACTPASS_TOKEN: agentToken, ARTIFACT_SHARE_TOKEN: `as_${"x".repeat(43)}` },
+    ).get()).rejects.toThrow("conflicts");
+  });
+
+  it("reads a legacy credential but writes only to ArtifactPass", async () => {
+    const artifactpass = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn(),
+      delete: vi.fn(),
+    };
+    const legacy = {
+      get: vi.fn().mockResolvedValue(agentToken),
+      set: vi.fn(),
+      delete: vi.fn(),
+    };
+    const store = new CompatibleCredentialStore({
+      artifactpassStore: artifactpass,
+      legacyStore: legacy,
+    });
+
+    await expect(store.get()).resolves.toBe(agentToken);
+    await store.set(`as_${"n".repeat(43)}`);
+    expect(artifactpass.set).toHaveBeenCalledOnce();
+    expect(legacy.set).not.toHaveBeenCalled();
+  });
+
   it("passes secrets to the Linux OS store over stdin", async () => {
     const runner = vi.fn().mockResolvedValue({ stdout: "" });
     const store = new OsCredentialStore({ platform: "linux", runner });
@@ -50,7 +87,7 @@ describe("credential and logging boundaries", () => {
     await store.set(agentToken);
 
     expect(runner).toHaveBeenCalledWith("/usr/bin/security", [
-      "add-generic-password", "-U", "-s", "lordebuilds.artifacts.share",
+      "add-generic-password", "-U", "-s", "artifactpass",
       "-a", "agent-token", "-w", agentToken,
     ]);
   });

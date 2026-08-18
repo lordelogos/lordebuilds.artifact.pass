@@ -105,11 +105,13 @@ describe("host connection", () => {
       profiles: {
         local: {
           base_url: "http://127.0.0.1:8787/",
+          credential_namespace: "artifactpass",
           workspace_roots: [root],
           open_development: true,
         },
         production: {
           base_url: "https://artifactpass.com/",
+          credential_namespace: "artifactpass",
           workspace_roots: [root],
           pdf_key_id: "artifactpass-primary",
         },
@@ -170,6 +172,7 @@ describe("host connection", () => {
       profiles: {
         local: {
           base_url: "http://127.0.0.1:8787/",
+          credential_namespace: "artifactpass",
           workspace_roots: [root],
           open_development: true,
         },
@@ -358,6 +361,7 @@ describe("host connection", () => {
       profiles: {
         local: {
           base_url: "http://127.0.0.1:8787/",
+          credential_namespace: "artifactpass",
           workspace_roots: [root],
           open_development: true,
         },
@@ -403,6 +407,7 @@ describe("host connection", () => {
       profiles: {
         local: {
           base_url: "http://127.0.0.1:8787/",
+          credential_namespace: "artifactpass",
           workspace_roots: [root],
           open_development: true,
           publication_state: "legacy",

@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, resolve } from "node:path";
 
@@ -6,6 +6,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   defaultLocalConfigPath,
+  legacyLocalConfigPath,
+  readCompatibleLocalBridgeSettingsSync,
   readLocalBridgeSettings,
   selectLocalBridgeProfile,
   setActiveLocalBridgeProfile,
@@ -326,14 +328,65 @@ describe("local bridge config", () => {
           ARTIFACT_SHARE_BASE_URL: "https://artifacts.example.test",
           ARTIFACT_SHARE_WORKSPACE_ROOTS: "/tmp/artifacts",
           ARTIFACT_SHARE_OPEN_DEVELOPMENT: openDevelopment,
-        })).toThrow("ARTIFACT_SHARE_OPEN_DEVELOPMENT must be 1 when enabled");
+        })).toThrow("ARTIFACTPASS_OPEN_DEVELOPMENT must be 1 when enabled");
       },
     );
   });
 
   it("uses explicit and platform-specific config locations", () => {
-    expect(defaultLocalConfigPath({ ARTIFACT_SHARE_CONFIG_PATH: "/tmp/custom.json" })).toBe("/tmp/custom.json");
+    expect(defaultLocalConfigPath({ ARTIFACTPASS_CONFIG_PATH: "/tmp/custom.json" })).toBe("/tmp/custom.json");
     expect(defaultLocalConfigPath({ APPDATA: "C:\\Users\\Example\\AppData" }, "win32"))
+      .toContain("artifactpass");
+    expect(legacyLocalConfigPath({ APPDATA: "C:\\Users\\Example\\AppData" }, "win32"))
       .toContain("lordebuilds.artifacts.share");
+  });
+
+  it("reads legacy config only when ArtifactPass config is absent", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifactpass-compatible-config-test-"));
+    const legacyPath = resolve(root, "lordebuilds.artifacts.share", "config.json");
+    await mkdir(resolve(root, "lordebuilds.artifacts.share"), { recursive: true });
+    await writeFile(legacyPath, JSON.stringify({
+      version: 1,
+      base_url: "http://127.0.0.1:8787/",
+      workspace_roots: [root],
+      open_development: true,
+    }));
+
+    const resolved = readCompatibleLocalBridgeSettingsSync({ XDG_CONFIG_HOME: root });
+
+    expect(resolved.source).toBe("legacy");
+    expect(resolved.path).toBe(legacyPath);
+    expect(resolved.settings.active_profile).toBe("local");
+  });
+
+  it("rejects differing valid ArtifactPass and legacy configs", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifactpass-config-conflict-test-"));
+    const artifactpassPath = resolve(root, "artifactpass", "config.json");
+    const legacyPath = resolve(root, "lordebuilds.artifacts.share", "config.json");
+    await writeLocalBridgeSettings(artifactpassPath, {
+      version: 2,
+      active_profile: "production",
+      profiles: { production: { base_url: "https://artifactpass.com/", workspace_roots: [root] } },
+    });
+    await writeLocalBridgeSettings(legacyPath, {
+      version: 2,
+      active_profile: "production",
+      profiles: { production: { base_url: "https://other.example/", workspace_roots: [root] } },
+    });
+
+    expect(() => readCompatibleLocalBridgeSettingsSync({ XDG_CONFIG_HOME: root }))
+      .toThrow("configs conflict");
+  });
+
+  it("accepts new environment names and rejects differing legacy aliases", () => {
+    const base = {
+      ARTIFACTPASS_BASE_URL: "https://artifactpass.com",
+      ARTIFACTPASS_WORKSPACE_ROOTS: "/tmp/artifacts",
+    };
+    expect(configurationFromEnvironment(base).baseUrl.origin).toBe("https://artifactpass.com");
+    expect(() => configurationFromEnvironment({
+      ...base,
+      ARTIFACT_SHARE_BASE_URL: "https://other.example",
+    })).toThrow("ARTIFACTPASS_BASE_URL conflicts");
   });
 });

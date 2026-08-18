@@ -3,16 +3,20 @@ import { delimiter, resolve } from "node:path";
 import { McpServer } from "@modelcontextprotocol/server";
 import { serveStdio, type StdioServerHandle } from "@modelcontextprotocol/server/stdio";
 import {
+  ARTIFACTPASS_CREDENTIAL_SERVICE,
   agentCredentialAccountForProfile,
-  EnvironmentCredentialStore,
+  CompatibleCredentialStore,
+  CompatibleEnvironmentCredentialStore,
+  LEGACY_ARTIFACT_SHARE_CREDENTIAL_SERVICE,
   OsCredentialStore,
   resolveCredential,
   type CredentialStore,
 } from "./auth/credential-store";
 import {
   defaultLocalConfigPath,
+  legacyLocalConfigPath,
   publicationStatePathForProfile,
-  readLocalBridgeSettingsSync,
+  readCompatibleLocalBridgeSettingsSync,
   selectLocalBridgeProfile,
   validateProfileName,
 } from "./config/local-config";
@@ -182,48 +186,84 @@ export const createBridgeServer = (configuration: BridgeConfiguration): McpServe
 export const configurationFromEnvironment = (
   environment: Readonly<Record<string, string | undefined>> = process.env,
 ): BridgeConfiguration => {
-  const localConfigPath = defaultLocalConfigPath(environment);
-  const localConfiguration = environment.ARTIFACT_SHARE_BASE_URL === undefined ||
-      environment.ARTIFACT_SHARE_WORKSPACE_ROOTS === undefined
-    ? readLocalBridgeSettingsSync(localConfigPath)
+  const compatibleValue = (artifactpassName: string, legacyName: string): string | undefined => {
+    const artifactpassValue = environment[artifactpassName];
+    const legacyValue = environment[legacyName];
+    if (
+      artifactpassValue !== undefined && legacyValue !== undefined &&
+      artifactpassValue !== legacyValue
+    ) {
+      throw new Error(`${artifactpassName} conflicts with legacy ${legacyName}`);
+    }
+    return artifactpassValue ?? legacyValue;
+  };
+  const baseUrlEnvironment = compatibleValue("ARTIFACTPASS_BASE_URL", "ARTIFACT_SHARE_BASE_URL");
+  const rootsEnvironment = compatibleValue("ARTIFACTPASS_WORKSPACE_ROOTS", "ARTIFACT_SHARE_WORKSPACE_ROOTS");
+  const profileEnvironment = compatibleValue("ARTIFACTPASS_PROFILE", "ARTIFACT_SHARE_PROFILE");
+  const openDevelopmentEnvironment = compatibleValue(
+    "ARTIFACTPASS_OPEN_DEVELOPMENT",
+    "ARTIFACT_SHARE_OPEN_DEVELOPMENT",
+  );
+  const localState = baseUrlEnvironment === undefined || rootsEnvironment === undefined
+    ? readCompatibleLocalBridgeSettingsSync(environment)
     : undefined;
+  const localConfigPath = localState?.path ?? (
+    environment.ARTIFACTPASS_CONFIG_PATH === undefined &&
+    environment.ARTIFACT_SHARE_CONFIG_PATH !== undefined
+      ? legacyLocalConfigPath(environment)
+      : defaultLocalConfigPath(environment)
+  );
+  const localConfiguration = localState?.settings;
   const selectedProfile = localConfiguration === undefined
     ? undefined
-    : selectLocalBridgeProfile(localConfiguration, environment.ARTIFACT_SHARE_PROFILE);
+    : selectLocalBridgeProfile(localConfiguration, profileEnvironment);
   const localSettings = selectedProfile?.settings;
   const profileName = selectedProfile?.name ?? validateProfileName(
-    environment.ARTIFACT_SHARE_PROFILE ?? (
-      environment.ARTIFACT_SHARE_OPEN_DEVELOPMENT === "1" ? "environment" : "production"
+    profileEnvironment ?? (
+      openDevelopmentEnvironment === "1" ? "environment" : "production"
     ),
   );
-  const baseUrlValue = environment.ARTIFACT_SHARE_BASE_URL ?? localSettings?.base_url;
-  if (baseUrlValue === undefined) throw new Error("ARTIFACT_SHARE_BASE_URL is required");
-  const rootsValue = environment.ARTIFACT_SHARE_WORKSPACE_ROOTS;
+  const baseUrlValue = baseUrlEnvironment ?? localSettings?.base_url;
+  if (baseUrlValue === undefined) throw new Error("ARTIFACTPASS_BASE_URL is required");
+  const rootsValue = rootsEnvironment;
   const workspaceRoots = rootsValue === undefined
     ? [...(localSettings?.workspace_roots ?? [])]
     : rootsValue.split(delimiter).filter((root) => root.length > 0);
-  if (workspaceRoots.length === 0) throw new Error("ARTIFACT_SHARE_WORKSPACE_ROOTS must not be empty");
-  const environmentStore = new EnvironmentCredentialStore("ARTIFACT_SHARE_TOKEN", environment);
-  const openDevelopmentValue = environment.ARTIFACT_SHARE_OPEN_DEVELOPMENT;
+  if (workspaceRoots.length === 0) throw new Error("ARTIFACTPASS_WORKSPACE_ROOTS must not be empty");
+  const environmentStore = new CompatibleEnvironmentCredentialStore(
+    "ARTIFACTPASS_TOKEN",
+    "ARTIFACT_SHARE_TOKEN",
+    environment,
+  );
+  const openDevelopmentValue = openDevelopmentEnvironment;
   if (openDevelopmentValue !== undefined && openDevelopmentValue !== "1") {
-    throw new Error("ARTIFACT_SHARE_OPEN_DEVELOPMENT must be 1 when enabled");
+    throw new Error("ARTIFACTPASS_OPEN_DEVELOPMENT must be 1 when enabled");
   }
   const openDevelopment = openDevelopmentValue === "1" || (
     openDevelopmentValue === undefined &&
-    environment.ARTIFACT_SHARE_BASE_URL === undefined &&
+    baseUrlEnvironment === undefined &&
     localSettings?.open_development === true
   );
-  const headless = environment.ARTIFACT_SHARE_TOKEN !== undefined;
-  const publicationStatePathValue = environment.ARTIFACT_SHARE_STATE_PATH;
+  const tokenEnvironment = compatibleValue("ARTIFACTPASS_TOKEN", "ARTIFACT_SHARE_TOKEN");
+  const headless = tokenEnvironment !== undefined;
+  const publicationStatePathValue = compatibleValue(
+    "ARTIFACTPASS_STATE_PATH",
+    "ARTIFACT_SHARE_STATE_PATH",
+  );
   const publicationStatePath = publicationStatePathValue === undefined
-    ? localConfiguration === undefined || localSettings?.publication_state === "legacy"
+    ? localSettings?.publication_state_path ?? (
+      localConfiguration === undefined || localSettings?.publication_state === "legacy"
       ? `${localConfigPath}.publication-state`
       : publicationStatePathForProfile(localConfigPath, profileName)
+    )
     : resolve(publicationStatePathValue);
-  const pdfProvenanceKeyId = environment.ARTIFACT_SHARE_PDF_KEY_ID;
-  const pdfProvenancePrivateKey = environment.ARTIFACT_SHARE_PDF_PRIVATE_KEY;
+  const pdfProvenanceKeyId = compatibleValue("ARTIFACTPASS_PDF_KEY_ID", "ARTIFACT_SHARE_PDF_KEY_ID");
+  const pdfProvenancePrivateKey = compatibleValue(
+    "ARTIFACTPASS_PDF_PRIVATE_KEY",
+    "ARTIFACT_SHARE_PDF_PRIVATE_KEY",
+  );
   if ((pdfProvenanceKeyId === undefined) !== (pdfProvenancePrivateKey === undefined)) {
-    throw new Error("ARTIFACT_SHARE_PDF_KEY_ID and ARTIFACT_SHARE_PDF_PRIVATE_KEY must be configured together");
+    throw new Error("ARTIFACTPASS_PDF_KEY_ID and ARTIFACTPASS_PDF_PRIVATE_KEY must be configured together");
   }
   return {
     profileName,
@@ -238,8 +278,16 @@ export const configurationFromEnvironment = (
         ? {}
         : {
             pdfProvenanceKeyId: localSettings.pdf_key_id,
-            pdfProvenanceStore: new OsCredentialStore({
-              account: `pdf-signing-key:${localSettings.pdf_key_id}`,
+            pdfProvenanceStore: new CompatibleCredentialStore({
+              artifactpassStore: new OsCredentialStore({
+                service: ARTIFACTPASS_CREDENTIAL_SERVICE,
+                account: `pdf-signing-key:${localSettings.pdf_key_id}`,
+              }),
+              legacyStore: new OsCredentialStore({
+                service: LEGACY_ARTIFACT_SHARE_CREDENTIAL_SERVICE,
+                account: `pdf-signing-key:${localSettings.pdf_key_id}`,
+              }),
+              migrationCommitted: localSettings.credential_namespace === "artifactpass",
             }),
           }
       : {
@@ -249,7 +297,17 @@ export const configurationFromEnvironment = (
           },
         }),
     ...(headless ? {} : {
-      osStore: new OsCredentialStore({ account: agentCredentialAccountForProfile(profileName) }),
+      osStore: new CompatibleCredentialStore({
+        artifactpassStore: new OsCredentialStore({
+          service: ARTIFACTPASS_CREDENTIAL_SERVICE,
+          account: agentCredentialAccountForProfile(profileName),
+        }),
+        legacyStore: new OsCredentialStore({
+          service: LEGACY_ARTIFACT_SHARE_CREDENTIAL_SERVICE,
+          account: agentCredentialAccountForProfile(profileName),
+        }),
+        migrationCommitted: localSettings?.credential_namespace === "artifactpass",
+      }),
     }),
   };
 };

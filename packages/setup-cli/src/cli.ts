@@ -17,6 +17,7 @@ import { runDoctor } from "./doctor";
 import type { AgentHost } from "./hosts";
 import { openBrowser } from "./open-browser";
 import { installPortableIntegration } from "./portable-integration";
+import { migrateDefaultLocalState } from "./local-state-migration";
 
 const deploymentRoot = resolve(dirname(fileURLToPath(import.meta.url)), "deployment");
 const defaultMarketplace = resolve(dirname(fileURLToPath(import.meta.url)), "marketplace");
@@ -163,6 +164,7 @@ const main = async (): Promise<void> => {
     return;
   }
   if (command === "profile") {
+    await migrateDefaultLocalState();
     const configPath = defaultLocalConfigPath();
     const config = await readLocalBridgeSettings(configPath);
     if (args[0] === "list" && args.length === 1) {
@@ -186,6 +188,7 @@ const main = async (): Promise<void> => {
     throw new Error("Use `profile list` or `profile use <name>`");
   }
   if (command === "disconnect") {
+    await migrateDefaultLocalState();
     const config = await readLocalBridgeSettings(defaultLocalConfigPath());
     const profileName = optionalValue(args, "--profile");
     const baseUrl = optionalPositional(args, 0);

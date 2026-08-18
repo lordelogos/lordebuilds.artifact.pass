@@ -6,6 +6,9 @@ export interface CredentialStore {
   delete(): Promise<void>;
 }
 
+export const ARTIFACTPASS_CREDENTIAL_SERVICE = "artifactpass";
+export const LEGACY_ARTIFACT_SHARE_CREDENTIAL_SERVICE = "lordebuilds.artifacts.share";
+
 export const agentCredentialAccountForProfile = (profileName: string): string =>
   profileName === "production"
     ? "agent-token"
@@ -76,6 +79,70 @@ export class EnvironmentCredentialStore {
   }
 }
 
+export class CompatibleEnvironmentCredentialStore implements CredentialStore {
+  public constructor(
+    private readonly artifactpassVariableName: string,
+    private readonly legacyVariableName: string,
+    private readonly environment: Readonly<Record<string, string | undefined>> = process.env,
+  ) {}
+
+  public async get(): Promise<string | null> {
+    const artifactpassValue = this.environment[this.artifactpassVariableName];
+    const legacyValue = this.environment[this.legacyVariableName];
+    const hasArtifactpassValue = artifactpassValue !== undefined && artifactpassValue.length > 0;
+    const hasLegacyValue = legacyValue !== undefined && legacyValue.length > 0;
+    if (hasArtifactpassValue && hasLegacyValue && artifactpassValue !== legacyValue) {
+      throw new Error(
+        `${this.artifactpassVariableName} conflicts with legacy ${this.legacyVariableName}`,
+      );
+    }
+    return hasArtifactpassValue ? artifactpassValue : hasLegacyValue ? legacyValue : null;
+  }
+
+  public async set(_value: string): Promise<void> {
+    throw new Error("Environment credentials must be managed by the calling secret manager");
+  }
+
+  public async delete(): Promise<void> {
+    throw new Error("Environment credentials must be managed by the calling secret manager");
+  }
+}
+
+export interface CompatibleCredentialStoreOptions {
+  readonly artifactpassStore: CredentialStore;
+  readonly legacyStore: CredentialStore;
+  readonly migrationCommitted?: boolean;
+}
+
+export class CompatibleCredentialStore implements CredentialStore {
+  public constructor(private readonly options: CompatibleCredentialStoreOptions) {}
+
+  public async get(): Promise<string | null> {
+    const artifactpassValue = await this.options.artifactpassStore.get();
+    if (this.options.migrationCommitted === true && artifactpassValue !== null) {
+      return artifactpassValue;
+    }
+    const legacyValue = await this.options.legacyStore.get();
+    if (
+      artifactpassValue !== null &&
+      legacyValue !== null &&
+      artifactpassValue !== legacyValue
+    ) {
+      throw new Error("ArtifactPass and legacy Artifact Share credentials conflict; no state was changed");
+    }
+    return artifactpassValue ?? legacyValue;
+  }
+
+  public async set(value: string): Promise<void> {
+    await this.options.artifactpassStore.set(value);
+  }
+
+  public async delete(): Promise<void> {
+    await this.options.artifactpassStore.delete();
+    await this.options.legacyStore.delete();
+  }
+}
+
 export interface OsCredentialStoreOptions {
   readonly platform?: NodeJS.Platform;
   readonly runner?: CommandRunner;
@@ -92,7 +159,7 @@ export class OsCredentialStore implements CredentialStore {
   public constructor(options: OsCredentialStoreOptions = {}) {
     this.platform = options.platform ?? process.platform;
     this.runner = options.runner ?? defaultRunner;
-    this.service = options.service ?? "lordebuilds.artifacts.share";
+    this.service = options.service ?? ARTIFACTPASS_CREDENTIAL_SERVICE;
     this.account = options.account ?? "agent-token";
     if (this.platform !== "darwin" && this.platform !== "linux") {
       throw new Error("No supported OS credential store is available on this platform");

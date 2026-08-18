@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
@@ -9,6 +9,8 @@ export interface LocalBridgeProfileSettings {
   readonly open_development?: true;
   readonly pdf_key_id?: string;
   readonly publication_state?: "legacy";
+  readonly publication_state_path?: string;
+  readonly credential_namespace?: "artifactpass";
 }
 
 export interface LocalBridgeSettings {
@@ -25,6 +27,16 @@ const profileNamePattern = /^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/u;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
+
+const canonicalize = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (isRecord(value)) {
+    return Object.fromEntries(Object.entries(value)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, item]) => [key, canonicalize(item)]));
+  }
+  return value;
+};
 
 export const validateProfileName = (name: string): string => {
   if (!profileNamePattern.test(name)) {
@@ -48,6 +60,9 @@ const validateProfile = (value: unknown): LocalBridgeProfileSettings => {
   ) {
     throw new Error("Artifact Share config requires absolute workspace roots");
   }
+  if (candidate.credential_namespace !== undefined && candidate.credential_namespace !== "artifactpass") {
+    throw new Error("Artifact Share config contains an invalid credential namespace");
+  }
   if (candidate.open_development !== undefined && candidate.open_development !== true) {
     throw new Error("Artifact Share config open_development must be true when enabled");
   }
@@ -60,12 +75,24 @@ const validateProfile = (value: unknown): LocalBridgeProfileSettings => {
   if (candidate.publication_state !== undefined && candidate.publication_state !== "legacy") {
     throw new Error("Artifact Share config contains an invalid publication state mode");
   }
+  if (
+    candidate.publication_state_path !== undefined &&
+    (typeof candidate.publication_state_path !== "string" || resolve(candidate.publication_state_path) !== candidate.publication_state_path)
+  ) {
+    throw new Error("Artifact Share config contains an invalid publication state path");
+  }
   return {
     base_url: candidate.base_url,
     workspace_roots: candidate.workspace_roots as string[],
     ...(candidate.open_development === true ? { open_development: true } : {}),
     ...(typeof candidate.pdf_key_id === "string" ? { pdf_key_id: candidate.pdf_key_id } : {}),
     ...(candidate.publication_state === "legacy" ? { publication_state: "legacy" } : {}),
+    ...(typeof candidate.publication_state_path === "string"
+      ? { publication_state_path: candidate.publication_state_path }
+      : {}),
+    ...(candidate.credential_namespace === "artifactpass"
+      ? { credential_namespace: "artifactpass" as const }
+      : {}),
   };
 };
 
@@ -136,6 +163,29 @@ export const defaultLocalConfigPath = (
   environment: Readonly<Record<string, string | undefined>> = process.env,
   platform: NodeJS.Platform = process.platform,
 ): string => {
+  const explicit = environment.ARTIFACTPASS_CONFIG_PATH;
+  if (explicit !== undefined && explicit.length > 0) return resolve(explicit);
+  if (platform === "win32") {
+    const applicationData = environment.APPDATA;
+    if (applicationData === undefined || applicationData.length === 0) {
+      throw new Error("APPDATA is required to locate ArtifactPass config");
+    }
+    return resolve(applicationData, "artifactpass", "config.json");
+  }
+  const configurationHome = environment.XDG_CONFIG_HOME;
+  return resolve(
+    configurationHome === undefined || configurationHome.length === 0
+      ? resolve(homedir(), ".config")
+      : configurationHome,
+    "artifactpass",
+    "config.json",
+  );
+};
+
+export const legacyLocalConfigPath = (
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+  platform: NodeJS.Platform = process.platform,
+): string => {
   const explicit = environment.ARTIFACT_SHARE_CONFIG_PATH;
   if (explicit !== undefined && explicit.length > 0) return resolve(explicit);
   if (platform === "win32") {
@@ -162,6 +212,58 @@ const parseSettings = (contents: string): LocalBridgeSettings => {
 
 export const readLocalBridgeSettingsSync = (path: string): LocalBridgeSettings =>
   parseSettings(readFileSync(path, "utf8"));
+
+export interface CompatibleLocalBridgeSettings {
+  readonly path: string;
+  readonly source: "artifactpass" | "legacy";
+  readonly settings: LocalBridgeSettings;
+}
+
+export const readCompatibleLocalBridgeSettingsSync = (
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+  platform: NodeJS.Platform = process.platform,
+): CompatibleLocalBridgeSettings => {
+  const artifactpassPath = defaultLocalConfigPath(environment, platform);
+  const legacyPath = legacyLocalConfigPath(environment, platform);
+  const artifactpassExists = existsSync(artifactpassPath);
+  const legacyExists = artifactpassPath !== legacyPath && existsSync(legacyPath);
+  if (artifactpassExists) {
+    const settings = readLocalBridgeSettingsSync(artifactpassPath);
+    if (legacyExists) {
+      const legacySettings = readLocalBridgeSettingsSync(legacyPath);
+      const migrationCommitted = (() => {
+        try {
+          const journal = JSON.parse(readFileSync(`${artifactpassPath}.migration.json`, "utf8")) as unknown;
+          return isRecord(journal) &&
+            journal.status === "committed" &&
+            journal.artifactpass_config_path === artifactpassPath;
+        } catch (error) {
+          if (error instanceof Error && "code" in error && error.code === "ENOENT") return false;
+          throw error;
+        }
+      })();
+      if (
+        !migrationCommitted &&
+        JSON.stringify(canonicalize(settings)) !== JSON.stringify(canonicalize(legacySettings))
+      ) {
+        throw new Error("ArtifactPass and legacy Artifact Share configs conflict; no state was changed");
+      }
+    }
+    return { path: artifactpassPath, source: "artifactpass", settings };
+  }
+  if (legacyExists || artifactpassPath === legacyPath) {
+    return {
+      path: legacyPath,
+      source: "legacy",
+      settings: readLocalBridgeSettingsSync(legacyPath),
+    };
+  }
+  return {
+    path: artifactpassPath,
+    source: "artifactpass",
+    settings: readLocalBridgeSettingsSync(artifactpassPath),
+  };
+};
 
 export const readLocalBridgeSettings = async (path: string): Promise<LocalBridgeSettings> =>
   parseSettings(await readFile(path, "utf8"));
