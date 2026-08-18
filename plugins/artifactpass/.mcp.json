@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "artifact-share": {
+    "artifactpass": {
       "command": "node",
       "args": [
         "./dist/cli.mjs"

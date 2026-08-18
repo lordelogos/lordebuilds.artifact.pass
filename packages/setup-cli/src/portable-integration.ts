@@ -86,7 +86,7 @@ export const installPortableIntegration = async (options: {
     const temporaryBridgePath = join(temporaryRoot, "plugin", "dist", "cli.mjs");
     await writeFile(join(temporaryRoot, "mcp.json"), `${JSON.stringify({
       mcpServers: {
-        "artifact-share": {
+        artifactpass: {
           command: process.execPath,
           args: [temporaryBridgePath.replace(temporaryRoot, targetRoot)],
         },

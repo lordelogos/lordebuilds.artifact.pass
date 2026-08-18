@@ -4,7 +4,7 @@ import { basename, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const repositoryRoot = resolve(new URL("..", import.meta.url).pathname);
-const pluginRoot = resolve(repositoryRoot, "plugins/artifact-share");
+const pluginRoot = resolve(repositoryRoot, "plugins/artifactpass");
 
 const readJson = async (path: string): Promise<Record<string, unknown>> =>
   JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
@@ -24,7 +24,7 @@ describe("portable agent package", () => {
     const configuration = await readJson(resolve(pluginRoot, ".mcp.json"));
     expect(configuration).toEqual({
       mcpServers: {
-        "artifact-share": {
+        artifactpass: {
           command: "node",
           args: ["./dist/cli.mjs"],
           cwd: ".",
@@ -86,7 +86,7 @@ describe("portable agent package", () => {
     expect(claudeManifest.mcpServers).toBe("./.claude-plugin/mcp.json");
     expect(claudeMcp).toEqual({
       mcpServers: {
-        "artifact-share": {
+        artifactpass: {
           command: "node",
           args: ["${CLAUDE_PLUGIN_ROOT}/dist/cli.mjs"],
         },

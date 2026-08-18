@@ -1,7 +1,7 @@
 node_modules/
 dist/
-!plugins/artifact-share/dist/
-!plugins/artifact-share/dist/cli.mjs
+!plugins/artifactpass/dist/
+!plugins/artifactpass/dist/cli.mjs
 coverage/
 playwright-report/
 test-results/

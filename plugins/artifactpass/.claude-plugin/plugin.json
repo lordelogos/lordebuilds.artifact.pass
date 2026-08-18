@@ -1,12 +1,12 @@
 {
-  "name": "artifact-share",
-  "version": "0.1.0-rc.1",
-  "displayName": "Artifact Share",
+  "name": "artifactpass",
+  "version": "0.1.0-rc.2",
+  "displayName": "ArtifactPass",
   "description": "Share local Markdown, HTML, and PDF artifacts through a private temporary link.",
   "author": {
     "name": "Lorde Builds"
   },
-  "homepage": "https://github.com/lordebuilds/lordebuilds.artifacts.share",
+  "homepage": "https://github.com/lordelogos/artifactpass",
   "skills": "./skills/",
   "mcpServers": "./.claude-plugin/mcp.json"
 }

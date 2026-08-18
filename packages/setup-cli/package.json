@@ -1,10 +1,10 @@
 {
-  "name": "@artifact-share/setup",
-  "version": "0.1.0-rc.1",
-  "description": "Deploy and connect a customer-owned Artifact Share service.",
+  "name": "artifactpass",
+  "version": "0.1.0-rc.2",
+  "description": "Install and connect ArtifactPass for compatible AI agent systems.",
   "type": "module",
   "bin": {
-    "artifact-share": "dist/cli.mjs"
+    "artifactpass": "dist/cli.mjs"
   },
   "files": ["dist"],
   "scripts": {

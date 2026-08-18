@@ -135,7 +135,7 @@ const main = async (): Promise<void> => {
     const portableIntegration = installKnownHostAdapters
       ? undefined
       : await installPortableIntegration({
-          sourceRoot: resolve(marketplaceSource, "plugins/artifact-share"),
+          sourceRoot: resolve(marketplaceSource, "plugins/artifactpass"),
         });
     const profileName = optionalValue(args, "--profile");
     const result = await connectHost({

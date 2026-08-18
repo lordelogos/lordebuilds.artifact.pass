@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
 const repositoryRoot = resolve(new URL("..", import.meta.url).pathname);
-const temporaryRoot = await mkdtemp(resolve(tmpdir(), "artifact-share-release-"));
+const temporaryRoot = await mkdtemp(resolve(tmpdir(), "artifactpass-release-"));
 
 const fail = (message) => {
   throw new Error(`Release package inspection failed: ${message}`);
@@ -30,7 +30,7 @@ try {
   if (unexpected.length > 0) fail(`unexpected setup CLI files: ${unexpected.join(", ")}`);
   if (!entries.includes("package/dist/cli.mjs")) fail("setup CLI entrypoint is missing");
   if (!entries.includes("package/dist/deployment/index.js")) fail("Worker deployment bundle is missing");
-  if (!entries.includes("package/dist/marketplace/plugins/artifact-share/dist/cli.mjs")) {
+  if (!entries.includes("package/dist/marketplace/plugins/artifactpass/dist/cli.mjs")) {
     fail("attested plugin bundle is missing from setup CLI");
   }
 
@@ -49,19 +49,19 @@ try {
     fail("setup CLI contains an install lifecycle script");
   }
 
-  const pluginRoot = resolve(repositoryRoot, "plugins/artifact-share");
-  const pluginFiles = execFileSync("git", ["ls-files", "plugins/artifact-share"], {
+  const pluginRoot = resolve(repositoryRoot, "plugins/artifactpass");
+  const pluginFiles = execFileSync("git", ["ls-files", "plugins/artifactpass"], {
     cwd: repositoryRoot,
     encoding: "utf8",
   }).trim().split("\n").filter(Boolean);
   const allowedPluginPaths = [
-    /^plugins\/artifact-share\/\.claude-plugin\/plugin\.json$/u,
-    /^plugins\/artifact-share\/\.claude-plugin\/mcp\.json$/u,
-    /^plugins\/artifact-share\/\.codex-plugin\/plugin\.json$/u,
-    /^plugins\/artifact-share\/\.mcp\.json$/u,
-    /^plugins\/artifact-share\/dist\/cli\.mjs$/u,
-    /^plugins\/artifact-share\/plugin-metadata\.json$/u,
-    /^plugins\/artifact-share\/skills\/[a-z-]+\/SKILL\.md$/u,
+    /^plugins\/artifactpass\/\.claude-plugin\/plugin\.json$/u,
+    /^plugins\/artifactpass\/\.claude-plugin\/mcp\.json$/u,
+    /^plugins\/artifactpass\/\.codex-plugin\/plugin\.json$/u,
+    /^plugins\/artifactpass\/\.mcp\.json$/u,
+    /^plugins\/artifactpass\/dist\/cli\.mjs$/u,
+    /^plugins\/artifactpass\/plugin-metadata\.json$/u,
+    /^plugins\/artifactpass\/skills\/[a-z-]+\/SKILL\.md$/u,
   ];
   const unexpectedPlugin = pluginFiles.filter((file) =>
     !allowedPluginPaths.some((pattern) => pattern.test(file)));
@@ -69,7 +69,7 @@ try {
   if (!(await readFile(resolve(pluginRoot, "dist/cli.mjs"))).length) fail("plugin bridge is empty");
   const packedPluginBridge = execFileSync(
     "tar",
-    ["-xOzf", archive, "package/dist/marketplace/plugins/artifact-share/dist/cli.mjs"],
+    ["-xOzf", archive, "package/dist/marketplace/plugins/artifactpass/dist/cli.mjs"],
     { maxBuffer: 8 * 1024 * 1024 },
   );
   const canonicalPluginBridge = await readFile(resolve(pluginRoot, "dist/cli.mjs"));

@@ -1,14 +1,14 @@
 {
-  "name": "lordebuilds-artifacts",
+  "name": "artifactpass",
   "interface": {
-    "displayName": "Lorde Builds Artifacts"
+    "displayName": "ArtifactPass"
   },
   "plugins": [
     {
-      "name": "artifact-share",
+      "name": "artifactpass",
       "source": {
         "source": "local",
-        "path": "./plugins/artifact-share"
+        "path": "./plugins/artifactpass"
       },
       "policy": {
         "installation": "AVAILABLE",

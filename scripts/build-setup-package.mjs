@@ -48,7 +48,7 @@ await cp(
   resolve(marketplaceRoot, ".claude-plugin/marketplace.json"),
 );
 await cp(
-  resolve(repositoryRoot, "plugins/artifact-share"),
-  resolve(marketplaceRoot, "plugins/artifact-share"),
+  resolve(repositoryRoot, "plugins/artifactpass"),
+  resolve(marketplaceRoot, "plugins/artifactpass"),
   { recursive: true },
 );

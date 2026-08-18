@@ -7,7 +7,7 @@
     "dist"
   ],
   "bin": {
-    "artifact-share-bridge": "dist/cli.mjs"
+    "artifactpass-bridge": "dist/cli.mjs"
   },
   "exports": {
     ".": "./src/index.ts"

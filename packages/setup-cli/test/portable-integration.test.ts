@@ -19,10 +19,10 @@ afterEach(async () => {
 
 describe("portable integration installation", () => {
   it("survives removal of its package source and exposes absolute MCP and skills paths", async () => {
-    const root = await mkdtemp(join(tmpdir(), "artifact-share-portable-"));
+    const root = await mkdtemp(join(tmpdir(), "artifactpass-portable-"));
     temporaryDirectories.push(root);
     const sourceRoot = join(root, "source");
-    await cp(resolve(repositoryRoot, "plugins/artifact-share"), sourceRoot, { recursive: true });
+    await cp(resolve(repositoryRoot, "plugins/artifactpass"), sourceRoot, { recursive: true });
 
     const installed = await installPortableIntegration({
       sourceRoot,
@@ -34,17 +34,17 @@ describe("portable integration installation", () => {
     expect(installed.skillsDirectory).toMatch(/^\//u);
     expect((await stat(installed.skillsDirectory)).isDirectory()).toBe(true);
     const configuration = JSON.parse(await readFile(installed.mcpConfig, "utf8")) as {
-      readonly mcpServers: { readonly "artifact-share": { readonly args: readonly string[] } };
+      readonly mcpServers: { readonly artifactpass: { readonly args: readonly string[] } };
     };
-    const bridgePath = configuration.mcpServers["artifact-share"].args[0];
+    const bridgePath = configuration.mcpServers.artifactpass.args[0];
     expect(bridgePath).toMatch(/^\//u);
     expect((await stat(bridgePath ?? "")).isFile()).toBe(true);
   });
 
   it("reuses an already verified content-addressed installation", async () => {
-    const root = await mkdtemp(join(tmpdir(), "artifact-share-portable-"));
+    const root = await mkdtemp(join(tmpdir(), "artifactpass-portable-"));
     temporaryDirectories.push(root);
-    const sourceRoot = resolve(repositoryRoot, "plugins/artifact-share");
+    const sourceRoot = resolve(repositoryRoot, "plugins/artifactpass");
     const destinationDirectory = join(root, "user-data");
 
     const first = await installPortableIntegration({ sourceRoot, destinationDirectory });

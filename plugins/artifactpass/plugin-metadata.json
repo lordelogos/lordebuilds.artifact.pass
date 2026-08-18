@@ -1,0 +1,11 @@
+{
+  "name": "artifactpass",
+  "version": "0.1.0-rc.2",
+  "displayName": "ArtifactPass",
+  "description": "Share local Markdown, HTML, and PDF artifacts through a private temporary link.",
+  "longDescription": "Publishes a file from an explicitly allowed workspace through ArtifactPass and reads supported shared artifacts in bounded chunks.",
+  "developerName": "Lorde Builds",
+  "marketplaceName": "artifactpass",
+  "marketplaceDisplayName": "ArtifactPass",
+  "homepage": "https://github.com/lordelogos/artifactpass"
+}

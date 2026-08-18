@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const pluginRoot = resolve(repositoryRoot, "plugins/artifact-share");
+const pluginRoot = resolve(repositoryRoot, "plugins/artifactpass");
 const metadata = JSON.parse(await readFile(resolve(pluginRoot, "plugin-metadata.json"), "utf8"));
 const checkOnly = process.argv.includes("--check");
 
@@ -23,7 +23,7 @@ const generated = new Map([
       developerName: metadata.developerName,
       category: "Productivity",
       capabilities: ["MCP server", "Skills"],
-      defaultPrompt: "Share a supported local artifact or read an Artifact Share link.",
+      defaultPrompt: "Share a supported local artifact or read an ArtifactPass link.",
     },
     mcpServers: "./.mcp.json",
   })],
@@ -39,7 +39,7 @@ const generated = new Map([
   })],
   [resolve(pluginRoot, ".claude-plugin/mcp.json"), json({
     mcpServers: {
-      "artifact-share": {
+      artifactpass: {
         command: "node",
         args: ["${CLAUDE_PLUGIN_ROOT}/dist/cli.mjs"],
       },
@@ -47,7 +47,7 @@ const generated = new Map([
   })],
   [resolve(pluginRoot, ".mcp.json"), json({
     mcpServers: {
-      "artifact-share": {
+      artifactpass: {
         command: "node",
         args: ["./dist/cli.mjs"],
         cwd: ".",

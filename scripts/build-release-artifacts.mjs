@@ -16,12 +16,12 @@ execFileSync(
   { cwd: repositoryRoot, stdio: "inherit" },
 );
 
-const pluginArchive = resolve(releaseRoot, `artifact-share-plugin-${version}.tar.gz`);
+const pluginArchive = resolve(releaseRoot, `artifactpass-plugin-${version}.tar.gz`);
 execFileSync("tar", [
   "-czf", pluginArchive,
   ".claude-plugin", ".codex-plugin", ".mcp.json", "dist", "plugin-metadata.json", "skills",
   "-C", repositoryRoot, "LICENSE",
-], { cwd: resolve(repositoryRoot, "plugins/artifact-share") });
+], { cwd: resolve(repositoryRoot, "plugins/artifactpass") });
 
 const artifacts = (await readdir(releaseRoot))
   .filter((name) => name.endsWith(".tgz") || name.endsWith(".tar.gz"))

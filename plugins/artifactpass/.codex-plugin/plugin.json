@@ -1,23 +1,23 @@
 {
-  "name": "artifact-share",
-  "version": "0.1.0-rc.1",
+  "name": "artifactpass",
+  "version": "0.1.0-rc.2",
   "description": "Share local Markdown, HTML, and PDF artifacts through a private temporary link.",
   "author": {
     "name": "Lorde Builds"
   },
-  "homepage": "https://github.com/lordebuilds/lordebuilds.artifacts.share",
+  "homepage": "https://github.com/lordelogos/artifactpass",
   "skills": "./skills/",
   "interface": {
-    "displayName": "Artifact Share",
+    "displayName": "ArtifactPass",
     "shortDescription": "Share local Markdown, HTML, and PDF artifacts through a private temporary link.",
-    "longDescription": "Publishes a file from an explicitly allowed workspace through Artifact Share and reads supported shared artifacts in bounded chunks.",
+    "longDescription": "Publishes a file from an explicitly allowed workspace through ArtifactPass and reads supported shared artifacts in bounded chunks.",
     "developerName": "Lorde Builds",
     "category": "Productivity",
     "capabilities": [
       "MCP server",
       "Skills"
     ],
-    "defaultPrompt": "Share a supported local artifact or read an Artifact Share link."
+    "defaultPrompt": "Share a supported local artifact or read an ArtifactPass link."
   },
   "mcpServers": "./.mcp.json"
 }
