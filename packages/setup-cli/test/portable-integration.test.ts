@@ -1,4 +1,4 @@
-import { cp, mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { cp, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -32,6 +32,8 @@ describe("portable integration installation", () => {
 
     expect(installed.mcpConfig).toMatch(/^\//u);
     expect(installed.skillsDirectory).toMatch(/^\//u);
+    expect(installed.rootDirectory).toMatch(/^\//u);
+    expect(installed.digest).toMatch(/^[a-f0-9]{64}$/u);
     expect((await stat(installed.skillsDirectory)).isDirectory()).toBe(true);
     const configuration = JSON.parse(await readFile(installed.mcpConfig, "utf8")) as {
       readonly mcpServers: { readonly artifactpass: { readonly args: readonly string[] } };
@@ -52,4 +54,20 @@ describe("portable integration installation", () => {
 
     expect(second).toEqual(first);
   });
+
+  it("repairs a corrupted content-addressed installation without duplicating it", async () => {
+    const root = await mkdtemp(join(tmpdir(), "artifactpass-portable-repair-"));
+    temporaryDirectories.push(root);
+    const sourceRoot = resolve(repositoryRoot, "plugins/artifactpass");
+    const destinationDirectory = join(root, "user-data");
+    const first = await installPortableIntegration({ sourceRoot, destinationDirectory });
+    const bridgePath = join(first.rootDirectory, "plugin", "dist", "cli.mjs");
+    const expectedBridge = await readFile(resolve(sourceRoot, "dist", "cli.mjs"));
+    await writeFile(bridgePath, "corrupt");
+
+    const repaired = await installPortableIntegration({ sourceRoot, destinationDirectory });
+
+    expect(repaired).toEqual(first);
+    expect(await readFile(bridgePath)).toEqual(expectedBridge);
+  }, 15_000);
 });

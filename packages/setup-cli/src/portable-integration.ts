@@ -5,6 +5,8 @@ import { dirname, join, relative, resolve } from "node:path";
 import { defaultLocalConfigPath } from "agent-bridge";
 
 export interface PortableIntegration {
+  readonly digest: string;
+  readonly rootDirectory: string;
   readonly mcpConfig: string;
   readonly skillsDirectory: string;
 }
@@ -73,9 +75,9 @@ export const installPortableIntegration = async (options: {
 
   try {
     await verify();
-    return { mcpConfig, skillsDirectory };
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === undefined) throw error;
+    return { digest, rootDirectory: targetRoot, mcpConfig, skillsDirectory };
+  } catch {
+    await rm(targetRoot, { recursive: true, force: true });
   }
 
   await mkdir(destinationDirectory, { recursive: true, mode: 0o700 });
@@ -100,7 +102,7 @@ export const installPortableIntegration = async (options: {
       await rm(temporaryRoot, { recursive: true, force: true });
     }
     await verify();
-    return { mcpConfig, skillsDirectory };
+    return { digest, rootDirectory: targetRoot, mcpConfig, skillsDirectory };
   } catch (error) {
     await rm(temporaryRoot, { recursive: true, force: true });
     throw error;

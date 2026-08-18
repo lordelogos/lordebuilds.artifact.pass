@@ -131,10 +131,10 @@ describe("host connection", () => {
     const runner = runnerFor(["codex", "claude"]);
     await installPluginForHosts(["codex", "claude"], "/trusted/repository", runner);
     expect(runner).toHaveBeenCalledWith("codex", [
-      "plugin", "add", "artifact-share@lordebuilds-artifacts", "--json",
+      "plugin", "add", "artifactpass@artifactpass", "--json",
     ]);
     expect(runner).toHaveBeenCalledWith("claude", [
-      "plugin", "install", "artifact-share@lordebuilds-artifacts", "--scope", "user",
+      "plugin", "install", "artifactpass@artifactpass", "--scope", "user",
     ]);
   });
 
@@ -180,31 +180,83 @@ describe("host connection", () => {
     });
   });
 
-  it("reinstalls its own cached plugin so updated bridge code is loaded", async () => {
+  it("returns portable registration paths when no automatic host is detected", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifactpass-undetected-host-test-"));
+    const configPath = resolve(root, "config.json");
+    const portableIntegration = {
+      digest: "a".repeat(64),
+      rootDirectory: resolve(root, "portable"),
+      mcpConfig: resolve(root, "portable", "mcp.json"),
+      skillsDirectory: resolve(root, "portable", "plugin", "skills"),
+    };
+    const installPortable = vi.fn().mockResolvedValue(portableIntegration);
+
+    const result = await connectHost({
+      baseUrl: "http://127.0.0.1:8787",
+      workspaceRoots: [root],
+      marketplaceSource: "/trusted/repository",
+      configPath,
+      openDevelopment: true,
+    }, {
+      runner: runnerFor([]),
+      installPortable,
+      deviceFlowDependencies: {
+        openBrowser: async () => undefined,
+        fetch: vi.fn(async () => new Response(JSON.stringify({
+          service: "lordebuilds.artifacts.share",
+          status: "ok",
+        }))),
+      },
+    });
+
+    expect(result).toEqual({
+      hosts: [],
+      profileName: "local",
+      configPath,
+      portableIntegration,
+    });
+    expect(installPortable).toHaveBeenCalledWith({
+      sourceRoot: "/trusted/repository/plugins/artifactpass",
+    });
+  });
+
+  it("refreshes ArtifactPass without removing the legacy compatibility plugin", async () => {
     const runner: ProcessRunner = vi.fn(async (command, args) => {
       if (command === "codex" && args.join(" ") === "plugin marketplace list --json") {
-        return { stdout: JSON.stringify({ marketplaces: [{ name: "lordebuilds-artifacts" }] }), stderr: "" };
+        return { stdout: JSON.stringify({ marketplaces: [{ name: "artifactpass" }] }), stderr: "" };
       }
       if (command === "codex" && args.join(" ") === "plugin list --json") {
-        return { stdout: JSON.stringify({ installed: [{ pluginId: "artifact-share@lordebuilds-artifacts" }] }), stderr: "" };
+        return { stdout: JSON.stringify({ installed: [
+          { pluginId: "artifactpass@artifactpass" },
+          { pluginId: "artifact-share@lordebuilds-artifacts" },
+        ] }), stderr: "" };
       }
       if (command === "claude" && args.join(" ") === "plugin marketplace list --json") {
-        return { stdout: JSON.stringify([{ name: "lordebuilds-artifacts" }]), stderr: "" };
+        return { stdout: JSON.stringify([{ name: "artifactpass" }]), stderr: "" };
       }
       if (command === "claude" && args.join(" ") === "plugin list --json") {
         return { stdout: JSON.stringify([{
-          id: "artifact-share@lordebuilds-artifacts",
+          id: "artifactpass@artifactpass",
           scope: "local",
+        }, {
+          id: "artifact-share@lordebuilds-artifacts",
+          scope: "user",
         }]), stderr: "" };
       }
       return { stdout: "{}", stderr: "" };
     });
     await installPluginForHosts(["codex", "claude"], "/trusted/repository", runner);
     expect(runner).toHaveBeenCalledWith("codex", [
-      "plugin", "remove", "artifact-share@lordebuilds-artifacts",
+      "plugin", "remove", "artifactpass@artifactpass",
     ]);
     expect(runner).toHaveBeenCalledWith("claude", [
-      "plugin", "uninstall", "artifact-share@lordebuilds-artifacts", "--scope", "local",
+      "plugin", "uninstall", "artifactpass@artifactpass", "--scope", "local",
+    ]);
+    expect(runner).not.toHaveBeenCalledWith("codex", [
+      "plugin", "remove", "artifact-share@lordebuilds-artifacts",
+    ]);
+    expect(runner).not.toHaveBeenCalledWith("claude", [
+      "plugin", "uninstall", "artifact-share@lordebuilds-artifacts", "--scope", "user",
     ]);
   });
 

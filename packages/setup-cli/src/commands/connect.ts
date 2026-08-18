@@ -23,6 +23,10 @@ import { detectHosts, installPluginForHosts, type AgentHost } from "../hosts";
 import type { ProcessRunner } from "../process";
 import { runProcess } from "../process";
 import { migrateLegacyLocalState } from "../local-state-migration";
+import {
+  installPortableIntegration,
+  type PortableIntegration,
+} from "../portable-integration";
 
 const isMissingFile = (error: unknown): boolean =>
   error instanceof Error && "code" in error && error.code === "ENOENT";
@@ -61,6 +65,7 @@ export interface ConnectDependencies {
   readonly readSettings?: (path: string) => Promise<LocalBridgeSettings>;
   readonly writeSettings?: typeof writeLocalBridgeSettings;
   readonly migrateState?: typeof migrateLegacyLocalState;
+  readonly installPortable?: typeof installPortableIntegration;
 }
 
 export const connectHost = async (
@@ -71,6 +76,7 @@ export const connectHost = async (
   readonly profileName: string;
   readonly expiresIn?: number;
   readonly configPath: string;
+  readonly portableIntegration?: PortableIntegration;
 }> => {
   const openDevelopment = input.openDevelopment === true;
   const profileName = validateProfileName(input.profileName ?? (openDevelopment ? "local" : "production"));
@@ -129,10 +135,12 @@ export const connectHost = async (
   const runner = dependencies.runner ?? runProcess;
   const installKnownHostAdapters = input.installKnownHostAdapters !== false;
   const hosts = installKnownHostAdapters ? (input.hosts ?? await detectHosts(runner)) : [];
-  if (installKnownHostAdapters && hosts.length === 0) {
-    throw new Error("No supported automatic host installer was detected; use --no-host-install for portable MCP and skills setup");
-  }
-  if (installKnownHostAdapters) {
+  const portableIntegration = installKnownHostAdapters && hosts.length === 0
+    ? await (dependencies.installPortable ?? installPortableIntegration)({
+        sourceRoot: resolve(input.marketplaceSource, "plugins/artifactpass"),
+      })
+    : undefined;
+  if (installKnownHostAdapters && hosts.length > 0) {
     await installPluginForHosts(hosts, input.marketplaceSource, runner);
   }
   if (openDevelopment) {
@@ -150,7 +158,12 @@ export const connectHost = async (
         credential_namespace: "artifactpass",
       },
     ));
-    return { hosts, profileName, configPath };
+    return {
+      hosts,
+      profileName,
+      configPath,
+      ...(portableIntegration === undefined ? {} : { portableIntegration }),
+    };
   }
   const previousToken = await store.get();
   if (previousToken !== null && previousProfile === undefined) {
@@ -212,5 +225,11 @@ export const connectHost = async (
     }
     throw error;
   }
-  return { hosts, profileName, expiresIn: token.expiresIn, configPath };
+  return {
+    hosts,
+    profileName,
+    expiresIn: token.expiresIn,
+    configPath,
+    ...(portableIntegration === undefined ? {} : { portableIntegration }),
+  };
 };

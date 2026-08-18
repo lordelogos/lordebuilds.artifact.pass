@@ -152,10 +152,10 @@ const main = async (): Promise<void> => {
     }, {
       deviceFlowDependencies: { openBrowser },
     });
-    if (!installKnownHostAdapters) {
+    if (!installKnownHostAdapters || result.portableIntegration !== undefined) {
       print({
         ...result,
-        portableIntegration,
+        portableIntegration: result.portableIntegration ?? portableIntegration,
         next: "Register the MCP configuration and Agent Skills directory in your agent system.",
       });
       return;

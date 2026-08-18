@@ -3,6 +3,10 @@ import { runProcess } from "../process";
 
 export type AgentHost = "codex" | "claude";
 
+export const artifactpassMarketplaceId = "artifactpass";
+export const artifactpassPluginId = "artifactpass@artifactpass";
+export const legacyArtifactSharePluginId = "artifact-share@lordebuilds-artifacts";
+
 const canRun = async (runner: ProcessRunner, command: string): Promise<boolean> => {
   try {
     await runner(command, ["--version"]);
@@ -70,17 +74,18 @@ export const installPluginForHosts = async (
     );
     if (!isRecord(marketplaceResponse)) throw new Error("Codex returned an unexpected marketplace list");
     const marketplaces = namedEntries(marketplaceResponse.marketplaces, "Codex");
-    if (!marketplaces.some((marketplace) => marketplace.name === "lordebuilds-artifacts")) {
-      await runner("codex", ["plugin", "marketplace", "add", marketplaceSource, "--json"]);
+    if (marketplaces.some((marketplace) => marketplace.name === artifactpassMarketplaceId)) {
+      await runner("codex", ["plugin", "marketplace", "remove", artifactpassMarketplaceId]);
     }
+    await runner("codex", ["plugin", "marketplace", "add", marketplaceSource, "--json"]);
     const plugins = codexPluginEntries(parseJson(
       (await runner("codex", ["plugin", "list", "--json"])).stdout,
       "Codex",
     ));
-    if (plugins.some((plugin) => plugin.pluginId === "artifact-share@lordebuilds-artifacts")) {
-      await runner("codex", ["plugin", "remove", "artifact-share@lordebuilds-artifacts"]);
+    if (plugins.some((plugin) => plugin.pluginId === artifactpassPluginId)) {
+      await runner("codex", ["plugin", "remove", artifactpassPluginId]);
     }
-    await runner("codex", ["plugin", "add", "artifact-share@lordebuilds-artifacts", "--json"]);
+    await runner("codex", ["plugin", "add", artifactpassPluginId, "--json"]);
   }
 
   if (hosts.includes("claude")) {
@@ -88,20 +93,21 @@ export const installPluginForHosts = async (
       (await runner("claude", ["plugin", "marketplace", "list", "--json"])).stdout,
       "Claude",
     ), "Claude");
-    if (!marketplaces.some((marketplace) => marketplace.name === "lordebuilds-artifacts")) {
-      await runner("claude", ["plugin", "marketplace", "add", marketplaceSource]);
+    if (marketplaces.some((marketplace) => marketplace.name === artifactpassMarketplaceId)) {
+      await runner("claude", ["plugin", "marketplace", "remove", artifactpassMarketplaceId]);
     }
+    await runner("claude", ["plugin", "marketplace", "add", marketplaceSource]);
     const plugins = claudePluginEntries(parseJson(
       (await runner("claude", ["plugin", "list", "--json"])).stdout,
       "Claude",
     ));
-    for (const plugin of plugins.filter((candidate) => candidate.id === "artifact-share@lordebuilds-artifacts")) {
+    for (const plugin of plugins.filter((candidate) => candidate.id === artifactpassPluginId)) {
       await runner("claude", [
-        "plugin", "uninstall", "artifact-share@lordebuilds-artifacts", "--scope", plugin.scope ?? "user",
+        "plugin", "uninstall", artifactpassPluginId, "--scope", plugin.scope ?? "user",
       ]);
     }
     await runner("claude", [
-      "plugin", "install", "artifact-share@lordebuilds-artifacts", "--scope", "user",
+      "plugin", "install", artifactpassPluginId, "--scope", "user",
     ]);
   }
 };

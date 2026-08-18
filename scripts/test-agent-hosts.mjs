@@ -10,7 +10,7 @@ import { sourceSha256 } from "./publication-commitment.mjs";
 
 const execute = promisify(execFile);
 const repositoryRoot = resolve(new URL("..", import.meta.url).pathname);
-const canonicalRoot = resolve(repositoryRoot, "plugins/artifact-share");
+const canonicalRoot = resolve(repositoryRoot, "plugins/artifactpass");
 const temporaryRoot = await mkdtemp(resolve(tmpdir(), "artifact-share-agent-hosts-"));
 
 const run = async (command, args, environment) => execute(command, args, {
@@ -82,9 +82,9 @@ const assertPortableBytes = async (host, installedRoot, files) => {
 
 const assertRuntimeConformance = async (host, installedRoot, resolvedServer) => {
   const configuration = JSON.parse(await readFile(resolve(installedRoot, ".mcp.json"), "utf8"));
-  const server = resolvedServer ?? configuration.mcpServers?.["artifact-share"];
+  const server = resolvedServer ?? configuration.mcpServers?.artifactpass;
   if (server?.command !== "node" || !Array.isArray(server.args)) {
-    throw new Error(`${host} installed an invalid Artifact Share MCP configuration`);
+    throw new Error(`${host} installed an invalid ArtifactPass MCP configuration`);
   }
   const unrelatedWorkingDirectory = resolve(temporaryRoot, `${host.toLowerCase().replaceAll(" ", "-")}-cwd`);
   await mkdir(unrelatedWorkingDirectory);
@@ -102,19 +102,19 @@ const assertRuntimeConformance = async (host, installedRoot, resolvedServer) => 
     cwd: configuredWorkingDirectory,
     env: {
       ...inheritedEnvironment,
-      ARTIFACT_SHARE_BASE_URL: "https://artifacts.example.test",
-      ARTIFACT_SHARE_TOKEN: `as_${"t".repeat(43)}`,
-      ARTIFACT_SHARE_WORKSPACE_ROOTS: temporaryRoot,
+      ARTIFACTPASS_BASE_URL: "https://artifacts.example.test",
+      ARTIFACTPASS_TOKEN: `as_${"t".repeat(43)}`,
+      ARTIFACTPASS_WORKSPACE_ROOTS: temporaryRoot,
     },
     stderr: "pipe",
   });
-  const client = new Client({ name: "artifact-share-host-conformance", version: "0.0.0" });
+  const client = new Client({ name: "artifactpass-host-conformance", version: "0.0.0" });
   try {
     await client.connect(transport);
     const listed = await client.listTools();
     const tools = listed.tools.map((tool) => tool.name).sort();
     if (JSON.stringify(tools) !== JSON.stringify(["publish_artifact", "read_artifact"])) {
-      throw new Error(`${host} did not negotiate the portable Artifact Share MCP tools`);
+      throw new Error(`${host} did not negotiate the portable ArtifactPass MCP tools`);
     }
     const expectedSchemas = {
       publish_artifact: {
@@ -187,7 +187,7 @@ try {
   await run("codex", ["plugin", "marketplace", "add", repositoryRoot, "--json"], codexEnvironment);
   const codexInstall = JSON.parse((await run(
     "codex",
-    ["plugin", "add", "artifact-share@lordebuilds-artifacts", "--json"],
+    ["plugin", "add", "artifactpass@artifactpass", "--json"],
     codexEnvironment,
   )).stdout);
   if (typeof codexInstall.installedPath !== "string") {
@@ -204,7 +204,7 @@ try {
   );
   await run(
     "claude",
-    ["plugin", "install", "artifact-share@lordebuilds-artifacts", "--scope", "user"],
+    ["plugin", "install", "artifactpass@artifactpass", "--scope", "user"],
     claudeEnvironment,
   );
   const claudePlugins = JSON.parse((await run(
@@ -213,7 +213,7 @@ try {
     claudeEnvironment,
   )).stdout);
   const claudeInstall = claudePlugins.find((plugin) =>
-    plugin.id === "artifact-share@lordebuilds-artifacts"
+    plugin.id === "artifactpass@artifactpass"
   );
   if (typeof claudeInstall?.installPath !== "string") {
     throw new Error("Claude Code did not report an installed plugin path");
@@ -229,12 +229,12 @@ try {
     ["mcp", "list", "--json"],
     codexEnvironment,
   )).stdout);
-  const codexServer = codexMcpServers.find((server) => server.name === "artifact-share")?.transport;
+  const codexServer = codexMcpServers.find((server) => server.name === "artifactpass")?.transport;
   const claudeConfiguration = JSON.parse(await readFile(
     resolve(claudeInstall.installPath, ".claude-plugin/mcp.json"),
     "utf8",
   ));
-  const claudeDeclaredServer = claudeConfiguration.mcpServers?.["artifact-share"];
+  const claudeDeclaredServer = claudeConfiguration.mcpServers?.artifactpass;
   const claudeServer = {
     ...claudeDeclaredServer,
     args: claudeDeclaredServer?.args?.map((argument) =>
@@ -247,18 +247,18 @@ try {
   ]);
   const codexPrompt = (await run(
     "codex",
-    ["debug", "prompt-input", "Artifact Share skill inventory check"],
+    ["debug", "prompt-input", "ArtifactPass skill inventory check"],
     codexEnvironment,
   )).stdout;
   if (
-    !codexPrompt.includes("artifact-share:read-shared-artifact") ||
-    !codexPrompt.includes("artifact-share:share-artifact")
+    !codexPrompt.includes("artifactpass:read-shared-artifact") ||
+    !codexPrompt.includes("artifactpass:share-artifact")
   ) {
-    throw new Error("Codex did not expose both installed Artifact Share skills to the model");
+    throw new Error("Codex did not expose both installed ArtifactPass skills to the model");
   }
   const claudeDetails = (await run(
     "claude",
-    ["plugin", "details", "artifact-share@lordebuilds-artifacts"],
+    ["plugin", "details", "artifactpass@artifactpass"],
     claudeEnvironment,
   )).stdout;
   if (
@@ -266,21 +266,21 @@ try {
     !claudeDetails.includes("read-shared-artifact") ||
     !claudeDetails.includes("share-artifact")
   ) {
-    throw new Error("Claude Code did not expose both installed Artifact Share skills");
+    throw new Error("Claude Code did not expose both installed ArtifactPass skills");
   }
   const claudeMcpResult = await run(
     "claude",
     ["mcp", "list"],
     {
       ...claudeEnvironment,
-      ARTIFACT_SHARE_BASE_URL: "https://artifacts.example.test",
-      ARTIFACT_SHARE_TOKEN: `as_${"t".repeat(43)}`,
-      ARTIFACT_SHARE_WORKSPACE_ROOTS: temporaryRoot,
+      ARTIFACTPASS_BASE_URL: "https://artifacts.example.test",
+      ARTIFACTPASS_TOKEN: `as_${"t".repeat(43)}`,
+      ARTIFACTPASS_WORKSPACE_ROOTS: temporaryRoot,
     },
   );
   const claudeMcpStatus = `${claudeMcpResult.stdout}\n${claudeMcpResult.stderr}`;
-  if (!/plugin:artifact-share:artifact-share:.*Connected/iu.test(claudeMcpStatus)) {
-    throw new Error(`Claude Code did not launch the installed Artifact Share MCP server: ${claudeMcpStatus.trim()}`);
+  if (!/plugin:artifactpass:artifactpass:.*Connected/iu.test(claudeMcpStatus)) {
+    throw new Error(`Claude Code did not launch the installed ArtifactPass MCP server: ${claudeMcpStatus.trim()}`);
   }
 
   process.stdout.write(
