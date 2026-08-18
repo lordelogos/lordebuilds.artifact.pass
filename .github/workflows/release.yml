@@ -24,6 +24,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm release:check
+      - run: pnpm test:packed-install
       - run: pnpm release:build
       - name: Attest build provenance
         uses: actions/attest@v4
@@ -32,6 +33,6 @@ jobs:
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: lordebuilds-artifacts-share-${{ github.ref_name }}
+          name: artifactpass-${{ github.ref_name }}
           path: release/
           if-no-files-found: error
