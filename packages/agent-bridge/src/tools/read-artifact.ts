@@ -49,7 +49,7 @@ export const parseShareUrl = (value: string, baseUrl: URL): { readonly url: URL;
   try {
     url = new URL(value);
   } catch {
-    throw new Error("Artifact Share URL is malformed");
+    throw new Error("ArtifactPass URL is malformed");
   }
   if (
     url.origin !== baseUrl.origin ||
@@ -58,17 +58,17 @@ export const parseShareUrl = (value: string, baseUrl: URL): { readonly url: URL;
     url.search !== "" ||
     url.hash !== ""
   ) {
-    throw new Error("Artifact Share URL must use the configured deployment origin");
+    throw new Error("ArtifactPass URL must use the configured deployment origin");
   }
   const match = sharePathPattern.exec(url.pathname);
-  if (match?.[1] === undefined) throw new Error("Artifact Share URL path is malformed");
+  if (match?.[1] === undefined) throw new Error("ArtifactPass URL path is malformed");
   return { url, token: match[1] };
 };
 
 const responseJson = async (response: Response): Promise<unknown> => {
   if (!response.ok) throw await responseError(response);
   return response.json().catch(() => {
-    throw new Error("Artifact Share returned malformed JSON");
+    throw new Error("ArtifactPass returned malformed JSON");
   });
 };
 
@@ -125,11 +125,11 @@ const readDerived = async (
     { headers: { Range: `bytes=${offset}-${offset + maximumBytes - 1}` } },
   );
   if (!response.ok) throw await responseError(response);
-  if (response.status !== 206) throw new Error("Artifact Share ignored the derived text range");
+  if (response.status !== 206) throw new Error("ArtifactPass ignored the derived text range");
   const contentRange = /^bytes (\d+)-(\d+)\/(\d+)$/u.exec(response.headers.get("content-range") ?? "");
   const sha256 = response.headers.get("x-artifact-sha256") ?? "";
   if (contentRange === null || !/^[a-f0-9]{64}$/u.test(sha256)) {
-    throw new Error("Artifact Share returned malformed derived text metadata");
+    throw new Error("ArtifactPass returned malformed derived text metadata");
   }
   const responseOffset = Number(contentRange[1]);
   const responseEnd = Number(contentRange[2]);
@@ -142,11 +142,11 @@ const readDerived = async (
     totalSize <= 0 ||
     totalSize > PROTOCOL_MAX_ARTIFACT_BYTES
   ) {
-    throw new Error("Artifact Share returned inconsistent derived text metadata");
+    throw new Error("ArtifactPass returned inconsistent derived text metadata");
   }
   const responseBytes = new Uint8Array(await response.arrayBuffer());
   if (responseBytes.byteLength !== responseEnd - responseOffset + 1 || responseBytes.byteLength > maximumBytes) {
-    throw new Error("Artifact Share returned an invalid derived text range");
+    throw new Error("ArtifactPass returned an invalid derived text range");
   }
   const bytes = utf8AlignedPrefix(responseBytes);
   if (offset > totalSize) {
@@ -221,7 +221,7 @@ export const readArtifact = async (
       data: "",
       next_cursor: null,
       exact_source_url: new URL(`${share.url.pathname}/raw`, baseUrl).toString(),
-      safety_notice: "This PDF is human-only. Artifact Share will not expose its contents to an agent without verified controlled provenance.",
+      safety_notice: "This PDF is human-only. ArtifactPass will not expose its contents to an agent without verified controlled provenance.",
     };
   }
 
@@ -235,7 +235,7 @@ export const readArtifact = async (
     chunk.total_size !== manifest.byte_size ||
     chunk.sha256 !== manifest.sha256
   ) {
-    throw new Error("Artifact Share returned inconsistent source metadata");
+    throw new Error("ArtifactPass returned inconsistent source metadata");
   }
   const bytes = Buffer.from(chunk.data, "base64");
   let text: string | undefined;

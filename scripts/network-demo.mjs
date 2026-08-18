@@ -20,7 +20,7 @@ const securityHeaders = {
   "x-content-type-options": "nosniff",
 };
 
-const html = (body) => `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Artifact Share tunnel upload</title><style>body{font:16px/1.5 system-ui;max-width:34rem;margin:12vh auto;padding:1.5rem;color:#171717}label,input,button{display:block;width:100%;box-sizing:border-box}input,button{font:inherit;padding:.8rem;margin-top:.5rem}button{margin-top:1rem}p{color:#555}</style></head><body>${body}</body></html>`;
+const html = (body) => `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ArtifactPass tunnel upload</title><style>body{font:16px/1.5 system-ui;max-width:34rem;margin:12vh auto;padding:1.5rem;color:#171717}label,input,button{display:block;width:100%;box-sizing:border-box}input,button{font:inherit;padding:.8rem;margin-top:.5rem}button{margin-top:1rem}p{color:#555}</style></head><body>${body}</body></html>`;
 
 const isLoopback = (address) =>
   address === "127.0.0.1" || address === "::1" || address.startsWith("127.");
@@ -184,10 +184,10 @@ export const createTunnelGateway = async ({
     new URL("/health", target),
     { redirect: "manual" },
     Date.now() + healthTimeoutMs,
-    `The local Artifact Share demo health check timed out after ${healthTimeoutMs}ms`,
+    `The local ArtifactPass demo health check timed out after ${healthTimeoutMs}ms`,
   );
   if (!health.valid) {
-    throw new Error(`The local Artifact Share demo is not healthy (${health.response.status})`);
+    throw new Error(`The local ArtifactPass demo is not healthy (${health.response.status})`);
   }
 
   const sessions = new Set();
@@ -509,7 +509,7 @@ const parseArguments = (arguments_) => {
 export const runQuickTunnelCli = async (arguments_ = process.argv.slice(2)) => {
   const session = await startQuickTunnel(parseArguments(arguments_));
   process.stdout.write([
-    "Artifact Share Quick Tunnel is ready.",
+    "ArtifactPass Quick Tunnel is ready.",
     `Public reads: ${session.publicOrigin}`,
     `Browser upload entry: ${session.browserUploadUrl}`,
     "For an agent bridge process, set ARTIFACT_SHARE_BASE_URL to the public origin, ARTIFACT_SHARE_WORKSPACE_ROOTS to its absolute approved roots, and pass the temporary token only as ARTIFACT_SHARE_TOKEN.",

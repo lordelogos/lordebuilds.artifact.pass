@@ -1,6 +1,6 @@
 # Security model
 
-Artifact Share protects upload authority and artifact confidentiality differently.
+ArtifactPass protects upload authority and artifact confidentiality differently.
 
 ## Trust boundaries
 

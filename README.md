@@ -1,8 +1,8 @@
-# lordebuilds.artifacts.share
+# ArtifactPass
 
 Share a local Markdown, HTML, or PDF artifact once, then hand the same temporary HTTPS URL to a person or any compatible AI agent.
 
-Artifact Share is self-hosted in your Cloudflare account. The exact source stays in private R2 storage, metadata stays in D1, and your upload and device-approval pages sit behind Cloudflare Access. A share URL is a bearer capability: anyone holding it can read that artifact until its exact expiry time.
+ArtifactPass is self-hosted in your Cloudflare account. The exact source stays in private R2 storage, metadata stays in D1, and your upload and device-approval pages sit behind Cloudflare Access. A share URL is a bearer capability: anyone holding it can read that artifact until its exact expiry time.
 
 ## What v1 does
 
@@ -35,20 +35,26 @@ The deployer creates or reuses one Worker custom domain, one D1 database, one pr
 
 ## Connect an agent system
 
-After deployment, run the command printed by the deployer from each developer machine:
+For the hosted service at `artifactpass.com`, open a terminal in the workspace the agent may share and run:
 
 ```sh
-pnpm dlx @artifact-share/setup connect https://artifacts.example.com \
+pnpm dlx artifactpass
+```
+
+The command validates the workspace, detects known ecosystem installers, installs the same portable package, opens a browser for Access approval when needed, stores the scoped agent token in the operating-system credential store, negotiates both MCP tools, verifies both skills, and writes a private machine-readable receipt. Restart the agent session, then ask it to share or read an artifact.
+
+For a custom deployment, use the explicit connection command:
+
+```sh
+pnpm dlx artifactpass connect https://artifacts.example.com \
   --profile production \
   --workspace-root /absolute/path/to/approved/workspace
 ```
 
-The command detects known ecosystem installers, installs the same portable package, opens a browser for Access approval, stores the scoped agent token in the operating-system credential store, and writes only non-secret connection settings locally. Restart the agent session, then ask it to share or read an artifact.
-
 For any other MCP and Agent Skills compatible system, configure the same package without running a vendor installer:
 
 ```sh
-pnpm dlx @artifact-share/setup connect https://artifacts.example.com \
+pnpm dlx artifactpass connect https://artifacts.example.com \
   --profile production \
   --no-host-install \
   --workspace-root /absolute/path/to/approved/workspace
@@ -96,7 +102,7 @@ node packages/setup-cli/dist/cli.mjs profile use local
 node packages/setup-cli/dist/cli.mjs profile use production
 ```
 
-`ARTIFACT_SHARE_PROFILE=production` selects a profile for one bridge process
+`ARTIFACTPASS_PROFILE=production` selects a profile for one bridge process
 without changing the saved active profile. Production continues to require HTTPS
 and device authorization.
 
@@ -114,13 +120,13 @@ upload token. Public artifact reads need no token. Paste the token into the
 browser entry page, or pass it to an agent bridge only through its environment:
 
 ```sh
-export ARTIFACT_SHARE_BASE_URL=https://generated-name.trycloudflare.com
-export ARTIFACT_SHARE_WORKSPACE_ROOTS=/absolute/path/to/approved/workspace
-read -rs ARTIFACT_SHARE_TOKEN && export ARTIFACT_SHARE_TOKEN
+export ARTIFACTPASS_BASE_URL=https://generated-name.trycloudflare.com
+export ARTIFACTPASS_WORKSPACE_ROOTS=/absolute/path/to/approved/workspace
+read -rs ARTIFACTPASS_TOKEN && export ARTIFACTPASS_TOKEN
 # Start the compatible agent host from this shell.
 ```
 
-Do not set `ARTIFACT_SHARE_OPEN_DEVELOPMENT` for the public HTTPS tunnel and do
+Do not set `ARTIFACTPASS_OPEN_DEVELOPMENT` for the public HTTPS tunnel and do
 not save its token in shared configuration. Ctrl+C stops cloudflared and the
 token-validating gateway together. The helper uses a private empty Cloudflare
 configuration, so it requires no domain, account, or credentials and does not

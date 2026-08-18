@@ -2,9 +2,10 @@
 
 ## Product identity
 
-- The repository and project name is exactly `lordebuilds.artifacts.share`.
+- The public product, repository target, package, executable, plugin, marketplace, MCP registration key, and skill namespace are `ArtifactPass` or `artifactpass`.
+- Preserve `lordebuilds.artifacts.share` and `lordebuilds-artifacts-share` only where they are stable compatibility, Cloudflare resource, health-service, storage, or signed-protocol identifiers.
 - Keep paths inside the repository in kebab-case unless a platform requires another form.
-- Treat package names, plugin identifiers, CLI names, and public branding as separate decisions; do not infer them from the repository name.
+- Do not create vendor-specific product implementations; host adapters register the same portable MCP and Agent Skills bundle.
 
 ## Package management
 

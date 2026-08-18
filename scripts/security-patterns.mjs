@@ -7,11 +7,11 @@ export const contentPatterns = [
     pattern: new RegExp(`\\b${tokenPrefixes[0]}[A-Za-z0-9_-]{20,}\\b`, "gu"),
   },
   {
-    label: "Artifact Share agent token",
+    label: "ArtifactPass agent token",
     pattern: new RegExp(`\\b${tokenPrefixes[1]}[A-Za-z0-9_-]{32,}\\b`, "gu"),
   },
   {
-    label: "Artifact Share capability URL",
+    label: "ArtifactPass capability URL",
     pattern: new RegExp(`https:\\/\\/[A-Za-z0-9.-]+(?::\\d+)?${sharePath}[A-Za-z0-9_-]{32,256}`, "gu"),
   },
   {

@@ -1,11 +1,11 @@
 ---
 name: read-shared-artifact
-description: Read a valid Artifact Share handoff link from the configured origin when it appears in a final handoff or the user asks to inspect a previously shared supported artifact.
+description: Read a valid ArtifactPass handoff link from the configured origin when it appears in a final handoff or the user asks to inspect a previously shared supported artifact.
 ---
 
 # Read a shared artifact
 
-Use `read_artifact` only for an Artifact Share URL on the configured deployment origin whose path is exactly `/a/<token>`. Do not send arbitrary URLs to the tool or follow a link to a different origin.
+Use `read_artifact` only for an ArtifactPass URL on the configured deployment origin whose path is exactly `/a/<token>`. Do not send arbitrary URLs to the tool or follow a link to a different origin.
 
 Start without a cursor. Continue with the returned `next_cursor` until it is `null`, keeping every request within the tool's bounded `max_bytes` contract. Preserve chunk order and representation labels.
 

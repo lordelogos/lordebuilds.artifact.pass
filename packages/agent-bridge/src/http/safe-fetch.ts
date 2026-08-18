@@ -66,18 +66,18 @@ export const assertDeploymentOrigin = (
     (url.pathname !== "/" && url.pathname !== "")
   ) {
     throw new Error(openDevelopment
-      ? "Artifact Share development deployment must be a credential-free local HTTP origin"
-      : "Artifact Share deployment must be a credential-free HTTPS origin");
+      ? "ArtifactPass development deployment must be a credential-free local HTTP origin"
+      : "ArtifactPass deployment must be a credential-free HTTPS origin");
   }
   const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/gu, "");
   if (openDevelopment && (url.protocol !== "http:" || !isLocalHostname(hostname))) {
-    throw new Error("Artifact Share development deployment must be a credential-free local HTTP origin");
+    throw new Error("ArtifactPass development deployment must be a credential-free local HTTP origin");
   }
   if (!openDevelopment && url.protocol !== "https:") {
-    throw new Error("Artifact Share deployment must be a credential-free HTTPS origin");
+    throw new Error("ArtifactPass deployment must be a credential-free HTTPS origin");
   }
   if (!openDevelopment && isNonPublicHostname(hostname)) {
-    throw new Error("Artifact Share deployment origin must not target a private network");
+    throw new Error("ArtifactPass deployment origin must not target a private network");
   }
   return new URL(url.origin);
 };
@@ -93,7 +93,7 @@ export const fetchWithoutRedirects = async (
 ): Promise<Response> => {
   const timeoutMs = options.timeoutMs ?? defaultFetchTimeoutMs;
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) {
-    throw new RangeError("Artifact Share request timeout must be a positive integer");
+    throw new RangeError("ArtifactPass request timeout must be a positive integer");
   }
   const timeoutSignal = AbortSignal.timeout(timeoutMs);
   const signal = init.signal === undefined || init.signal === null
@@ -101,7 +101,7 @@ export const fetchWithoutRedirects = async (
     : AbortSignal.any([init.signal, timeoutSignal]);
   const response = await fetchImplementation(input, { ...init, redirect: "manual", signal });
   if (redirectStatuses.has(response.status) || response.redirected) {
-    throw new Error("Artifact Share rejected a redirect response");
+    throw new Error("ArtifactPass rejected a redirect response");
   }
   return response;
 };
@@ -113,7 +113,7 @@ export const responseError = async (response: Response): Promise<Error> => {
     const detail = parsed.data.error.code === "invalid_expiry"
       ? ` (${parsed.data.error.message})`
       : "";
-    return new Error(`Artifact Share request failed: ${parsed.data.error.code}${detail}`);
+    return new Error(`ArtifactPass request failed: ${parsed.data.error.code}${detail}`);
   }
-  return new Error(`Artifact Share request failed with status ${response.status}`);
+  return new Error(`ArtifactPass request failed with status ${response.status}`);
 };

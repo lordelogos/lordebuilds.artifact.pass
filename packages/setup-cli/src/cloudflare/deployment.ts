@@ -235,7 +235,7 @@ export const deployArtifactShare = async (
   const plan = deploymentPlan(input);
   const serviceName = input.serviceName ?? "lordebuilds-artifacts-share";
   const baseUrl = `https://${input.hostname}`;
-  const teamCommand = `pnpm dlx @artifact-share/setup connect ${baseUrl}`;
+  const teamCommand = `pnpm dlx artifactpass connect ${baseUrl}`;
   if (input.dryRun) return { baseUrl, teamCommand, plan, changed: [] };
 
   const runner = dependencies.runner ?? runProcess;

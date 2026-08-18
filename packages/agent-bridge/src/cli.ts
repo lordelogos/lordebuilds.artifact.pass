@@ -6,6 +6,6 @@ try {
 } catch (error) {
   process.stderr.write(`${error instanceof Error
     ? redactSensitiveText(error.message)
-    : "Artifact Share bridge failed"}\n`);
+    : "ArtifactPass bridge failed"}\n`);
   process.exitCode = 1;
 }

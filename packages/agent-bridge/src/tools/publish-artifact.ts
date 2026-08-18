@@ -80,7 +80,7 @@ const authorizePublishDependencies = (
     return { ...dependencies, openDevelopment: true, token };
   }
   if (!token) {
-    throw new Error("A non-empty Artifact Share token is required for production publishing");
+    throw new Error("A non-empty ArtifactPass token is required for production publishing");
   }
   return { ...dependencies, openDevelopment: false, token };
 };
@@ -360,7 +360,7 @@ export const publishArtifact = async (
     try {
       parseShareUrl(result.share_url, baseUrl);
     } catch {
-      throw new Error("Artifact Share returned a foreign share origin");
+      throw new Error("ArtifactPass returned a foreign share origin");
     }
     await journal.acknowledge(
       payloadCommitment,

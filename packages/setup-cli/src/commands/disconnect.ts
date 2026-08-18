@@ -20,7 +20,7 @@ export const selectDisconnectProfile = (
       options.baseUrl !== undefined &&
       new URL(selected.settings.base_url).toString() !== new URL(options.baseUrl).toString()
     ) {
-      throw new Error(`Artifact Share profile ${selected.name} does not use ${options.baseUrl}`);
+      throw new Error(`ArtifactPass profile ${selected.name} does not use ${options.baseUrl}`);
     }
     return selected;
   }
@@ -31,8 +31,8 @@ export const selectDisconnectProfile = (
     .map(([name]) => name);
   if (matches.length !== 1) {
     throw new Error(matches.length === 0
-      ? `No Artifact Share profile uses ${options.baseUrl}`
-      : `More than one Artifact Share profile uses ${options.baseUrl}; specify --profile`);
+      ? `No ArtifactPass profile uses ${options.baseUrl}`
+      : `More than one ArtifactPass profile uses ${options.baseUrl}; specify --profile`);
   }
   return selectLocalBridgeProfile(settings, matches[0] ?? "");
 };
@@ -66,7 +66,7 @@ export const disconnectHost = async (
     redirect: "error",
   });
   if (!response.ok && response.status !== 404) {
-    throw new Error(`Could not revoke Artifact Share connection (${response.status})`);
+    throw new Error(`Could not revoke ArtifactPass connection (${response.status})`);
   }
   await store.delete();
 };

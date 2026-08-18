@@ -20,7 +20,7 @@ const applicationRoot = join(repositoryRoot, "apps/artifact-service");
 const formats = [
   { name: "network-test.md", type: "text/markdown", bytes: Buffer.from("# LAN artifact\n\nExact Markdown bytes.\n") },
   { name: "network-test.html", type: "text/html", bytes: Buffer.from("<!doctype html><title>LAN artifact</title><main>Exact HTML bytes.</main>") },
-  { name: "network-test.pdf", type: "application/pdf", bytes: Buffer.from("%PDF-1.4\n% Artifact Share network fixture\n%%EOF\n") },
+  { name: "network-test.pdf", type: "application/pdf", bytes: Buffer.from("%PDF-1.4\n% ArtifactPass network fixture\n%%EOF\n") },
 ];
 
 const assert = (condition, message) => {
@@ -43,7 +43,7 @@ const freePort = async () => new Promise((resolvePort, reject) => {
 
 const health = async (origin) => {
   const response = await fetch(new URL("/health", origin), { redirect: "manual" });
-  assert(response.ok, `Artifact Share is not reachable at ${origin} (${response.status})`);
+  assert(response.ok, `ArtifactPass is not reachable at ${origin} (${response.status})`);
 };
 
 const stopProcess = async (child) => {

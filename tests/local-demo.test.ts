@@ -325,7 +325,7 @@ describe("real persistent local Cloudflare lifecycle", () => {
     await expectPage(desktopPage.getByRole("button", { name: "Choose a file" })).toBeEnabled();
     await desktopPage.keyboard.press("Tab");
     expect(await desktopPage.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe(
-      "Artifact Share upload",
+      "ArtifactPass upload",
     );
     for (let presses = 0; presses < 3; presses += 1) {
       await desktopPage.keyboard.press("Tab");

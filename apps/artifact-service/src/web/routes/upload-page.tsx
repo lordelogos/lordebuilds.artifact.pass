@@ -190,7 +190,7 @@ export function UploadPage() {
   return (
     <main className="upload-shell">
       <header className="masthead">
-        <a className="wordmark" href="/upload" aria-label="Artifact Share upload">Artifact Share</a>
+        <a className="wordmark" href="/upload" aria-label="ArtifactPass upload">ArtifactPass</a>
         <span className="masthead__note">Temporary handoffs, exact source</span>
       </header>
 

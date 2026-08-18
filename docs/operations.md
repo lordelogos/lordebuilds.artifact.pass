@@ -15,7 +15,7 @@ Monitor Worker error rate, D1 failures, R2 failures, Access denials, and schedul
 ## Clean-account deployment checklist
 
 1. Create or select an active zone and Zero Trust organization.
-2. Run `artifact-share doctor` and a mutation-free `deploy --dry-run`.
+2. Run `pnpm dlx artifactpass doctor` and a mutation-free `deploy --dry-run`.
 3. Authenticate Wrangler using its OS-keychain option or expose a short-lived API token only to the deployment process.
 4. Deploy with one or more explicit `--allow-email` or `--allow-domain` rules.
 5. Rerun the identical deploy and confirm it reuses resources without duplicates.
@@ -40,7 +40,7 @@ On Linux, retrieve the token through `secret-tool` instead. The two-agent spec d
 
 ## Upgrade
 
-Read release notes, run `pnpm dlx @artifact-share/setup@<new-version> doctor`, and run a dry-run against the current resource identifiers. Back up D1 before a migration. Deploy the pinned version, verify health and Access boundaries, reconnect one disposable host, and run the handoff gate. The deployment command is idempotent and preserves existing D1/R2 resources.
+Read release notes, run `pnpm dlx artifactpass@<new-version> doctor`, and run a dry-run against the current resource identifiers. Back up D1 before a migration. Deploy the pinned version, verify health and Access boundaries, reconnect one disposable host, and run the handoff gate. The deployment command is idempotent and preserves existing D1/R2 resources.
 
 ## Rollback
 

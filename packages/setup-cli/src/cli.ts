@@ -73,10 +73,11 @@ const print = (valueToPrint: unknown): void => {
   process.stdout.write(`${typeof valueToPrint === "string" ? valueToPrint : JSON.stringify(valueToPrint, null, 2)}\n`);
 };
 
-const help = `Artifact Share setup
+const help = `ArtifactPass setup
 
 Commands:
   artifactpass [--json]
+  install [--base-url <url>] [--profile <name>] [--workspace-root <path>] [--open-development] [--no-host-install] [--json]
   deploy --account-id <id> --zone-id <id> --hostname <host> --workers-subdomain <name> --pdf-key-id <id> --pdf-public-key <base64> (--allow-email <email> | --allow-domain <domain>) (--dry-run | --write-approval-manifest <path> | --approve-manifest <path>)
   connect <base-url> [--profile <name>] [--workspace-root <path>] [--host codex|claude|both] [--no-host-install] [--marketplace <source>] [--open-development]
   profile list
@@ -84,7 +85,7 @@ Commands:
   disconnect [--profile <name>]
   doctor
 
-Cloudflare credentials come from CLOUDFLARE_API_TOKEN or Wrangler OAuth and are never persisted by Artifact Share.`;
+Cloudflare credentials come from CLOUDFLARE_API_TOKEN or Wrangler OAuth and are never persisted by ArtifactPass.`;
 
 let jsonOutputRequested = false;
 
@@ -245,11 +246,11 @@ const main = async (): Promise<void> => {
       ...(baseUrl === undefined ? {} : { baseUrl }),
     });
     if (selected.settings.open_development === true) {
-      print(`Artifact Share ${selected.name} profile is local development and has no agent token.`);
+      print(`ArtifactPass ${selected.name} profile is local development and has no agent token.`);
       return;
     }
     await disconnectHost(selected.settings.base_url, { profileName: selected.name });
-    print(`Artifact Share ${selected.name} token revoked and removed from the OS credential store.`);
+    print(`ArtifactPass ${selected.name} token revoked and removed from the OS credential store.`);
     return;
   }
   throw new Error(`Unknown command: ${command}`);
@@ -261,6 +262,6 @@ void main().catch((error: unknown) => {
     process.exitCode = 1;
     return;
   }
-  process.stderr.write(`${error instanceof Error ? redactSensitiveText(error.message) : "Artifact Share setup failed"}\n`);
+  process.stderr.write(`${error instanceof Error ? redactSensitiveText(error.message) : "ArtifactPass setup failed"}\n`);
   process.exitCode = 1;
 });

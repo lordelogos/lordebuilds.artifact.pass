@@ -56,13 +56,13 @@ export const renderSharePage = ({
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="referrer" content="no-referrer" />
-        <title>{`${manifest.filename} · Artifact Share`}</title>
+        <title>{`${manifest.filename} · ArtifactPass`}</title>
         <style nonce={nonce} dangerouslySetInnerHTML={{ __html: pageStyles }} />
       </head>
       <body data-expires-at={manifest.expires_at}>
         <main className="shell">
           <header className="mast">
-            <span className="brand">Artifact Share</span>
+            <span className="brand">ArtifactPass</span>
             <span className="meta">Temporary bearer link</span>
           </header>
           <section className="heading" aria-labelledby="artifact-title">

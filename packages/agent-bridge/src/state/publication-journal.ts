@@ -77,11 +77,11 @@ const validateEntryMap = (
   legacy: boolean,
 ): Readonly<Record<string, JournalEntry>> => {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("Artifact Share publication state is malformed");
+    throw new Error("ArtifactPass publication state is malformed");
   }
   const entries = Object.entries(value as Record<string, unknown>);
   if (entries.length > maximumEntries) {
-    throw new Error("Artifact Share publication state exceeds its bounded capacity");
+    throw new Error("ArtifactPass publication state exceeds its bounded capacity");
   }
   const validated: Record<string, JournalEntry> = {};
   for (const [commitment, raw] of entries) {
@@ -91,7 +91,7 @@ const validateEntryMap = (
       typeof raw !== "object" ||
       Array.isArray(raw)
     ) {
-      throw new Error("Artifact Share publication state is malformed");
+      throw new Error("ArtifactPass publication state is malformed");
     }
     const entry = raw as Record<string, unknown>;
     const expiresAt = legacy ? 0 : entry.expires_at;
@@ -106,7 +106,7 @@ const validateEntryMap = (
       !Number.isSafeInteger(expiresAt) ||
       expiresAt < 0
     ) {
-      throw new Error("Artifact Share publication state is malformed");
+      throw new Error("ArtifactPass publication state is malformed");
     }
     validated[commitment] = {
       attempt_id: entry.attempt_id,
@@ -120,7 +120,7 @@ const validateEntryMap = (
 
 const validateState = (value: unknown): JournalState => {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("Artifact Share publication state is malformed");
+    throw new Error("ArtifactPass publication state is malformed");
   }
   const candidate = value as Record<string, unknown>;
   if (
@@ -128,7 +128,7 @@ const validateState = (value: unknown): JournalState => {
     typeof candidate.publisher_id !== "string" ||
     !publisherPattern.test(candidate.publisher_id)
   ) {
-    throw new Error("Artifact Share publication state is malformed");
+    throw new Error("ArtifactPass publication state is malformed");
   }
   const legacy = candidate.version === 1;
   return {
@@ -177,7 +177,7 @@ export class MemoryPublicationJournal implements PublicationJournal {
       while (this.pending.size + this.acknowledged.size >= maximumEntries) {
         const oldestAcknowledged = this.acknowledged.keys().next().value as string | undefined;
         if (oldestAcknowledged === undefined) {
-          throw new Error("Artifact Share publication journal is full of pending attempts");
+          throw new Error("ArtifactPass publication journal is full of pending attempts");
         }
         this.acknowledged.delete(oldestAcknowledged);
       }
@@ -242,7 +242,7 @@ export class FilePublicationJournal implements PublicationJournal {
     try {
       const source = await readFile(this.path, "utf8");
       if (Buffer.byteLength(source) > 32 * 1024) {
-        throw new Error("Artifact Share publication state is too large");
+        throw new Error("ArtifactPass publication state is too large");
       }
       return validateState(JSON.parse(source));
     } catch (error) {
@@ -357,7 +357,7 @@ export class FilePublicationJournal implements PublicationJournal {
       "ORDER BY updated_at ASC, payload_commitment ASC LIMIT ?)",
     ).run(overflow);
     if (result.changes < overflow) {
-      throw new Error("Artifact Share publication journal is full of pending attempts");
+      throw new Error("ArtifactPass publication journal is full of pending attempts");
     }
   }
 
@@ -378,7 +378,7 @@ export class FilePublicationJournal implements PublicationJournal {
         .prepare("SELECT value FROM publication_metadata WHERE key = 'publisher_id'")
         .get() as { readonly value: string } | undefined;
       if (publisher === undefined || !publisherPattern.test(publisher.value)) {
-        throw new Error("Artifact Share publication state is malformed");
+        throw new Error("ArtifactPass publication state is malformed");
       }
       const existing = database.prepare(
         "SELECT attempt_id, share_token, updated_at, expires_at, acknowledged " +

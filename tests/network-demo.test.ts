@@ -192,7 +192,7 @@ describe("network demo helpers", () => {
     expect(browserUpload.status).toBe(201);
   });
 
-  it("rejects a loopback service that does not identify as Artifact Share", async () => {
+  it("rejects a loopback service that does not identify as ArtifactPass", async () => {
     const unrelated = await localService({ status: "ok" });
 
     await expect(createTunnelGateway({ targetOrigin: unrelated.origin }))

@@ -170,7 +170,7 @@ const assertRuntimeConformance = async (host, installedRoot, resolvedServer) => 
       validation.isError !== true ||
       JSON.stringify(validation.content) !== JSON.stringify([{
         type: "text",
-        text: "Artifact Share URL must use the configured deployment origin",
+        text: "ArtifactPass URL must use the configured deployment origin",
       }])
     ) {
       throw new Error(`${host} did not invoke the installed MCP safety boundary`);

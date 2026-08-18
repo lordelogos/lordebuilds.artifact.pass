@@ -82,7 +82,7 @@ const errorResult = (error: unknown) => ({
     type: "text" as const,
     text: error instanceof Error
       ? redactSensitiveText(error.message)
-      : "Artifact Share bridge failed",
+      : "ArtifactPass bridge failed",
   }],
 });
 
@@ -149,7 +149,7 @@ export const createBridgeServer = (configuration: BridgeConfiguration): McpServe
 
   server.registerTool("read_artifact", {
     title: "Read Artifact",
-    description: "Read a configured Artifact Share URL in bounded deterministic chunks with exact-source and PDF fidelity metadata." + connectionContext,
+    description: "Read a configured ArtifactPass URL in bounded deterministic chunks with exact-source and PDF fidelity metadata." + connectionContext,
     inputSchema: readArtifactInputSchema,
     outputSchema: readArtifactOutputSchema,
     annotations: {

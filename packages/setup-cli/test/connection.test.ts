@@ -51,7 +51,7 @@ describe("host connection", () => {
     expect(selectDisconnectProfile(settings, { baseUrl: "https://artifactpass.com" }).name)
       .toBe("production");
     expect(() => selectDisconnectProfile(settings, { baseUrl: "https://unknown.example" }))
-      .toThrow("No Artifact Share profile uses");
+      .toThrow("No ArtifactPass profile uses");
     expect(() => selectDisconnectProfile(settings, {
       profileName: "local",
       baseUrl: "https://artifactpass.com",
@@ -627,7 +627,7 @@ describe("host connection", () => {
         fetch,
       },
     })).rejects.toThrow(
-      "Disconnect the existing hosted Artifact Share production profile before replacing it with open development",
+      "Disconnect the existing hosted ArtifactPass production profile before replacing it with open development",
     );
 
     expect(fetch).toHaveBeenCalledOnce();

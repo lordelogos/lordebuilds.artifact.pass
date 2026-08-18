@@ -1,6 +1,6 @@
 # Contributing
 
-Artifact Share v1 stays deliberately small: one customer-owned Cloudflare deployment, one temporary URL, and the same artifact for humans, Claude Code, and Codex. Proposals for billing, hosted multi-tenancy, entitlements, dashboards, or artifact history are outside this repository's v1 scope.
+ArtifactPass v1 stays deliberately small: one customer-owned Cloudflare deployment, one temporary URL, and the same artifact for humans, Claude Code, and Codex. Proposals for billing, hosted multi-tenancy, entitlements, dashboards, or artifact history are outside this repository's v1 scope.
 
 ## Development
 

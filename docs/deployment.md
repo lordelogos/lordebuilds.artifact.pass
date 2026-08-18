@@ -1,6 +1,6 @@
-# Deploy Artifact Share
+# Deploy ArtifactPass
 
-Artifact Share runs in your Cloudflare account on one custom hostname. D1 metadata and private R2 objects stay in that account. `/upload` and `/connect/approve` are protected by one Cloudflare Access application; `/api/*` uses a scoped Artifact Share bearer token; `/a/*` is a temporary capability URL.
+ArtifactPass runs in your Cloudflare account on one custom hostname. D1 metadata and private R2 objects stay in that account. `/upload` and `/connect/approve` are protected by one Cloudflare Access application; `/api/*` uses a scoped ArtifactPass bearer token; `/a/*` is a temporary capability URL.
 
 ## Prerequisites
 
@@ -45,7 +45,7 @@ The complete values, command order, verification, and rollback checklist is in t
 Run the team command printed by deployment:
 
 ```sh
-pnpm dlx @artifact-share/setup connect https://artifacts.example.com --profile production
+pnpm dlx artifactpass connect https://artifacts.example.com --profile production
 ```
 
 The command detects Claude Code and Codex, installs the same plugin, opens the Access-protected device approval page, stores the scoped agent token in the production profile's operating-system credential account, and writes only non-secret profile settings locally. The existing local development profile is preserved. A trusted host that creates controlled PDFs must also receive the matching private key through the team's secret manager; it is never downloaded from the service.
@@ -53,7 +53,7 @@ The command detects Claude Code and Codex, installs the same plugin, opens the A
 To revoke the current agent token and remove it from the credential store:
 
 ```sh
-pnpm dlx @artifact-share/setup disconnect --profile production
+pnpm dlx artifactpass disconnect --profile production
 ```
 
 ## Manual fallback

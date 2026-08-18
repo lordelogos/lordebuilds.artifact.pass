@@ -20,12 +20,12 @@ Approved values for the first private hosted run:
 | Workers account subdomain | `artifactpass`; initialized only because Cloudflare requires an account subdomain for cron schedules, while this Worker keeps `workers_dev` and preview URLs disabled |
 | Access audience | Created or reused Access application's AUD tag; the deployer stores it as `ACCESS_AUD` |
 | DNS | Use a Worker Custom Domain. Cloudflare creates its DNS record and certificate; the chosen hostname must not already have a conflicting CNAME or Worker |
-| PDF provenance | Key ID `artifactpass-primary`; the deployment copy of the private Ed25519 key is in macOS Keychain service `artifactpass-pdf-signing-key`, the bridge copy is in service `lordebuilds.artifacts.share` account `pdf-signing-key:artifactpass-primary`, and the public half is in `artifactpass-pdf-public-key` |
-| Repository | Keep `lordelogos/lordebuilds.artifacts.share` **private** until the user explicitly changes that decision |
+| PDF provenance | Key ID `artifactpass-primary`; the deployment copy of the private Ed25519 key is in macOS Keychain service `artifactpass-pdf-signing-key`, the bridge copy is in service `artifactpass` account `pdf-signing-key:artifactpass-primary`, and the public half is in `artifactpass-pdf-public-key` |
+| Repository | Keep `lordelogos/artifactpass` **private** until the user explicitly changes that decision |
 | Git destination | On approval, push the reviewed branch to the private GitHub repository; do not push during local readiness work |
-| Package/release destination | Recommended first release: private GitHub Actions artifacts from a reviewed tag. Do not publish `@artifact-share/setup` to a registry until the user explicitly chooses a registry and visibility |
+| Package/release destination | The reviewed package is `artifactpass`. Registry publication remains a separate explicit approval after the local release candidate passes. |
 
-The deployer uses the canonical name `lordebuilds-artifacts-share` for the Worker, D1 database, R2 bucket, and Access application. The Worker bindings are `ARTIFACT_DB` and `ARTIFACTS`. The Access allow policy is named `Artifact Share uploaders`. R2 remains private. The public surfaces are `/health` and temporary `/a/*` bearer URLs; Access protects `/upload*` and `/connect/approve*`.
+The deployer uses the compatibility name `lordebuilds-artifacts-share` for the Worker, D1 database, R2 bucket, and Access application. The Worker bindings are `ARTIFACT_DB` and `ARTIFACTS`. The existing Access allow policy remains named `Artifact Share uploaders`. These identifiers are deliberately not renamed as a branding side effect. R2 remains private. The public surfaces are `/health` and temporary `/a/*` bearer URLs; Access protects `/upload*` and `/connect/approve*`.
 
 Cloudflare requires an [active zone for a Worker Custom Domain](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/). A Custom Domain is the right DNS choice because the Worker is the origin. No manual placeholder DNS record is needed.
 
@@ -125,7 +125,7 @@ Run from the repository root.
 
    ```sh
    security add-generic-password -U \
-     -s lordebuilds.artifacts.share \
+     -s artifactpass \
      -a pdf-signing-key:artifactpass-primary \
      -w "$(security find-generic-password -w -s artifactpass-pdf-signing-key -a "$USER")"
    ```

@@ -40,46 +40,46 @@ const canonicalize = (value: unknown): unknown => {
 
 export const validateProfileName = (name: string): string => {
   if (!profileNamePattern.test(name)) {
-    throw new Error("Artifact Share profile names use 1-32 lowercase letters, numbers, or hyphens");
+    throw new Error("ArtifactPass profile names use 1-32 lowercase letters, numbers, or hyphens");
   }
   return name;
 };
 
 const validateProfile = (value: unknown): LocalBridgeProfileSettings => {
   if (!isRecord(value)) {
-    throw new Error("Artifact Share profile must contain a JSON object");
+    throw new Error("ArtifactPass profile must contain a JSON object");
   }
   const candidate = value;
   if (typeof candidate.base_url !== "string") {
-    throw new Error("Artifact Share profile requires a base URL");
+    throw new Error("ArtifactPass profile requires a base URL");
   }
   if (
     !Array.isArray(candidate.workspace_roots) ||
     candidate.workspace_roots.length === 0 ||
     !candidate.workspace_roots.every((root) => typeof root === "string" && resolve(root) === root)
   ) {
-    throw new Error("Artifact Share config requires absolute workspace roots");
+    throw new Error("ArtifactPass config requires absolute workspace roots");
   }
   if (candidate.credential_namespace !== undefined && candidate.credential_namespace !== "artifactpass") {
-    throw new Error("Artifact Share config contains an invalid credential namespace");
+    throw new Error("ArtifactPass config contains an invalid credential namespace");
   }
   if (candidate.open_development !== undefined && candidate.open_development !== true) {
-    throw new Error("Artifact Share config open_development must be true when enabled");
+    throw new Error("ArtifactPass config open_development must be true when enabled");
   }
   if (
     candidate.pdf_key_id !== undefined &&
     (typeof candidate.pdf_key_id !== "string" || !/^[A-Za-z0-9._-]{1,64}$/u.test(candidate.pdf_key_id))
   ) {
-    throw new Error("Artifact Share config contains an invalid PDF signing key ID");
+    throw new Error("ArtifactPass config contains an invalid PDF signing key ID");
   }
   if (candidate.publication_state !== undefined && candidate.publication_state !== "legacy") {
-    throw new Error("Artifact Share config contains an invalid publication state mode");
+    throw new Error("ArtifactPass config contains an invalid publication state mode");
   }
   if (
     candidate.publication_state_path !== undefined &&
     (typeof candidate.publication_state_path !== "string" || resolve(candidate.publication_state_path) !== candidate.publication_state_path)
   ) {
-    throw new Error("Artifact Share config contains an invalid publication state path");
+    throw new Error("ArtifactPass config contains an invalid publication state path");
   }
   return {
     base_url: candidate.base_url,
@@ -97,7 +97,7 @@ const validateProfile = (value: unknown): LocalBridgeProfileSettings => {
 };
 
 const validateSettings = (value: unknown): LocalBridgeSettings => {
-  if (!isRecord(value)) throw new Error("Artifact Share config must contain a JSON object");
+  if (!isRecord(value)) throw new Error("ArtifactPass config must contain a JSON object");
   if (value.version === 1) {
     const profile = validateProfile(value);
     const name = profile.open_development === true ? "local" : "production";
@@ -108,17 +108,17 @@ const validateSettings = (value: unknown): LocalBridgeSettings => {
     };
   }
   if (value.version !== 2 || typeof value.active_profile !== "string" || !isRecord(value.profiles)) {
-    throw new Error("Artifact Share config has an unsupported format");
+    throw new Error("ArtifactPass config has an unsupported format");
   }
   const entries = Object.entries(value.profiles);
-  if (entries.length === 0) throw new Error("Artifact Share config requires at least one profile");
+  if (entries.length === 0) throw new Error("ArtifactPass config requires at least one profile");
   const profiles = Object.fromEntries(entries.map(([name, profile]) => [
     validateProfileName(name),
     validateProfile(profile),
   ]));
   validateProfileName(value.active_profile);
   if (!Object.hasOwn(profiles, value.active_profile)) {
-    throw new Error(`Unknown Artifact Share profile: ${value.active_profile}`);
+    throw new Error(`Unknown ArtifactPass profile: ${value.active_profile}`);
   }
   return { version: 2, active_profile: value.active_profile, profiles };
 };
@@ -128,9 +128,9 @@ export const selectLocalBridgeProfile = (
   requestedProfile?: string,
 ): { readonly name: string; readonly settings: LocalBridgeProfileSettings } => {
   const name = validateProfileName(requestedProfile ?? settings.active_profile);
-  if (!Object.hasOwn(settings.profiles, name)) throw new Error(`Unknown Artifact Share profile: ${name}`);
+  if (!Object.hasOwn(settings.profiles, name)) throw new Error(`Unknown ArtifactPass profile: ${name}`);
   const profile = settings.profiles[name];
-  if (profile === undefined) throw new Error(`Unknown Artifact Share profile: ${name}`);
+  if (profile === undefined) throw new Error(`Unknown ArtifactPass profile: ${name}`);
   return { name, settings: profile };
 };
 
@@ -191,7 +191,7 @@ export const legacyLocalConfigPath = (
   if (platform === "win32") {
     const applicationData = environment.APPDATA;
     if (applicationData === undefined || applicationData.length === 0) {
-      throw new Error("APPDATA is required to locate Artifact Share config");
+      throw new Error("APPDATA is required to locate ArtifactPass config");
     }
     return resolve(applicationData, "lordebuilds.artifacts.share", "config.json");
   }
@@ -206,7 +206,7 @@ export const legacyLocalConfigPath = (
 };
 
 const parseSettings = (contents: string): LocalBridgeSettings => {
-  if (Buffer.byteLength(contents) > 16 * 1024) throw new Error("Artifact Share config is too large");
+  if (Buffer.byteLength(contents) > 16 * 1024) throw new Error("ArtifactPass config is too large");
   return validateSettings(JSON.parse(contents));
 };
 

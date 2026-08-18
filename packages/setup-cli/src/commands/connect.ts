@@ -42,7 +42,7 @@ const revokeToken = async (
     { method: "DELETE", headers: { Authorization: `Bearer ${token}` } },
   );
   if (!response.ok && response.status !== 404) {
-    throw new Error(`Could not revoke Artifact Share connection (${response.status})`);
+    throw new Error(`Could not revoke ArtifactPass connection (${response.status})`);
   }
 };
 
@@ -140,7 +140,7 @@ export const connectHost = async (
     healthBody?.service !== "lordebuilds.artifacts.share" ||
     healthBody.status !== "ok"
   ) {
-    throw new Error(`Artifact Share health check failed (${health.status})`);
+    throw new Error(`ArtifactPass health check failed (${health.status})`);
   }
   const configPath = input.configPath ?? defaultLocalConfigPath();
   let migration: Awaited<ReturnType<typeof migrateLegacyLocalState>> | undefined;
@@ -171,7 +171,7 @@ export const connectHost = async (
     const previousToken = await store.get();
     if (previousToken !== null) {
       throw new Error(
-        `Disconnect the existing hosted Artifact Share ${profileName} profile before replacing it with open development`,
+        `Disconnect the existing hosted ArtifactPass ${profileName} profile before replacing it with open development`,
       );
     }
   }
@@ -242,7 +242,7 @@ export const connectHost = async (
   }
   const previousToken = await store.get();
   if (previousToken !== null && previousProfile === undefined) {
-    throw new Error(`The existing Artifact Share ${profileName} credential has no matching profile; disconnect it first`);
+    throw new Error(`The existing ArtifactPass ${profileName} credential has no matching profile; disconnect it first`);
   }
   if (
     previousToken !== null &&
@@ -345,7 +345,7 @@ export const connectHost = async (
       await restoreConfig.catch((cleanupError: unknown) => cleanupErrors.push(cleanupError));
     }
     if (cleanupErrors.length > 0) {
-      throw new AggregateError([error, ...cleanupErrors], "Artifact Share connection failed and cleanup was incomplete");
+      throw new AggregateError([error, ...cleanupErrors], "ArtifactPass connection failed and cleanup was incomplete");
     }
     throw error;
   }

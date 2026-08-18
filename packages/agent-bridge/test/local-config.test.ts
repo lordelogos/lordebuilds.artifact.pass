@@ -64,8 +64,8 @@ describe("local bridge config", () => {
       settings: production,
     });
     expect(setActiveLocalBridgeProfile(withBoth, "local").active_profile).toBe("local");
-    expect(() => selectLocalBridgeProfile(withBoth, "staging")).toThrow("Unknown Artifact Share profile");
-    expect(() => selectLocalBridgeProfile(withBoth, "constructor")).toThrow("Unknown Artifact Share profile");
+    expect(() => selectLocalBridgeProfile(withBoth, "staging")).toThrow("Unknown ArtifactPass profile");
+    expect(() => selectLocalBridgeProfile(withBoth, "constructor")).toThrow("Unknown ArtifactPass profile");
   });
 
   it("rejects an inherited property as the active profile", async () => {
@@ -83,7 +83,7 @@ describe("local bridge config", () => {
       },
     }));
 
-    await expect(readLocalBridgeSettings(path)).rejects.toThrow("Unknown Artifact Share profile: constructor");
+    await expect(readLocalBridgeSettings(path)).rejects.toThrow("Unknown ArtifactPass profile: constructor");
   });
 
   it("keeps a legacy SQLite publication journal on its original path across upgrade", async () => {

@@ -91263,35 +91263,35 @@ var canonicalize = (value) => {
 };
 var validateProfileName = (name) => {
   if (!profileNamePattern.test(name)) {
-    throw new Error("Artifact Share profile names use 1-32 lowercase letters, numbers, or hyphens");
+    throw new Error("ArtifactPass profile names use 1-32 lowercase letters, numbers, or hyphens");
   }
   return name;
 };
 var validateProfile = (value) => {
   if (!isRecord(value)) {
-    throw new Error("Artifact Share profile must contain a JSON object");
+    throw new Error("ArtifactPass profile must contain a JSON object");
   }
   const candidate = value;
   if (typeof candidate.base_url !== "string") {
-    throw new Error("Artifact Share profile requires a base URL");
+    throw new Error("ArtifactPass profile requires a base URL");
   }
   if (!Array.isArray(candidate.workspace_roots) || candidate.workspace_roots.length === 0 || !candidate.workspace_roots.every((root) => typeof root === "string" && resolve(root) === root)) {
-    throw new Error("Artifact Share config requires absolute workspace roots");
+    throw new Error("ArtifactPass config requires absolute workspace roots");
   }
   if (candidate.credential_namespace !== void 0 && candidate.credential_namespace !== "artifactpass") {
-    throw new Error("Artifact Share config contains an invalid credential namespace");
+    throw new Error("ArtifactPass config contains an invalid credential namespace");
   }
   if (candidate.open_development !== void 0 && candidate.open_development !== true) {
-    throw new Error("Artifact Share config open_development must be true when enabled");
+    throw new Error("ArtifactPass config open_development must be true when enabled");
   }
   if (candidate.pdf_key_id !== void 0 && (typeof candidate.pdf_key_id !== "string" || !/^[A-Za-z0-9._-]{1,64}$/u.test(candidate.pdf_key_id))) {
-    throw new Error("Artifact Share config contains an invalid PDF signing key ID");
+    throw new Error("ArtifactPass config contains an invalid PDF signing key ID");
   }
   if (candidate.publication_state !== void 0 && candidate.publication_state !== "legacy") {
-    throw new Error("Artifact Share config contains an invalid publication state mode");
+    throw new Error("ArtifactPass config contains an invalid publication state mode");
   }
   if (candidate.publication_state_path !== void 0 && (typeof candidate.publication_state_path !== "string" || resolve(candidate.publication_state_path) !== candidate.publication_state_path)) {
-    throw new Error("Artifact Share config contains an invalid publication state path");
+    throw new Error("ArtifactPass config contains an invalid publication state path");
   }
   return {
     base_url: candidate.base_url,
@@ -91304,7 +91304,7 @@ var validateProfile = (value) => {
   };
 };
 var validateSettings = (value) => {
-  if (!isRecord(value)) throw new Error("Artifact Share config must contain a JSON object");
+  if (!isRecord(value)) throw new Error("ArtifactPass config must contain a JSON object");
   if (value.version === 1) {
     const profile = validateProfile(value);
     const name = profile.open_development === true ? "local" : "production";
@@ -91315,25 +91315,25 @@ var validateSettings = (value) => {
     };
   }
   if (value.version !== 2 || typeof value.active_profile !== "string" || !isRecord(value.profiles)) {
-    throw new Error("Artifact Share config has an unsupported format");
+    throw new Error("ArtifactPass config has an unsupported format");
   }
   const entries = Object.entries(value.profiles);
-  if (entries.length === 0) throw new Error("Artifact Share config requires at least one profile");
+  if (entries.length === 0) throw new Error("ArtifactPass config requires at least one profile");
   const profiles = Object.fromEntries(entries.map(([name, profile]) => [
     validateProfileName(name),
     validateProfile(profile)
   ]));
   validateProfileName(value.active_profile);
   if (!Object.hasOwn(profiles, value.active_profile)) {
-    throw new Error(`Unknown Artifact Share profile: ${value.active_profile}`);
+    throw new Error(`Unknown ArtifactPass profile: ${value.active_profile}`);
   }
   return { version: 2, active_profile: value.active_profile, profiles };
 };
 var selectLocalBridgeProfile = (settings, requestedProfile) => {
   const name = validateProfileName(requestedProfile ?? settings.active_profile);
-  if (!Object.hasOwn(settings.profiles, name)) throw new Error(`Unknown Artifact Share profile: ${name}`);
+  if (!Object.hasOwn(settings.profiles, name)) throw new Error(`Unknown ArtifactPass profile: ${name}`);
   const profile = settings.profiles[name];
-  if (profile === void 0) throw new Error(`Unknown Artifact Share profile: ${name}`);
+  if (profile === void 0) throw new Error(`Unknown ArtifactPass profile: ${name}`);
   return { name, settings: profile };
 };
 var publicationStatePathForProfile = (configPath, profileName) => `${configPath}.${validateProfileName(profileName)}.publication-state`;
@@ -91360,7 +91360,7 @@ var legacyLocalConfigPath = (environment = process.env, platform = process.platf
   if (platform === "win32") {
     const applicationData = environment.APPDATA;
     if (applicationData === void 0 || applicationData.length === 0) {
-      throw new Error("APPDATA is required to locate Artifact Share config");
+      throw new Error("APPDATA is required to locate ArtifactPass config");
     }
     return resolve(applicationData, "lordebuilds.artifacts.share", "config.json");
   }
@@ -91372,7 +91372,7 @@ var legacyLocalConfigPath = (environment = process.env, platform = process.platf
   );
 };
 var parseSettings = (contents) => {
-  if (Buffer.byteLength(contents) > 16 * 1024) throw new Error("Artifact Share config is too large");
+  if (Buffer.byteLength(contents) > 16 * 1024) throw new Error("ArtifactPass config is too large");
   return validateSettings(JSON.parse(contents));
 };
 var readLocalBridgeSettingsSync = (path) => parseSettings(readFileSync(path, "utf8"));
@@ -91688,30 +91688,30 @@ var isNonPublicHostname = (hostname3) => isLocalHostname(hostname3) || isNonPubl
 var assertDeploymentOrigin = (url2, options = {}) => {
   const openDevelopment = options.openDevelopment === true;
   if (url2.username !== "" || url2.password !== "" || url2.search !== "" || url2.hash !== "" || url2.pathname !== "/" && url2.pathname !== "") {
-    throw new Error(openDevelopment ? "Artifact Share development deployment must be a credential-free local HTTP origin" : "Artifact Share deployment must be a credential-free HTTPS origin");
+    throw new Error(openDevelopment ? "ArtifactPass development deployment must be a credential-free local HTTP origin" : "ArtifactPass deployment must be a credential-free HTTPS origin");
   }
   const hostname3 = url2.hostname.toLowerCase().replace(/^\[|\]$/gu, "");
   if (openDevelopment && (url2.protocol !== "http:" || !isLocalHostname(hostname3))) {
-    throw new Error("Artifact Share development deployment must be a credential-free local HTTP origin");
+    throw new Error("ArtifactPass development deployment must be a credential-free local HTTP origin");
   }
   if (!openDevelopment && url2.protocol !== "https:") {
-    throw new Error("Artifact Share deployment must be a credential-free HTTPS origin");
+    throw new Error("ArtifactPass deployment must be a credential-free HTTPS origin");
   }
   if (!openDevelopment && isNonPublicHostname(hostname3)) {
-    throw new Error("Artifact Share deployment origin must not target a private network");
+    throw new Error("ArtifactPass deployment origin must not target a private network");
   }
   return new URL(url2.origin);
 };
 var fetchWithoutRedirects = async (fetchImplementation, input, init = {}, options = {}) => {
   const timeoutMs = options.timeoutMs ?? defaultFetchTimeoutMs;
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) {
-    throw new RangeError("Artifact Share request timeout must be a positive integer");
+    throw new RangeError("ArtifactPass request timeout must be a positive integer");
   }
   const timeoutSignal = AbortSignal.timeout(timeoutMs);
   const signal = init.signal === void 0 || init.signal === null ? timeoutSignal : AbortSignal.any([init.signal, timeoutSignal]);
   const response = await fetchImplementation(input, { ...init, redirect: "manual", signal });
   if (redirectStatuses.has(response.status) || response.redirected) {
-    throw new Error("Artifact Share rejected a redirect response");
+    throw new Error("ArtifactPass rejected a redirect response");
   }
   return response;
 };
@@ -91720,9 +91720,9 @@ var responseError = async (response) => {
   const parsed = artifactErrorSchema.safeParse(body);
   if (parsed.success) {
     const detail = parsed.data.error.code === "invalid_expiry" ? ` (${parsed.data.error.message})` : "";
-    return new Error(`Artifact Share request failed: ${parsed.data.error.code}${detail}`);
+    return new Error(`ArtifactPass request failed: ${parsed.data.error.code}${detail}`);
   }
-  return new Error(`Artifact Share request failed with status ${response.status}`);
+  return new Error(`ArtifactPass request failed with status ${response.status}`);
 };
 
 // src/logging/redacting-logger.ts
@@ -92043,11 +92043,11 @@ var contentPatterns = [
     pattern: new RegExp(`\\b${tokenPrefixes[0]}[A-Za-z0-9_-]{20,}\\b`, "gu")
   },
   {
-    label: "Artifact Share agent token",
+    label: "ArtifactPass agent token",
     pattern: new RegExp(`\\b${tokenPrefixes[1]}[A-Za-z0-9_-]{32,}\\b`, "gu")
   },
   {
-    label: "Artifact Share capability URL",
+    label: "ArtifactPass capability URL",
     pattern: new RegExp(`https:\\/\\/[A-Za-z0-9.-]+(?::\\d+)?${sharePath}[A-Za-z0-9_-]{32,256}`, "gu")
   },
   {
@@ -92113,21 +92113,21 @@ var opaqueToken = () => randomBytes(32).toString("base64url");
 var publisherId = () => `local_${randomBytes(18).toString("base64url")}`;
 var validateEntryMap = (value, legacy) => {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("Artifact Share publication state is malformed");
+    throw new Error("ArtifactPass publication state is malformed");
   }
   const entries = Object.entries(value);
   if (entries.length > maximumEntries) {
-    throw new Error("Artifact Share publication state exceeds its bounded capacity");
+    throw new Error("ArtifactPass publication state exceeds its bounded capacity");
   }
   const validated = {};
   for (const [commitment, raw] of entries) {
     if (!commitmentPattern.test(commitment) || raw === null || typeof raw !== "object" || Array.isArray(raw)) {
-      throw new Error("Artifact Share publication state is malformed");
+      throw new Error("ArtifactPass publication state is malformed");
     }
     const entry = raw;
     const expiresAt = legacy ? 0 : entry.expires_at;
     if (typeof entry.attempt_id !== "string" || !attemptPattern.test(entry.attempt_id) || typeof entry.share_token !== "string" || !tokenPattern.test(entry.share_token) || typeof entry.updated_at !== "number" || !Number.isSafeInteger(entry.updated_at) || typeof expiresAt !== "number" || !Number.isSafeInteger(expiresAt) || expiresAt < 0) {
-      throw new Error("Artifact Share publication state is malformed");
+      throw new Error("ArtifactPass publication state is malformed");
     }
     validated[commitment] = {
       attempt_id: entry.attempt_id,
@@ -92140,11 +92140,11 @@ var validateEntryMap = (value, legacy) => {
 };
 var validateState = (value) => {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("Artifact Share publication state is malformed");
+    throw new Error("ArtifactPass publication state is malformed");
   }
   const candidate = value;
   if (candidate.version !== 1 && candidate.version !== 2 || typeof candidate.publisher_id !== "string" || !publisherPattern.test(candidate.publisher_id)) {
-    throw new Error("Artifact Share publication state is malformed");
+    throw new Error("ArtifactPass publication state is malformed");
   }
   const legacy = candidate.version === 1;
   return {
@@ -92188,7 +92188,7 @@ var MemoryPublicationJournal = class {
       while (this.pending.size + this.acknowledged.size >= maximumEntries) {
         const oldestAcknowledged = this.acknowledged.keys().next().value;
         if (oldestAcknowledged === void 0) {
-          throw new Error("Artifact Share publication journal is full of pending attempts");
+          throw new Error("ArtifactPass publication journal is full of pending attempts");
         }
         this.acknowledged.delete(oldestAcknowledged);
       }
@@ -92232,7 +92232,7 @@ var FilePublicationJournal = class _FilePublicationJournal {
     try {
       const source = await readFile(this.path, "utf8");
       if (Buffer.byteLength(source) > 32 * 1024) {
-        throw new Error("Artifact Share publication state is too large");
+        throw new Error("ArtifactPass publication state is too large");
       }
       return validateState(JSON.parse(source));
     } catch (error51) {
@@ -92328,7 +92328,7 @@ var FilePublicationJournal = class _FilePublicationJournal {
       "DELETE FROM publication_entries WHERE payload_commitment IN (SELECT payload_commitment FROM publication_entries WHERE acknowledged = 1 ORDER BY updated_at ASC, payload_commitment ASC LIMIT ?)"
     ).run(overflow);
     if (result.changes < overflow) {
-      throw new Error("Artifact Share publication journal is full of pending attempts");
+      throw new Error("ArtifactPass publication journal is full of pending attempts");
     }
   }
   prepare(payloadCommitment, expiresAt) {
@@ -92346,7 +92346,7 @@ var FilePublicationJournal = class _FilePublicationJournal {
       database.prepare("DELETE FROM publication_entries WHERE expires_at <= ?").run(now);
       const publisher = database.prepare("SELECT value FROM publication_metadata WHERE key = 'publisher_id'").get();
       if (publisher === void 0 || !publisherPattern.test(publisher.value)) {
-        throw new Error("Artifact Share publication state is malformed");
+        throw new Error("ArtifactPass publication state is malformed");
       }
       const existing = database.prepare(
         "SELECT attempt_id, share_token, updated_at, expires_at, acknowledged FROM publication_entries WHERE payload_commitment = ?"
@@ -92416,19 +92416,19 @@ var parseShareUrl = (value, baseUrl) => {
   try {
     url2 = new URL(value);
   } catch {
-    throw new Error("Artifact Share URL is malformed");
+    throw new Error("ArtifactPass URL is malformed");
   }
   if (url2.origin !== baseUrl.origin || url2.username !== "" || url2.password !== "" || url2.search !== "" || url2.hash !== "") {
-    throw new Error("Artifact Share URL must use the configured deployment origin");
+    throw new Error("ArtifactPass URL must use the configured deployment origin");
   }
   const match = sharePathPattern.exec(url2.pathname);
-  if (match?.[1] === void 0) throw new Error("Artifact Share URL path is malformed");
+  if (match?.[1] === void 0) throw new Error("ArtifactPass URL path is malformed");
   return { url: url2, token: match[1] };
 };
 var responseJson = async (response) => {
   if (!response.ok) throw await responseError(response);
   return response.json().catch(() => {
-    throw new Error("Artifact Share returned malformed JSON");
+    throw new Error("ArtifactPass returned malformed JSON");
   });
 };
 var decodeDerivedCursor = (cursor, artifactId) => {
@@ -92471,21 +92471,21 @@ var readDerived = async (manifest, shareBase, input, fetchImplementation, maximu
     { headers: { Range: `bytes=${offset}-${offset + maximumBytes - 1}` } }
   );
   if (!response.ok) throw await responseError(response);
-  if (response.status !== 206) throw new Error("Artifact Share ignored the derived text range");
+  if (response.status !== 206) throw new Error("ArtifactPass ignored the derived text range");
   const contentRange = /^bytes (\d+)-(\d+)\/(\d+)$/u.exec(response.headers.get("content-range") ?? "");
   const sha2562 = response.headers.get("x-artifact-sha256") ?? "";
   if (contentRange === null || !/^[a-f0-9]{64}$/u.test(sha2562)) {
-    throw new Error("Artifact Share returned malformed derived text metadata");
+    throw new Error("ArtifactPass returned malformed derived text metadata");
   }
   const responseOffset = Number(contentRange[1]);
   const responseEnd = Number(contentRange[2]);
   const totalSize = Number(contentRange[3]);
   if (responseOffset !== offset || !Number.isSafeInteger(responseEnd) || responseEnd < responseOffset || !Number.isSafeInteger(totalSize) || totalSize <= 0 || totalSize > PROTOCOL_MAX_ARTIFACT_BYTES) {
-    throw new Error("Artifact Share returned inconsistent derived text metadata");
+    throw new Error("ArtifactPass returned inconsistent derived text metadata");
   }
   const responseBytes = new Uint8Array(await response.arrayBuffer());
   if (responseBytes.byteLength !== responseEnd - responseOffset + 1 || responseBytes.byteLength > maximumBytes) {
-    throw new Error("Artifact Share returned an invalid derived text range");
+    throw new Error("ArtifactPass returned an invalid derived text range");
   }
   const bytes = utf8AlignedPrefix(responseBytes);
   if (offset > totalSize) {
@@ -92550,7 +92550,7 @@ var readArtifact = async (input, dependencies) => {
       data: "",
       next_cursor: null,
       exact_source_url: new URL(`${share.url.pathname}/raw`, baseUrl).toString(),
-      safety_notice: "This PDF is human-only. Artifact Share will not expose its contents to an agent without verified controlled provenance."
+      safety_notice: "This PDF is human-only. ArtifactPass will not expose its contents to an agent without verified controlled provenance."
     };
   }
   const sourceUrl = new URL(`${share.url.pathname}/source`, baseUrl);
@@ -92559,7 +92559,7 @@ var readArtifact = async (input, dependencies) => {
   const sourceResponse = await fetchWithoutRedirects(fetchImplementation, sourceUrl);
   const chunk = sourceChunkSchema.parse(await responseJson(sourceResponse));
   if (chunk.artifact_id !== manifest.artifact_id || chunk.total_size !== manifest.byte_size || chunk.sha256 !== manifest.sha256) {
-    throw new Error("Artifact Share returned inconsistent source metadata");
+    throw new Error("ArtifactPass returned inconsistent source metadata");
   }
   const bytes = Buffer.from(chunk.data, "base64");
   let text;
@@ -92591,7 +92591,7 @@ var authorizePublishDependencies = (dependencies) => {
     return { ...dependencies, openDevelopment: true, token };
   }
   if (!token) {
-    throw new Error("A non-empty Artifact Share token is required for production publishing");
+    throw new Error("A non-empty ArtifactPass token is required for production publishing");
   }
   return { ...dependencies, openDevelopment: false, token };
 };
@@ -92821,7 +92821,7 @@ var publishArtifact = async (input, dependencies) => {
     try {
       parseShareUrl(result.share_url, baseUrl);
     } catch {
-      throw new Error("Artifact Share returned a foreign share origin");
+      throw new Error("ArtifactPass returned a foreign share origin");
     }
     await journal.acknowledge(
       payloadCommitment,
@@ -92841,7 +92841,7 @@ var opaqueCursorSchema = external_exports.string().regex(/^[A-Za-z0-9_-]{16,256}
 var publishArtifactInputSchema = external_exports.object({
   path: external_exports.string().min(1).describe("Absolute or workspace-relative local file path"),
   canonical_source_path: external_exports.string().min(1).optional().describe(
-    "Optional UTF-8 source used to generate a PDF. When configured, Artifact Share verifies it against the PDF and signs the agent-readable representation."
+    "Optional UTF-8 source used to generate a PDF. When configured, ArtifactPass verifies it against the PDF and signs the agent-readable representation."
   ),
   expires_in_seconds: external_exports.number().int().positive().default(3600).describe(
     "Deployment expiry preset in seconds. Defaults to one hour (3600). Default setup presets: 900, 1800, 3600, 43200, 86400; a rejection reports the deployment's allowed values."
@@ -92915,7 +92915,7 @@ var errorResult = (error51) => ({
   isError: true,
   content: [{
     type: "text",
-    text: error51 instanceof Error ? redactSensitiveText(error51.message) : "Artifact Share bridge failed"
+    text: error51 instanceof Error ? redactSensitiveText(error51.message) : "ArtifactPass bridge failed"
   }]
 });
 var createBridgeServer = (configuration) => {
@@ -92969,7 +92969,7 @@ var createBridgeServer = (configuration) => {
   });
   server.registerTool("read_artifact", {
     title: "Read Artifact",
-    description: "Read a configured Artifact Share URL in bounded deterministic chunks with exact-source and PDF fidelity metadata." + connectionContext,
+    description: "Read a configured ArtifactPass URL in bounded deterministic chunks with exact-source and PDF fidelity metadata." + connectionContext,
     inputSchema: readArtifactInputSchema,
     outputSchema: readArtifactOutputSchema,
     annotations: {
@@ -93107,7 +93107,7 @@ var serveBridgeStdio = (configuration = configurationFromEnvironment()) => serve
 try {
   serveBridgeStdio();
 } catch (error51) {
-  process.stderr.write(`${error51 instanceof Error ? redactSensitiveText(error51.message) : "Artifact Share bridge failed"}
+  process.stderr.write(`${error51 instanceof Error ? redactSensitiveText(error51.message) : "ArtifactPass bridge failed"}
 `);
   process.exitCode = 1;
 }
