@@ -17,8 +17,8 @@ describe("eval reporting", () => {
       receipt_version: 1,
       scenario: { id: "generic-fidelity", version: 1 },
       scorer_version: "1.0.0",
-      host: { agent_a: "generic", runtime: "node-test" },
-      cohort: { profile: "deterministic", trial_index: 1, trial_count: 1 },
+      host: { agent_a: "generic", agent_b: "codex", runtime: "node-test", model: "model-test" },
+      cohort: { profile: "deterministic", trial_index: 2, trial_count: 3 },
       result: {
         version: 1,
         run_id: "8e885d98-7491-4ef8-84fe-1b8fea4c7235",
@@ -26,10 +26,11 @@ describe("eval reporting", () => {
         candidate_sha256: "a".repeat(64),
         started_at: "2026-08-19T03:00:00.000Z",
         completed_at: "2026-08-19T03:00:01.000Z",
-        trial_outcome: "behavior_failure",
-        outcome: "behavior_failure",
+        trial_outcome: "infrastructure_failure",
+        outcome: "infrastructure_failure",
         gate_class: "deterministic",
-        host_pair: { agent_a: "generic" },
+        host_pair: { agent_a: "generic", agent_b: "codex" },
+        infrastructure_code: "fixture-infrastructure",
         teardown: "passed",
         observed_actions: [],
         failures: [{
@@ -38,9 +39,27 @@ describe("eval reporting", () => {
         }],
       },
       latency_ms: 1000,
-      usage: {},
+      usage: { input_tokens: 120, output_tokens: 30, estimated_cost_usd: 0.0125 },
+      infrastructure_classification: "fixture-infrastructure",
     });
-    const output = `${await readFile(paths.jsonPath, "utf8")}\n${await readFile(paths.markdownPath, "utf8")}`;
+    const json = await readFile(paths.jsonPath, "utf8");
+    const markdown = await readFile(paths.markdownPath, "utf8");
+    const output = `${json}\n${markdown}`;
+    expect(markdown).toContain(`- Candidate: ${"a".repeat(64)}`);
+    expect(markdown).toContain("- Receipt version: 1");
+    expect(markdown).toContain("- Scenario: generic-fidelity v1");
+    expect(markdown).toContain("- Scorer version: 1.0.0");
+    expect(markdown).toContain("- Host: generic -> codex");
+    expect(markdown).toContain("- Host runtime: node-test");
+    expect(markdown).toContain("- Host model: model-test");
+    expect(markdown).toContain("- Profile: deterministic");
+    expect(markdown).toContain("- Cohort trial: 2/3");
+    expect(markdown).toContain("- Outcome: infrastructure_failure");
+    expect(markdown).toContain("- Latency: 1000 ms");
+    expect(markdown).toContain("- Usage: input_tokens=120, output_tokens=30, estimated_cost_usd=0.0125");
+    expect(markdown).toContain("- Teardown: passed");
+    expect(markdown).toContain("- Infrastructure classification: fixture-infrastructure");
+    expect([...markdown].every((character) => character.charCodeAt(0) <= 0x7f)).toBe(true);
     expect(output).not.toContain(token);
     expect(output).not.toContain("/Users/person");
     expect(output).toContain("[REDACTED]");

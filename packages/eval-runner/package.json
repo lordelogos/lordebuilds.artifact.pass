@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "esbuild src/trace-probe.ts src/probe-mcp-server.ts src/scrubbed-mcp-launcher.ts src/matrix-cli.ts --bundle --platform=node --format=esm --outdir=dist --out-extension:.js=.mjs && esbuild src/deterministic-cli.ts src/smoke-cli.ts src/cohort-cli.ts src/baseline-cli.ts src/release-cli.ts --bundle --platform=node --format=cjs --log-override:empty-import-meta=silent --outdir=dist --out-extension:.js=.cjs",
+    "build": "esbuild src/trace-probe.ts src/probe-mcp-server.ts src/scrubbed-mcp-launcher.ts src/matrix-cli.ts --bundle --platform=node --format=esm --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\" --outdir=dist --out-extension:.js=.mjs && esbuild src/deterministic-cli.ts src/smoke-cli.ts src/cohort-cli.ts src/baseline-cli.ts src/release-cli.ts --bundle --platform=node --format=cjs --log-override:empty-import-meta=silent --outdir=dist --out-extension:.js=.cjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

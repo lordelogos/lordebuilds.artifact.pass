@@ -35,19 +35,27 @@ const readInstalledMcpServer = async (path: string): Promise<{
 
 const quotedToml = (value: string): string => JSON.stringify(value);
 
-const configureModelHost = async (options: {
+export const configureModelHost = async (options: {
   readonly host: HostId;
   readonly agent: "agent-a" | "agent-b";
   readonly environment: LocalEvalEnvironment;
   readonly mcpConfigPath: string;
   readonly launcherPath: string;
+  readonly allowedTools: readonly ("publish_artifact" | "read_artifact")[];
 }): Promise<{ readonly mcpConfigPath: string; readonly pluginRoot: string; readonly home: string }> => {
   const server = await readInstalledMcpServer(options.mcpConfigPath);
   const pluginRoot = join(dirname(options.mcpConfigPath), "plugin");
   const home = options.agent === "agent-a" ? options.environment.homes.agentA : options.environment.homes.agentB;
   const wrappedServer = {
     command: process.execPath,
-    args: [options.launcherPath, server.command, ...server.args],
+    args: [
+      options.launcherPath,
+      "--allowed-tools",
+      JSON.stringify(options.allowedTools),
+      "--",
+      server.command,
+      ...server.args,
+    ],
   };
   if (options.host === "codex") {
     await cp(join(pluginRoot, "skills"), join(home, "skills"), { recursive: true });
@@ -144,7 +152,10 @@ export const runModelHost = async (options: {
   readonly maxToolCalls?: number;
   readonly maximumCostUsd?: number;
 }): Promise<HostCommandResult> => {
-  const configured = await configureModelHost(options);
+  const configured = await configureModelHost({
+    ...options,
+    allowedTools: options.allowedTools,
+  });
   const workspace = options.agent === "agent-a"
     ? options.environment.workspaces.agentA
     : options.environment.workspaces.agentB;

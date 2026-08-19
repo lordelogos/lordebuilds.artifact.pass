@@ -7,20 +7,33 @@ import { redactSensitiveText, serializeRedacted } from "./redaction";
 
 export const renderMarkdownScorecard = (report: EvalReport): string => {
   const status = report.result.outcome === "pass" ? "PASS" : "FAIL";
+  const notRecorded = "not recorded";
+  const usage = [
+    `input_tokens=${report.usage.input_tokens ?? notRecorded}`,
+    `output_tokens=${report.usage.output_tokens ?? notRecorded}`,
+    `estimated_cost_usd=${report.usage.estimated_cost_usd ?? notRecorded}`,
+  ].join(", ");
   const failures = report.result.failures.length === 0
     ? "- None"
     : report.result.failures.map((failure) => `- ${failure.code}: ${failure.message}`).join("\n");
   return [
     `# ArtifactPass eval: ${status}`,
     "",
-    `- Scenario: ${report.scenario.id} v${report.scenario.version}`,
-    `- Profile: ${report.cohort.profile}`,
-    `- Host: ${report.host.agent_a}${report.host.agent_b === undefined ? "" : ` → ${report.host.agent_b}`}`,
     `- Candidate: ${report.candidate.sha256}`,
+    `- Receipt version: ${report.receipt_version}`,
+    `- Scenario: ${report.scenario.id} v${report.scenario.version}`,
+    `- Scorer version: ${report.scorer_version}`,
+    `- Host: ${report.host.agent_a}${report.host.agent_b === undefined ? "" : ` -> ${report.host.agent_b}`}`,
+    `- Host runtime: ${report.host.runtime}`,
+    `- Host model: ${report.host.model ?? notRecorded}`,
+    `- Profile: ${report.cohort.profile}`,
+    `- Cohort trial: ${report.cohort.trial_index}/${report.cohort.trial_count}`,
     `- Outcome: ${report.result.outcome}`,
     `- Trial outcome: ${report.result.trial_outcome}`,
     `- Teardown: ${report.result.teardown}`,
     `- Latency: ${report.latency_ms} ms`,
+    `- Usage: ${usage}`,
+    `- Infrastructure classification: ${report.infrastructure_classification ?? "none"}`,
     "",
     "## Failures",
     "",
@@ -47,13 +60,13 @@ export const renderCohortScorecard = (report: CohortReport): string => [
   `# ArtifactPass cohort: ${report.eligible_for_threshold ? "ELIGIBLE" : "NOT ELIGIBLE"}`,
   "",
   `- Scenario: ${report.scenario_id}`,
-  `- Host pair: ${report.host_pair[0]} → ${report.host_pair[1]}`,
+  `- Host pair: ${report.host_pair[0]} -> ${report.host_pair[1]}`,
   `- Candidate: ${report.candidate_sha256}`,
   `- Trials: ${report.total_trials}`,
   `- Behavioral trials: ${report.behavioral_trials}`,
   `- Successes: ${report.successes}`,
   `- Observed success: ${(report.observed_success_rate * 100).toFixed(1)}%`,
-  `- Wilson 95%: ${(report.wilson_95.lower * 100).toFixed(1)}%–${(report.wilson_95.upper * 100).toFixed(1)}%`,
+  `- Wilson 95%: ${(report.wilson_95.lower * 100).toFixed(1)}%-${(report.wilson_95.upper * 100).toFixed(1)}%`,
   `- Hard failures: ${report.hard_failures.length}`,
   `- Infrastructure runs: ${report.infrastructure_runs.length}`,
   `- Skipped runs: ${report.skipped_runs.length}`,

@@ -16,6 +16,25 @@ import { writeEvalReport } from "./reporting";
 import { outcomeWithTeardown, scoreObservedActions, verifyExactBytes, type ScoreFailure } from "./scoring";
 
 const sha256 = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
+
+// Local control endpoints run in the eval Worker and should answer promptly; bound them so a
+// wedged Worker is reported as infrastructure failure instead of hanging the deterministic run.
+export const LOCAL_CONTROL_REQUEST_TIMEOUT_MS = 5_000;
+
+const requestLocalControl = (
+  environment: LocalEvalEnvironment,
+  path: "/__local-test/time" | "/__local-test/revoke" | "/__local-test/cleanup",
+  body: string,
+): Promise<Response> => fetch(new URL(path, environment.baseUrl), {
+  method: "POST",
+  headers: {
+    "content-type": "application/json",
+    "x-artifact-test-control": environment.controlToken,
+  },
+  body,
+  signal: AbortSignal.timeout(LOCAL_CONTROL_REQUEST_TIMEOUT_MS),
+});
+
 const asRecord = (value: unknown): Readonly<Record<string, unknown>> => {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new Error("ArtifactPass MCP returned a non-object result");
@@ -101,14 +120,11 @@ const runTrial = async (
     "foreign_origin_accepted",
   );
   const futureNow = Date.now() + 901_000;
-  const timeResponse = await fetch(new URL("/__local-test/time", environment.baseUrl), {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-artifact-test-control": environment.controlToken,
-    },
-    body: JSON.stringify({ now_ms: futureNow }),
-  });
+  const timeResponse = await requestLocalControl(
+    environment,
+    "/__local-test/time",
+    JSON.stringify({ now_ms: futureNow }),
+  );
   if (!timeResponse.ok) throw new Error("Could not advance deterministic local service time");
   for (const shareUrl of publishedUrls) {
     await expectRefusal(host, shareUrl, failures, "expired_link_accepted");
@@ -117,24 +133,14 @@ const runTrial = async (
   await mkdir(dirname(revocationSourcePath), { recursive: true, mode: 0o700 });
   await copyFile(join(repositoryRoot, scenario.fixtures[0]!.path), revocationSourcePath);
   const revokedShareUrl = await publish(host, revocationSourcePath);
-  const revokeResponse = await fetch(new URL("/__local-test/revoke", environment.baseUrl), {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-artifact-test-control": environment.controlToken,
-    },
-    body: JSON.stringify({ share_url: revokedShareUrl }),
-  });
+  const revokeResponse = await requestLocalControl(
+    environment,
+    "/__local-test/revoke",
+    JSON.stringify({ share_url: revokedShareUrl }),
+  );
   if (!revokeResponse.ok) throw new Error("Could not revoke deterministic local share");
   await expectRefusal(host, revokedShareUrl, failures, "revoked_link_accepted");
-  const cleanupResponse = await fetch(new URL("/__local-test/cleanup", environment.baseUrl), {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-artifact-test-control": environment.controlToken,
-    },
-    body: "{}",
-  });
+  const cleanupResponse = await requestLocalControl(environment, "/__local-test/cleanup", "{}");
   const cleanup = await cleanupResponse.json().catch(() => null) as {
     readonly failed?: unknown;
     readonly rows?: unknown;
