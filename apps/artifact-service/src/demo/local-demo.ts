@@ -10,6 +10,7 @@ import { D1ArtifactRepository } from "../server/storage/artifact-repository";
 import { R2ArtifactObjectStore } from "../server/storage/r2-object-store";
 import { createArtifactApplication } from "../server/index";
 import { expireArtifacts } from "../server/jobs/expire-artifacts";
+import { hashShareToken } from "../server/storage/crypto";
 
 const keyId = "artifact-share-local-demo-key";
 const issuer = "https://artifact-share-local.cloudflareaccess.com";
@@ -120,6 +121,30 @@ export const createLocalDemoHandler = async (): Promise<LocalDemoHandler> => {
           } while (cursor !== undefined);
           return Response.json(
             { ...result, rows: rows ?? 0, objects },
+            { headers: { "Cache-Control": "no-store" } },
+          );
+        }
+        if (request.method === "POST" && url.pathname === "/__local-test/revoke") {
+          const body = await request.json().catch(() => null) as { share_url?: unknown } | null;
+          if (typeof body?.share_url !== "string") {
+            return Response.json({ error: "share_url must be a string" }, { status: 400 });
+          }
+          let shareUrl: URL;
+          try {
+            shareUrl = new URL(body.share_url);
+          } catch {
+            return Response.json({ error: "share_url must be a valid URL" }, { status: 400 });
+          }
+          const token = /^\/a\/([A-Za-z0-9_-]{43})$/u.exec(shareUrl.pathname)?.[1];
+          if (shareUrl.origin !== url.origin || token === undefined || shareUrl.search !== "" || shareUrl.hash !== "") {
+            return Response.json({ error: "share_url must be a local ArtifactPass capability" }, { status: 400 });
+          }
+          const repository = new D1ArtifactRepository(bindings.ARTIFACT_DB);
+          const artifact = await repository.findActiveByShareTokenHash(await hashShareToken(token));
+          if (artifact === null) return new Response(null, { status: 404 });
+          await repository.markCleanupPending(artifact.id);
+          return Response.json(
+            { revoked: true },
             { headers: { "Cache-Control": "no-store" } },
           );
         }

@@ -9,6 +9,7 @@ import type { NormalizedHostEvent } from "../src/contracts";
 import type { EvalInstallResult } from "../src/install-lifecycle";
 import type { LocalEvalEnvironment } from "../src/local-environment";
 import { modelHandoffAgentBPrompt, runModelHandoffTrial } from "../src/model-handoff";
+import { CODEX_DISABLED_CAPABILITIES, modelArguments } from "../src/model-host";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const event = <T extends Omit<NormalizedHostEvent, "version" | "host" | "sequence">>(
@@ -48,6 +49,25 @@ const successfulInstall = (root: string, agent: "agent-a" | "agent-b"): EvalInst
 });
 
 describe("model handoff runner", () => {
+  it("restricts both host capability surfaces to skills and the selected MCP tool", () => {
+    const common = {
+      workspace: "/eval/workspace",
+      mcpConfigPath: "/eval/mcp.json",
+      pluginRoot: "/eval/plugin",
+      allowedTools: ["publish_artifact"] as const,
+    };
+    const codex = modelArguments({ ...common, host: "codex" });
+    expect(codex).toEqual(expect.arrayContaining(["--sandbox", "read-only", "--ask-for-approval", "never"]));
+    for (const feature of CODEX_DISABLED_CAPABILITIES) {
+      expect(codex).toContain(feature);
+    }
+    const claude = modelArguments({ ...common, host: "claude" });
+    expect(claude[claude.indexOf("--tools") + 1]).toBe("Skill,mcp__artifactpass__publish_artifact");
+    expect(claude).toEqual(expect.arrayContaining([
+      "--allowedTools", "Skill", "mcp__artifactpass__publish_artifact", "--permission-mode", "dontAsk",
+    ]));
+  });
+
   it("constructs Agent B input from the shared prompt and volatile URL only", () => {
     const prompt = modelHandoffAgentBPrompt("Read the handoff.", "http://127.0.0.1:8787/a/token");
     expect(prompt).toBe("Read the handoff.\n\nArtifactPass link: http://127.0.0.1:8787/a/token");
@@ -134,6 +154,7 @@ describe("model handoff runner", () => {
           startEnvironment: async () => environment,
           installCandidate: async ({ agent }) => successfulInstall(root, agent),
           runHost: runHost as never,
+          hostVersion: async (host) => host === "codex" ? "0.147.0" : "2.1.197",
           writeReport: async () => ({ jsonPath: "report.json", markdownPath: "scorecard.md" }),
         },
       });

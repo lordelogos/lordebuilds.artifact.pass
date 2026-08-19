@@ -113,6 +113,20 @@ const runTrial = async (
   for (const shareUrl of publishedUrls) {
     await expectRefusal(host, shareUrl, failures, "expired_link_accepted");
   }
+  const revocationSourcePath = join(environment.workspaces.agentA, "fixtures", "revocation.md");
+  await mkdir(dirname(revocationSourcePath), { recursive: true, mode: 0o700 });
+  await copyFile(join(repositoryRoot, scenario.fixtures[0]!.path), revocationSourcePath);
+  const revokedShareUrl = await publish(host, revocationSourcePath);
+  const revokeResponse = await fetch(new URL("/__local-test/revoke", environment.baseUrl), {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-artifact-test-control": environment.controlToken,
+    },
+    body: JSON.stringify({ share_url: revokedShareUrl }),
+  });
+  if (!revokeResponse.ok) throw new Error("Could not revoke deterministic local share");
+  await expectRefusal(host, revokedShareUrl, failures, "revoked_link_accepted");
   const cleanupResponse = await fetch(new URL("/__local-test/cleanup", environment.baseUrl), {
     method: "POST",
     headers: {

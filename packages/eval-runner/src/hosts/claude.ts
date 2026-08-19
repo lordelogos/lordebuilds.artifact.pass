@@ -28,6 +28,7 @@ const splitMcpToolName = (name: string): { readonly serverName?: string; readonl
 export class ClaudeEventParser implements HostEventParser {
   readonly host = "claude" as const;
   #sequence = 0;
+  readonly #skillCallIds = new Set<string>();
 
   parse(value: unknown): readonly NormalizedHostEvent[] {
     const event = record(value);
@@ -57,6 +58,16 @@ export class ClaudeEventParser implements HostEventParser {
         const callId = text(block.id);
         const hostToolName = text(block.name);
         if (callId === undefined || hostToolName === undefined) throw this.#unknown();
+        if (hostToolName === "Skill") {
+          const input = record(block.input);
+          const rawSkillName = text(input?.skill);
+          if (rawSkillName === undefined) throw this.#unknown();
+          const withoutPlugin = rawSkillName.split("@")[0] ?? rawSkillName;
+          const skillName = withoutPlugin.split(":").at(-1) ?? withoutPlugin;
+          this.#skillCallIds.add(callId);
+          events.push(this.#event({ kind: "skill_selection", skillName }));
+          continue;
+        }
         const names = splitMcpToolName(hostToolName);
         events.push(this.#event({
           kind: "tool_call",
@@ -89,6 +100,7 @@ export class ClaudeEventParser implements HostEventParser {
       if (block?.type !== "tool_result") continue;
       const callId = text(block.tool_use_id);
       if (callId === undefined) throw this.#unknown();
+      if (this.#skillCallIds.delete(callId)) continue;
       events.push(this.#event({
         kind: "tool_result",
         callId,

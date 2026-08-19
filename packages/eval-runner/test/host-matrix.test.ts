@@ -69,6 +69,7 @@ describe("representative host matrix", () => {
       agentAHost: "codex",
       agentBHost: "claude",
     });
+    expect(dispatch.runtimeVersions).toEqual(["0.147.0", "2.1.197"]);
   });
 
   it.each([
@@ -111,7 +112,7 @@ describe("representative host matrix", () => {
     expect(matrixReleaseEligible(dispatches)).toBe(true);
   });
 
-  it("blocks every posture whose process containment is not independently enforced", async () => {
+  it("uses the generic driver's exact MCP surface as host-enforced containment", async () => {
     const scenario = await loadScenario();
     const dispatches = buildMatrixPreflight({
       scenario,
@@ -119,10 +120,38 @@ describe("representative host matrix", () => {
       environment: {},
     });
     expect(dispatches.find((dispatch) => dispatch.pair.join("->") === "generic->generic")?.status)
-      .toBe("containment_blocked");
+      .toBe("ready");
     expect(dispatches.find((dispatch) => dispatch.pair.join("->") === "codex->claude")?.status)
       .toBe("authentication_blocked");
     expect(matrixReleaseEligible(dispatches)).toBe(false);
+  });
+
+  it("records explicit Claude Skill tool telemetry while keeping Codex unavailable fail-closed", async () => {
+    const scenario = await loadScenario();
+    const dispatches = buildMatrixPreflight({
+      scenario,
+      portableBundleSha256: bundle,
+      environment: { OPENAI_API_KEY: "present", ANTHROPIC_API_KEY: "present" },
+    });
+    expect(dispatches.find((dispatch) => dispatch.pair.join("->") === "claude->claude")?.status)
+      .toBe("identity_blocked");
+    expect(dispatches.find((dispatch) => dispatch.pair.join("->") === "codex->claude")?.status)
+      .toBe("skill_observability_blocked");
+  });
+
+  it("blocks a host runtime that drifts beyond its tested parser contract", async () => {
+    const scenario = await loadScenario();
+    const dispatches = buildMatrixPreflight({
+      scenario,
+      portableBundleSha256: bundle,
+      environment: { OPENAI_API_KEY: "present", ANTHROPIC_API_KEY: "present" },
+      runtimeVersions: { codex: "9.9.9", claude: "2.1.197" },
+    });
+    expect(dispatches.find((dispatch) => dispatch.pair.join("->") === "codex->claude"))
+      .toMatchObject({
+        status: "parser_incompatible",
+        runtimeVersions: ["9.9.9", "2.1.197"],
+      });
   });
 
   it("keeps ArtifactPass behavior and scoring policy out of host adapters", async () => {

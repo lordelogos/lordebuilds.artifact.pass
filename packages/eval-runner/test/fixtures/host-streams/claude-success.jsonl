@@ -1,4 +1,6 @@
 {"type":"system","subtype":"init","session_id":"claude-session-1"}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"skill_1","name":"Skill","input":{"skill":"artifactpass:share-artifact@artifactpass"}}],"usage":{"input_tokens":20,"output_tokens":2}}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"skill_1","content":"Skill loaded","is_error":false}]}}
 {"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_1","name":"mcp__artifactpass_eval__echo","input":{"nonce":"artifactpass-trace-probe"}}],"usage":{"input_tokens":100,"cache_read_input_tokens":10,"output_tokens":8}}}
 {"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_1","content":[{"type":"text","text":"{\"echoed\":\"artifactpass-trace-probe\"}"}],"is_error":false}]}}
 {"type":"assistant","message":{"content":[{"type":"text","text":"Probe completed."}],"usage":{"input_tokens":12,"output_tokens":4}}}

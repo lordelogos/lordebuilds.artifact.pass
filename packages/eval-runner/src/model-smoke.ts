@@ -8,7 +8,7 @@ import { candidateDigest } from "./candidate-digest";
 import { type HostId } from "./hosts/host";
 import { installCandidateIntoLocalEval } from "./install-lifecycle";
 import { startLocalEvalEnvironment, type LocalEvalEnvironment } from "./local-environment";
-import { MODEL_BY_HOST, modelExecutionFailure, runModelHost } from "./model-host";
+import { MODEL_BY_HOST, modelExecutionFailure, runModelHost, runtimeVersionForHost } from "./model-host";
 import { writeEvalReport } from "./reporting";
 import { outcomeWithTeardown, scoreShareBehavior, type ScoreFailure } from "./scoring";
 
@@ -38,6 +38,11 @@ export const runModelSmoke = async (options: {
     join(options.repositoryRoot, "evals/scenarios/behavior/share-markdown.json"),
     "utf8",
   )));
+  const runtimeVersion = await runtimeVersionForHost(options.host);
+  if (runtimeVersion === undefined) return {
+    status: "authentication_blocked",
+    reason: `${options.host} CLI is unavailable`,
+  };
   let environment: LocalEvalEnvironment | undefined;
   let teardownFailed = false;
   let failures: readonly ScoreFailure[] = [];
@@ -120,7 +125,7 @@ export const runModelSmoke = async (options: {
     scorer_version: scenario.scorer_version,
     host: {
       agent_a: options.host,
-      runtime: options.host,
+      runtime: `${options.host}@${runtimeVersion}`,
       model: MODEL_BY_HOST[options.host],
     },
     cohort: { profile: "smoke" as const, trial_index: 1, trial_count: 1 },

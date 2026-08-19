@@ -5,11 +5,17 @@ import { ClaudeEventParser } from "./hosts/claude";
 import { CodexEventParser } from "./hosts/codex";
 import { pickEnvironment, runHostCommand, type HostCommandResult, type HostId } from "./hosts/host";
 import type { LocalEvalEnvironment } from "./local-environment";
+import { versionFor } from "./runtime-version";
 
 export const MODEL_BY_HOST = {
   codex: "gpt-5.4",
   claude: "claude-sonnet-4-6",
 } as const;
+
+export const runtimeVersionForHost = async (host: HostId): Promise<string | undefined> => {
+  const raw = await versionFor(host === "codex" ? "codex" : "claude");
+  return raw === undefined ? undefined : /\d+\.\d+\.\d+/u.exec(raw)?.[0];
+};
 
 const readInstalledMcpServer = async (path: string): Promise<{
   readonly command: string;
@@ -60,27 +66,47 @@ const configureModelHost = async (options: {
   return { mcpConfigPath: claudeConfig, pluginRoot, home };
 };
 
-const modelArguments = (options: {
+export const CODEX_DISABLED_CAPABILITIES = [
+  "apps",
+  "browser_use",
+  "browser_use_external",
+  "browser_use_full_cdp_access",
+  "computer_use",
+  "image_generation",
+  "in_app_browser",
+  "shell_tool",
+  "standalone_web_search",
+  "unified_exec",
+  "view_image",
+] as const;
+
+export const modelArguments = (options: {
   readonly host: HostId;
   readonly workspace: string;
   readonly mcpConfigPath: string;
   readonly pluginRoot: string;
   readonly allowedTools: readonly ("publish_artifact" | "read_artifact")[];
-}): readonly string[] => options.host === "codex"
-  ? [
+}): readonly string[] => {
+  const claudeTools = ["Skill", ...options.allowedTools.map((tool) => `mcp__artifactpass__${tool}`)];
+  return options.host === "codex"
+    ? [
       "exec",
       "--json",
       "--ephemeral",
       "--skip-git-repo-check",
       "--sandbox",
-      "workspace-write",
+      "read-only",
+      "--ask-for-approval",
+      "never",
+      "--ignore-rules",
+      ...CODEX_DISABLED_CAPABILITIES.flatMap((feature) => ["--disable", feature]),
       "--cd",
       options.workspace,
       "--model",
       MODEL_BY_HOST.codex,
       "-",
-    ]
-  : [
+      ]
+    : [
       "--print",
       "--bare",
       "--output-format",
@@ -91,13 +117,18 @@ const modelArguments = (options: {
       options.mcpConfigPath,
       "--plugin-dir",
       options.pluginRoot,
+      "--tools",
+      claudeTools.join(","),
       "--allowedTools",
-      ...options.allowedTools.map((tool) => `mcp__artifactpass__${tool}`),
+      ...claudeTools,
+      "--permission-mode",
+      "dontAsk",
       "--model",
       MODEL_BY_HOST.claude,
       "--max-budget-usd",
       "1",
     ];
+};
 
 export const runModelHost = async (options: {
   readonly host: HostId;

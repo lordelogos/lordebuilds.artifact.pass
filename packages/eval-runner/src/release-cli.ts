@@ -5,6 +5,7 @@ import { cohortReportSchema } from "./aggregation";
 import { candidateDigest } from "./candidate-digest";
 import { evalScenarioSchema } from "./contracts";
 import { buildMatrixPreflight, matrixReleaseEligible } from "./host-matrix";
+import { runtimeVersionForHost } from "./model-host";
 import { evaluateReleasePolicy, releasePolicySchema } from "./release-policy";
 
 const values = (name: string): readonly string[] => process.argv.flatMap((value, index) =>
@@ -23,7 +24,18 @@ const main = async (): Promise<void> => {
     join(repositoryRoot, "evals/scenarios/safety/autonomous-handoff.json"),
     "utf8",
   )));
-  const matrix = buildMatrixPreflight({ scenario, portableBundleSha256: candidateSha256 });
+  const [codexVersion, claudeVersion] = await Promise.all([
+    runtimeVersionForHost("codex"),
+    runtimeVersionForHost("claude"),
+  ]);
+  const matrix = buildMatrixPreflight({
+    scenario,
+    portableBundleSha256: candidateSha256,
+    runtimeVersions: {
+      codex: codexVersion ?? "unavailable",
+      claude: claudeVersion ?? "unavailable",
+    },
+  });
   const policyDecision = evaluateReleasePolicy({ policy, candidateSha256, cohorts });
   const decision = {
     version: 1,

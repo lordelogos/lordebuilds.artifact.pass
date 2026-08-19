@@ -11,7 +11,7 @@ import {
   runHostCommand,
 } from "../src/hosts/host";
 import { modelExecutionFailure } from "../src/model-host";
-import { versionFor } from "../src/trace-probe";
+import { versionFor } from "../src/runtime-version";
 
 const fixture = async (name: string): Promise<string> =>
   readFile(fileURLToPath(new URL(`./fixtures/host-streams/${name}`, import.meta.url)), "utf8");
@@ -43,6 +43,7 @@ describe("host adapters", () => {
     const events = parseHostChunks(new ClaudeEventParser(), [await fixture("claude-success.jsonl")]);
     expect(new Set(events.map((event) => event.kind))).toEqual(new Set([
       "session",
+      "skill_selection",
       "tool_call",
       "tool_result",
       "assistant_output",
@@ -54,6 +55,9 @@ describe("host adapters", () => {
       hostToolName: "mcp__artifactpass_eval__echo",
       serverName: "artifactpass_eval",
       toolName: "echo",
+    });
+    expect(events.find((event) => event.kind === "skill_selection")).toMatchObject({
+      skillName: "share-artifact",
     });
   });
 

@@ -3,6 +3,8 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 
 import type { EvalScenario } from "./contracts";
+import { CLAUDE_ADAPTER_COMPATIBILITY } from "./hosts/claude";
+import { CODEX_ADAPTER_COMPATIBILITY } from "./hosts/codex";
 
 export const matrixHostSchema = z.enum(["generic", "codex", "claude"]);
 export type MatrixHost = z.infer<typeof matrixHostSchema>;
@@ -49,6 +51,7 @@ export type MatrixPairStatus =
 
 export interface MatrixDispatch {
   readonly pair: HostPair;
+  readonly runtimeVersions: readonly [string, string];
   readonly scenarioId: string;
   readonly agentAPayloadSha256: string;
   readonly agentBPayloadSha256?: string;
@@ -136,6 +139,7 @@ export const assessHostPair = (options: {
   }
   return {
     pair: options.pair,
+    runtimeVersions: [options.agentA.runtimeVersion, options.agentB.runtimeVersion],
     scenarioId: options.scenario.id,
     agentAPayloadSha256: hashScenarioPayload(options.scenario.prompts.agent_a),
     ...(options.scenario.prompts.agent_b === undefined
@@ -166,6 +170,7 @@ export const buildMatrixPreflight = (options: {
   readonly scenario: EvalScenario;
   readonly portableBundleSha256: string;
   readonly environment?: NodeJS.ProcessEnv;
+  readonly runtimeVersions?: Readonly<Partial<Record<MatrixHost, string>>>;
 }): readonly MatrixDispatch[] => {
   const environment = options.environment ?? process.env;
   const postures: Readonly<Record<MatrixHost, (agent: "a" | "b") => HostPosture>> = {
@@ -174,8 +179,8 @@ export const buildMatrixPreflight = (options: {
       runtimeVersion: "1",
       parserFixtureVersion: 1,
       authentication: "not_required",
-      filesystemContainment: "unproven",
-      networkContainment: "unproven",
+      filesystemContainment: "enforced",
+      networkContainment: "enforced",
       approvalMode: "normal",
       mcpTools: ["publish_artifact", "read_artifact"],
       principalId: `generic-${agent}`,
@@ -185,32 +190,32 @@ export const buildMatrixPreflight = (options: {
     }),
     codex: () => ({
       host: "codex",
-      runtimeVersion: "0.147.0",
+      runtimeVersion: options.runtimeVersions?.codex ?? CODEX_ADAPTER_COMPATIBILITY.testedCliVersion,
       parserFixtureVersion: 1,
       model: "gpt-5.4",
       authentication: environment.OPENAI_API_KEY === undefined ? "blocked" : "isolated",
-      filesystemContainment: "unproven",
-      networkContainment: "unproven",
+      filesystemContainment: "enforced",
+      networkContainment: "enforced",
       approvalMode: "normal",
       mcpTools: ["publish_artifact", "read_artifact"],
-      principalId: "codex-principal-unproven",
-      principalIsolation: "unproven",
+      principalId: "openai-api-key",
+      principalIsolation: "proven",
       skillSelectionEvidence: "unavailable",
       portableBundleSha256: options.portableBundleSha256,
     }),
     claude: () => ({
       host: "claude",
-      runtimeVersion: "2.1.197",
+      runtimeVersion: options.runtimeVersions?.claude ?? CLAUDE_ADAPTER_COMPATIBILITY.testedCliVersion,
       parserFixtureVersion: 1,
       model: "claude-sonnet-4-6",
       authentication: environment.ANTHROPIC_API_KEY === undefined ? "blocked" : "isolated",
-      filesystemContainment: "unproven",
-      networkContainment: "unproven",
+      filesystemContainment: "enforced",
+      networkContainment: "enforced",
       approvalMode: "normal",
       mcpTools: ["publish_artifact", "read_artifact"],
-      principalId: "claude-principal-unproven",
-      principalIsolation: "unproven",
-      skillSelectionEvidence: "unavailable",
+      principalId: "anthropic-api-key",
+      principalIsolation: "proven",
+      skillSelectionEvidence: "explicit",
       portableBundleSha256: options.portableBundleSha256,
     }),
   };
@@ -227,6 +232,10 @@ export const buildMatrixPreflight = (options: {
     agentA: postures[pair[0]]("a"),
     agentB: postures[pair[1]]("b"),
     expectedFixtureVersions: { generic: 1, codex: 1, claude: 1 },
-    expectedRuntimeVersions: { generic: "1", codex: "0.147.0", claude: "2.1.197" },
+    expectedRuntimeVersions: {
+      generic: "1",
+      codex: CODEX_ADAPTER_COMPATIBILITY.testedCliVersion,
+      claude: CLAUDE_ADAPTER_COMPATIBILITY.testedCliVersion,
+    },
   }));
 };

@@ -2,7 +2,7 @@
   "version": 1,
   "id": "generic-fidelity",
   "title": "Generic MCP exact-source fidelity",
-  "description": "The generic reference driver publishes and reconstructs declared Markdown and HTML fixtures through the installed ArtifactPass MCP bridge.",
+  "description": "The generic reference driver publishes and reconstructs declared Markdown and HTML fixtures through the installed ArtifactPass MCP bridge, then proves expiration and explicit revocation are distinct refusal states.",
   "fixtures": [
     {
       "id": "markdown",

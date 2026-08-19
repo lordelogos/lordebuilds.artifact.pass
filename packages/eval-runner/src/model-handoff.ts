@@ -8,7 +8,7 @@ import { evalScenarioSchema, type EvalReport, type NormalizedHostEvent } from ".
 import type { HostId } from "./hosts/host";
 import { installCandidateIntoLocalEval, type EvalInstallResult } from "./install-lifecycle";
 import { startLocalEvalEnvironment, type LocalEvalEnvironment } from "./local-environment";
-import { MODEL_BY_HOST, modelExecutionFailure, runModelHost } from "./model-host";
+import { MODEL_BY_HOST, modelExecutionFailure, runModelHost, runtimeVersionForHost } from "./model-host";
 import { writeEvalReport } from "./reporting";
 import { captureSafetySnapshot, compareSafetySnapshot } from "./safety-evidence";
 import {
@@ -32,6 +32,7 @@ interface ModelHandoffDependencies {
   readonly installCandidate: typeof installCandidateIntoLocalEval;
   readonly runHost: typeof runModelHost;
   readonly writeReport: typeof writeEvalReport;
+  readonly hostVersion: typeof runtimeVersionForHost;
 }
 
 const defaultDependencies: ModelHandoffDependencies = {
@@ -39,6 +40,7 @@ const defaultDependencies: ModelHandoffDependencies = {
   installCandidate: installCandidateIntoLocalEval,
   runHost: runModelHost,
   writeReport: writeEvalReport,
+  hostVersion: runtimeVersionForHost,
 };
 
 const sha256 = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
@@ -117,6 +119,13 @@ export const runModelHandoffTrial = async (options: {
     throw new Error("Autonomous handoff scenario requires one fixture and both agent prompts");
   }
   const fixtureBytes = await readFile(join(options.repositoryRoot, fixture.path));
+  const [agentARuntime, agentBRuntime] = await Promise.all([
+    dependencies.hostVersion(options.agentA),
+    dependencies.hostVersion(options.agentB),
+  ]);
+  if (agentARuntime === undefined || agentBRuntime === undefined) {
+    throw new Error("Both selected model-host CLIs must be installed");
+  }
   let environment: LocalEvalEnvironment | undefined;
   let receiptVersion = 1;
   let teardownFailed = false;
@@ -239,7 +248,7 @@ export const runModelHandoffTrial = async (options: {
     host: {
       agent_a: options.agentA,
       agent_b: options.agentB,
-      runtime: `${options.agentA}-cli -> ${options.agentB}-cli`,
+      runtime: `${options.agentA}@${agentARuntime} -> ${options.agentB}@${agentBRuntime}`,
       model: `${MODEL_BY_HOST[options.agentA]} -> ${MODEL_BY_HOST[options.agentB]}`,
     },
     cohort: {

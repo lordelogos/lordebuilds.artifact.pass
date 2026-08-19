@@ -36,7 +36,9 @@ OPENAI_API_KEY=... ANTHROPIC_API_KEY=... pnpm eval:cohort --agent-a claude --age
 
 The runner installs the same candidate separately for Agent A and Agent B, gives Agent A the declared fixture, extracts the volatile link only from its correlated `publish_artifact` result, and gives Agent B only the shared scenario prompt plus that link. It scores exact cursor traversal, bytes, checksum, business output, unrelated tools, canary writes, config mutation, and explicit skill-selection events. Raw streams and capability links never enter durable reports.
 
-A completed behavioral cohort is not automatically release-qualified. `pnpm eval:matrix` remains authoritative for independent OS/host containment, distinct principals, compatible trace parsers, and explicit skill observability. The current Codex and Claude CLI paths can be exercised diagnostically, but unproven posture stays a release blocker rather than being converted into a pass.
+A completed behavioral cohort is not automatically release-qualified. `pnpm eval:matrix` remains authoritative for host containment, distinct principals, compatible trace parsers, and explicit skill observability. Model runs expose only the selected ArtifactPass MCP tool plus the portable Skill capability: Claude uses its `--tools` allowlist, while Codex disables its shell, unified-exec, browser, web, computer-use, image, and app capabilities. The MCP bridge independently restricts filesystem access to the agent's disposable workspace and network access to the local ArtifactPass origin.
+
+Claude's stream emits explicit `Skill` tool activation and the adapter records it directly. Codex `exec --json` 0.147.0 exposes MCP use but no first-class skill-activation event, so Codex behavioral runs remain fail-closed on skill observability rather than inferring activation from prose or tool use. Track the upstream [Codex JSON skill-catalog/activation gap](https://github.com/openai/codex/issues/31088) before qualifying Codex skill-selection evidence.
 
 ## Baseline and release policy
 
