@@ -2,7 +2,9 @@ import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 
-const localRequire = createRequire(import.meta.url);
+const localRequire = createRequire(
+  typeof __filename === "string" ? __filename : import.meta.url,
+);
 
 const resolvedCommand = (command: string, args: readonly string[]): {
   readonly command: string;

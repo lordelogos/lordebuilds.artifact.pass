@@ -8,6 +8,7 @@ const BEARER_HEADER = /\bBearer\s+[A-Za-z0-9._~+/-]+=*/giu;
 const PLAIN_CAPABILITY_URL = /https?:\/\/[^\s"'<>\\]+\/a\/[A-Za-z0-9_-]{16,}/giu;
 const ESCAPED_CAPABILITY_URL = /https?:\\?\/\\?\/[^\s"'<>]+?\\?\/a\\?\/[A-Za-z0-9_-]{16,}/giu;
 const ENCODED_CAPABILITY_URL = /https?%3A%2F%2F[^\s"'<>]+?%2Fa%2F[A-Za-z0-9_-]{16,}/giu;
+const LOCAL_ABSOLUTE_PATH = /(?:\/(?:Users|tmp|private\/(?:tmp|var))\/[^\s"'<>:,}]+|[A-Za-z]:\\[^\s"'<>:,}]+)/gu;
 
 const decodedCandidates = (value: string): readonly string[] => {
   const candidates = [value, value.replaceAll("\\/", "/")];
@@ -34,7 +35,8 @@ export const redactSensitiveText = (value: string): string => {
     .replace(PLAIN_CAPABILITY_URL, REDACTED)
     .replace(ESCAPED_CAPABILITY_URL, REDACTED)
     .replace(ENCODED_CAPABILITY_URL, REDACTED)
-    .replace(BEARER_HEADER, REDACTED);
+    .replace(BEARER_HEADER, REDACTED)
+    .replace(LOCAL_ABSOLUTE_PATH, PATH_REDACTED);
   for (const token of bearerTokens(value)) {
     redacted = redacted.replaceAll(token, REDACTED);
     redacted = redacted.replaceAll(encodeURIComponent(token), REDACTED);

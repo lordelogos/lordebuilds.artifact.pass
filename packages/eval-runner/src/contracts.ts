@@ -3,6 +3,7 @@ import { z } from "zod";
 export const EVAL_CONTRACT_VERSION = 1 as const;
 export const NORMALIZED_HOST_EVENT_VERSION = 1 as const;
 export const EVAL_RESULT_VERSION = 1 as const;
+export const EVAL_REPORT_VERSION = 1 as const;
 
 const kebabIdSchema = z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u);
 const isoDateTimeSchema = z.iso.datetime({ offset: true });
@@ -187,6 +188,7 @@ export const evalResultSchema = z.object({
   candidate_sha256: sha256Schema,
   started_at: isoDateTimeSchema,
   completed_at: isoDateTimeSchema,
+  trial_outcome: evalOutcomeSchema.exclude(["teardown_failure"]),
   outcome: evalOutcomeSchema,
   gate_class: z.enum(["deterministic", "installation", "behavioral", "safety"]),
   host_pair: z.object({
@@ -214,3 +216,33 @@ export const evalResultSchema = z.object({
 });
 
 export type EvalResult = z.infer<typeof evalResultSchema>;
+
+export const evalReportSchema = z.object({
+  version: z.literal(EVAL_REPORT_VERSION),
+  run_id: z.uuid(),
+  candidate: z.object({ sha256: sha256Schema }).strict(),
+  receipt_version: z.number().int().positive(),
+  scenario: z.object({ id: kebabIdSchema, version: z.number().int().positive() }).strict(),
+  scorer_version: z.string().regex(/^\d+\.\d+\.\d+$/u),
+  host: z.object({
+    agent_a: z.enum(["generic", "codex", "claude"]),
+    agent_b: z.enum(["generic", "codex", "claude"]).optional(),
+    runtime: z.string().min(1),
+    model: z.string().min(1).optional(),
+  }).strict(),
+  cohort: z.object({
+    profile: z.enum(["deterministic", "smoke", "baseline", "release", "production"]),
+    trial_index: z.number().int().positive(),
+    trial_count: z.number().int().positive(),
+  }).strict(),
+  result: evalResultSchema,
+  latency_ms: z.number().int().nonnegative(),
+  usage: z.object({
+    input_tokens: z.number().int().nonnegative().optional(),
+    output_tokens: z.number().int().nonnegative().optional(),
+    estimated_cost_usd: z.number().nonnegative().optional(),
+  }).strict(),
+  infrastructure_classification: z.string().min(1).optional(),
+}).strict();
+
+export type EvalReport = z.infer<typeof evalReportSchema>;

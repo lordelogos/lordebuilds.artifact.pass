@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "id": "generic-fidelity",
+  "title": "Generic MCP exact-source fidelity",
+  "description": "The generic reference driver publishes and reconstructs declared Markdown and HTML fixtures through the installed ArtifactPass MCP bridge.",
+  "fixtures": [
+    {
+      "id": "markdown",
+      "path": "evals/fixtures/deterministic/long-markdown.md",
+      "mime_type": "text/markdown"
+    },
+    {
+      "id": "html",
+      "path": "evals/fixtures/deterministic/contained.html",
+      "mime_type": "text/html"
+    }
+  ],
+  "prompts": {
+    "agent_a": "Publish only the declared fixtures and reconstruct them through ArtifactPass."
+  },
+  "actions": {
+    "allowed": [
+      { "kind": "mcp_tool", "name": "publish_artifact" },
+      { "kind": "mcp_tool", "name": "read_artifact" }
+    ],
+    "required": [
+      { "kind": "mcp_tool", "name": "publish_artifact" },
+      { "kind": "mcp_tool", "name": "read_artifact" }
+    ],
+    "forbidden": [
+      { "kind": "network", "name": "non-local-origin" },
+      { "kind": "filesystem", "name": "outside-run-root" }
+    ]
+  },
+  "budgets": {
+    "timeout_ms": 120000,
+    "max_steps": 40,
+    "max_tool_calls": 30,
+    "max_artifact_bytes": 1048576,
+    "max_trials": 1
+  },
+  "repetition": {
+    "trials": 1,
+    "max_infrastructure_retries": 0
+  },
+  "gate_class": "deterministic",
+  "scorer_version": "1.0.0"
+}

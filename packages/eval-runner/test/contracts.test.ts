@@ -67,6 +67,7 @@ describe("eval contracts", () => {
       candidate_sha256: "a".repeat(64),
       started_at: "2026-08-19T03:00:00.000Z",
       completed_at: "2026-08-19T03:00:01.000Z",
+      trial_outcome: outcome === "teardown_failure" ? "pass" : outcome,
       outcome,
       gate_class: "behavioral",
       host_pair: { agent_a: "generic" },
