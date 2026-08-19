@@ -29,6 +29,8 @@ export interface HostPosture {
   readonly approvalMode: "normal" | "bypass";
   readonly mcpTools: readonly string[];
   readonly principalId: string;
+  readonly principalIsolation: "proven" | "unproven";
+  readonly skillSelectionEvidence: "explicit" | "unavailable";
   readonly portableBundleSha256: string;
 }
 
@@ -40,6 +42,7 @@ export type MatrixPairStatus =
   | "permission_bypass_blocked"
   | "bundle_mismatch"
   | "mcp_contract_blocked"
+  | "skill_observability_blocked"
   | "parser_incompatible"
   | "infrastructure_failed"
   | "skipped";
@@ -106,9 +109,19 @@ export const assessHostPair = (options: {
   ) {
     status = "mcp_contract_blocked";
     reasons.push("A host did not expose the exact portable ArtifactPass MCP tool contract");
-  } else if (options.agentA.principalId === options.agentB.principalId) {
+  } else if (
+    options.agentA.skillSelectionEvidence !== "explicit" ||
+    options.agentB.skillSelectionEvidence !== "explicit"
+  ) {
+    status = "skill_observability_blocked";
+    reasons.push("A host cannot emit explicit portable skill-selection evidence");
+  } else if (
+    options.agentA.principalIsolation !== "proven" ||
+    options.agentB.principalIsolation !== "proven" ||
+    options.agentA.principalId === options.agentB.principalId
+  ) {
     status = "identity_blocked";
-    reasons.push("Agent A and Agent B share one principal");
+    reasons.push("Distinct Agent A and Agent B principals are not proven");
   } else if (options.agentA.approvalMode === "bypass" || options.agentB.approvalMode === "bypass") {
     status = "permission_bypass_blocked";
     reasons.push("A broad permission bypass is in use");
@@ -161,11 +174,13 @@ export const buildMatrixPreflight = (options: {
       runtimeVersion: "1",
       parserFixtureVersion: 1,
       authentication: "not_required",
-      filesystemContainment: "enforced",
-      networkContainment: "enforced",
+      filesystemContainment: "unproven",
+      networkContainment: "unproven",
       approvalMode: "normal",
       mcpTools: ["publish_artifact", "read_artifact"],
       principalId: `generic-${agent}`,
+      principalIsolation: "proven",
+      skillSelectionEvidence: "explicit",
       portableBundleSha256: options.portableBundleSha256,
     }),
     codex: () => ({
@@ -179,6 +194,8 @@ export const buildMatrixPreflight = (options: {
       approvalMode: "normal",
       mcpTools: ["publish_artifact", "read_artifact"],
       principalId: "codex-principal-unproven",
+      principalIsolation: "unproven",
+      skillSelectionEvidence: "unavailable",
       portableBundleSha256: options.portableBundleSha256,
     }),
     claude: () => ({
@@ -192,6 +209,8 @@ export const buildMatrixPreflight = (options: {
       approvalMode: "normal",
       mcpTools: ["publish_artifact", "read_artifact"],
       principalId: "claude-principal-unproven",
+      principalIsolation: "unproven",
+      skillSelectionEvidence: "unavailable",
       portableBundleSha256: options.portableBundleSha256,
     }),
   };

@@ -1,0 +1,149 @@
+import { cp, readFile, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+
+import { ClaudeEventParser } from "./hosts/claude";
+import { CodexEventParser } from "./hosts/codex";
+import { pickEnvironment, runHostCommand, type HostCommandResult, type HostId } from "./hosts/host";
+import type { LocalEvalEnvironment } from "./local-environment";
+
+export const MODEL_BY_HOST = {
+  codex: "gpt-5.4",
+  claude: "claude-sonnet-4-6",
+} as const;
+
+const readInstalledMcpServer = async (path: string): Promise<{
+  readonly command: string;
+  readonly args: readonly string[];
+}> => {
+  const configuration = JSON.parse(await readFile(path, "utf8")) as {
+    readonly mcpServers?: Readonly<Record<string, { readonly command?: unknown; readonly args?: unknown }>>;
+  };
+  const server = configuration.mcpServers?.artifactpass;
+  if (
+    typeof server?.command !== "string" ||
+    !Array.isArray(server.args) ||
+    !server.args.every((argument) => typeof argument === "string")
+  ) throw new Error("Installed ArtifactPass MCP configuration is invalid");
+  return { command: server.command, args: server.args as string[] };
+};
+
+const quotedToml = (value: string): string => JSON.stringify(value);
+
+const configureModelHost = async (options: {
+  readonly host: HostId;
+  readonly agent: "agent-a" | "agent-b";
+  readonly environment: LocalEvalEnvironment;
+  readonly mcpConfigPath: string;
+  readonly launcherPath: string;
+}): Promise<{ readonly mcpConfigPath: string; readonly pluginRoot: string; readonly home: string }> => {
+  const server = await readInstalledMcpServer(options.mcpConfigPath);
+  const pluginRoot = join(dirname(options.mcpConfigPath), "plugin");
+  const home = options.agent === "agent-a" ? options.environment.homes.agentA : options.environment.homes.agentB;
+  const wrappedServer = {
+    command: process.execPath,
+    args: [options.launcherPath, server.command, ...server.args],
+  };
+  if (options.host === "codex") {
+    await cp(join(pluginRoot, "skills"), join(home, "skills"), { recursive: true });
+    await writeFile(join(home, "config.toml"), [
+      "[mcp_servers.artifactpass]",
+      `command = ${quotedToml(wrappedServer.command)}`,
+      `args = [${wrappedServer.args.map(quotedToml).join(", ")}]`,
+      "",
+    ].join("\n"), { mode: 0o600 });
+    return { mcpConfigPath: options.mcpConfigPath, pluginRoot, home };
+  }
+  const claudeConfig = join(options.environment.root, `${options.agent}-claude-mcp.json`);
+  await writeFile(claudeConfig, `${JSON.stringify({
+    mcpServers: { artifactpass: wrappedServer },
+  }, null, 2)}\n`, { mode: 0o600 });
+  return { mcpConfigPath: claudeConfig, pluginRoot, home };
+};
+
+const modelArguments = (options: {
+  readonly host: HostId;
+  readonly workspace: string;
+  readonly mcpConfigPath: string;
+  readonly pluginRoot: string;
+  readonly allowedTools: readonly ("publish_artifact" | "read_artifact")[];
+}): readonly string[] => options.host === "codex"
+  ? [
+      "exec",
+      "--json",
+      "--ephemeral",
+      "--skip-git-repo-check",
+      "--sandbox",
+      "workspace-write",
+      "--cd",
+      options.workspace,
+      "--model",
+      MODEL_BY_HOST.codex,
+      "-",
+    ]
+  : [
+      "--print",
+      "--bare",
+      "--output-format",
+      "stream-json",
+      "--no-session-persistence",
+      "--strict-mcp-config",
+      "--mcp-config",
+      options.mcpConfigPath,
+      "--plugin-dir",
+      options.pluginRoot,
+      "--allowedTools",
+      ...options.allowedTools.map((tool) => `mcp__artifactpass__${tool}`),
+      "--model",
+      MODEL_BY_HOST.claude,
+      "--max-budget-usd",
+      "1",
+    ];
+
+export const runModelHost = async (options: {
+  readonly host: HostId;
+  readonly agent: "agent-a" | "agent-b";
+  readonly environment: LocalEvalEnvironment;
+  readonly mcpConfigPath: string;
+  readonly launcherPath: string;
+  readonly prompt: string;
+  readonly allowedTools: readonly ("publish_artifact" | "read_artifact")[];
+  readonly timeoutMilliseconds: number;
+}): Promise<HostCommandResult> => {
+  const configured = await configureModelHost(options);
+  const workspace = options.agent === "agent-a"
+    ? options.environment.workspaces.agentA
+    : options.environment.workspaces.agentB;
+  const credentialName = options.host === "codex" ? "OPENAI_API_KEY" : "ANTHROPIC_API_KEY";
+  return runHostCommand({
+    host: options.host,
+    command: options.host === "codex" ? "codex" : "claude",
+    args: modelArguments({
+      host: options.host,
+      workspace,
+      mcpConfigPath: configured.mcpConfigPath,
+      pluginRoot: configured.pluginRoot,
+      allowedTools: options.allowedTools,
+    }),
+    cwd: workspace,
+    env: pickEnvironment(process.env, ["PATH", credentialName], {
+      HOME: configured.home,
+      ...(options.host === "codex" ? { CODEX_HOME: configured.home } : { CLAUDE_CONFIG_DIR: configured.home }),
+      NO_COLOR: "1",
+    }),
+    timeoutMilliseconds: options.timeoutMilliseconds,
+    parser: options.host === "codex" ? new CodexEventParser() : new ClaudeEventParser(),
+    input: options.prompt,
+  });
+};
+
+export const modelExecutionFailure = (execution: HostCommandResult): string | undefined => {
+  const terminalEvents = execution.events.filter((event) => event.kind === "terminal");
+  if (
+    execution.exitCode !== 0 ||
+    execution.signal !== null ||
+    execution.events.some((event) => event.kind === "infrastructure_error") ||
+    terminalEvents.length !== 1 ||
+    terminalEvents[0]?.status !== "succeeded"
+  ) return "Model host did not complete with one successful terminal event and a clean process exit";
+  return undefined;
+};

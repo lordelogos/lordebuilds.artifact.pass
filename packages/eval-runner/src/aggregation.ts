@@ -55,7 +55,39 @@ export const cohortReportSchema = z.object({
   infrastructure_runs: z.array(z.uuid()),
   skipped_runs: z.array(z.uuid()),
   eligible_for_threshold: z.boolean(),
-}).strict();
+}).strict().superRefine((report, context) => {
+  const uniqueRunIds = new Set(report.trial_run_ids);
+  if (uniqueRunIds.size !== report.trial_run_ids.length) {
+    context.addIssue({ code: "custom", path: ["trial_run_ids"], message: "Trial run IDs must be unique" });
+  }
+  const totalOutcomes = Object.values(report.outcomes).reduce((sum, count) => sum + count, 0);
+  const expectedBehavioral = report.outcomes.pass + report.outcomes.behavior_failure;
+  const expectedWilson = wilsonInterval(report.outcomes.pass, expectedBehavioral);
+  const expectedRate = expectedBehavioral === 0 ? 0 : report.outcomes.pass / expectedBehavioral;
+  const expectedInfrastructure = report.outcomes.infrastructure_failure + report.outcomes.timeout + report.outcomes.incomplete;
+  const expectedEligible = report.hard_failures.length === 0 && expectedBehavioral === report.total_trials;
+  const checks: readonly [boolean, (string | number)[], string][] = [
+    [report.total_trials === report.trial_run_ids.length, ["total_trials"], "Trial count must match run IDs"],
+    [totalOutcomes === report.total_trials, ["outcomes"], "Outcome counts must sum to total trials"],
+    [report.behavioral_trials === expectedBehavioral, ["behavioral_trials"], "Behavioral count must match outcomes"],
+    [report.successes === report.outcomes.pass, ["successes"], "Successes must match passing outcomes"],
+    [Math.abs(report.observed_success_rate - expectedRate) < 1e-12, ["observed_success_rate"], "Success rate must be derived from outcomes"],
+    [Math.abs(report.wilson_95.lower - expectedWilson.lower) < 1e-12, ["wilson_95", "lower"], "Wilson lower bound must be derived from outcomes"],
+    [Math.abs(report.wilson_95.upper - expectedWilson.upper) < 1e-12, ["wilson_95", "upper"], "Wilson upper bound must be derived from outcomes"],
+    [report.infrastructure_runs.length === expectedInfrastructure, ["infrastructure_runs"], "Infrastructure run count must match outcomes"],
+    [report.skipped_runs.length === report.outcomes.skipped, ["skipped_runs"], "Skipped run count must match outcomes"],
+    [report.eligible_for_threshold === expectedEligible, ["eligible_for_threshold"], "Eligibility must match hard and behavioral outcomes"],
+  ];
+  for (const [matches, path, message] of checks) {
+    if (!matches) context.addIssue({ code: "custom", path, message });
+  }
+  for (const runId of [...report.infrastructure_runs, ...report.skipped_runs, ...report.hard_failures.map((failure) => failure.run_id)]) {
+    if (!uniqueRunIds.has(runId)) {
+      context.addIssue({ code: "custom", path: ["trial_run_ids"], message: "Classified runs must belong to the cohort" });
+      break;
+    }
+  }
+});
 
 export type CohortReport = z.infer<typeof cohortReportSchema>;
 
@@ -73,7 +105,10 @@ const OUTCOMES = [
 export const aggregateCohort = (reports: readonly EvalReport[]): CohortReport => {
   if (reports.length === 0) throw new Error("Cannot aggregate an empty cohort");
   const first = reports[0]!;
+  const runIds = new Set<string>();
   for (const report of reports) {
+    if (runIds.has(report.run_id)) throw new Error("Cohort trial run IDs must be unique");
+    runIds.add(report.run_id);
     if (
       report.candidate.sha256 !== first.candidate.sha256 ||
       report.scenario.id !== first.scenario.id ||

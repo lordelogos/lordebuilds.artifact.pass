@@ -84,7 +84,7 @@ const reconstruct = async (host: GenericMcpHost, shareUrl: string): Promise<{
   throw new Error("ArtifactPass handoff exceeded its cursor bound");
 };
 
-export const runGenericHandoffGates = async (options: {
+export const runGenericTransportGates = async (options: {
   readonly repositoryRoot: string;
   readonly environment: LocalEvalEnvironment;
   readonly agentA: GenericMcpHost;

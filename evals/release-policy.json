@@ -1,7 +1,7 @@
 {
   "version": 1,
   "policy_id": "artifactpass-0.1.0-initial",
-  "candidate_sha256": "c920cb28bbd877c45dccc90dba5561e7d0a2259b17f62253ef439b5b6e3a0841",
+  "candidate_sha256": "cd1d79423c6f7b950d8e5b4213a8fee281d4267b1e0b01b280ad3e8d05d2a28d",
   "scorer_version": "1.0.0",
   "created_at": "2026-08-19T00:00:00.000Z",
   "cohorts": [
@@ -15,18 +15,18 @@
       "minimum_success_rate": 1,
       "minimum_wilson_lower_bound": 0.7,
       "calibration_run_ids": [
-        "5d791fad-9cf9-4bdd-a7dc-5e3a58608583",
-        "30fa8052-ec6a-4862-94f0-c669e8f2a9ae",
-        "f147ff40-cddc-4e32-80bd-9736736b7032",
-        "0811f397-64ee-4788-9572-db4d706190d4",
-        "3761a77b-dcd6-4845-a30f-1ed1f79d2ff1",
-        "4338472d-1615-4d48-9fca-96b8a53c2707",
-        "bbcfe738-28b7-43e3-bc36-79d8034db19f",
-        "eff00938-c4fc-4d5b-a97b-f9d6962c7048",
-        "329d8e20-f5dc-4564-8072-7144311954a1",
-        "05757686-ef88-4666-8890-2ac82aa51016"
+        "4906b5bc-1465-4064-a643-ac9d0010e565",
+        "c3cc844f-9ed6-43c7-9cd6-b8a18c254d88",
+        "cf030d96-08f5-4d1e-8540-b2c9d1cf02ef",
+        "cb3123b1-4977-4a27-b500-d2b059cbf420",
+        "fee1f410-b3b1-4c19-8df6-54c09e285fad",
+        "58a77e82-6fec-4b41-81cd-5a752efd09b7",
+        "c030c2cf-84da-4d96-a6e3-281fbc0af3c8",
+        "0233002a-2722-4f7b-929e-2d88573ca59a",
+        "a44df239-53bb-418c-928c-77b138c5ffb5",
+        "244931ba-419d-43b8-b157-d44eeb8df7e8"
       ],
-      "calibration_candidate_sha256": "c920cb28bbd877c45dccc90dba5561e7d0a2259b17f62253ef439b5b6e3a0841"
+      "calibration_candidate_sha256": "cd1d79423c6f7b950d8e5b4213a8fee281d4267b1e0b01b280ad3e8d05d2a28d"
     },
     {
       "id": "codex-to-claude-handoff",

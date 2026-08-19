@@ -244,6 +244,33 @@ export const evalReportSchema = z.object({
     estimated_cost_usd: z.number().nonnegative().optional(),
   }).strict(),
   infrastructure_classification: z.string().min(1).optional(),
-}).strict();
+}).strict().superRefine((report, context) => {
+  const identities: readonly [boolean, (string | number)[], string][] = [
+    [report.result.run_id === report.run_id, ["result", "run_id"], "Nested result run ID must match the report"],
+    [
+      report.result.candidate_sha256 === report.candidate.sha256,
+      ["result", "candidate_sha256"],
+      "Nested result candidate must match the report",
+    ],
+    [
+      report.result.scenario_id === report.scenario.id,
+      ["result", "scenario_id"],
+      "Nested result scenario must match the report",
+    ],
+    [
+      report.result.host_pair.agent_a === report.host.agent_a,
+      ["result", "host_pair", "agent_a"],
+      "Nested Agent A host must match the report",
+    ],
+    [
+      report.result.host_pair.agent_b === report.host.agent_b,
+      ["result", "host_pair", "agent_b"],
+      "Nested Agent B host must match the report",
+    ],
+  ];
+  for (const [matches, path, message] of identities) {
+    if (!matches) context.addIssue({ code: "custom", path, message });
+  }
+});
 
 export type EvalReport = z.infer<typeof evalReportSchema>;

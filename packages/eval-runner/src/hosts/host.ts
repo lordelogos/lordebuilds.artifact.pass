@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { StringDecoder } from "node:string_decoder";
 
 import {
   NORMALIZED_HOST_EVENT_VERSION,
@@ -128,6 +129,7 @@ export interface HostCommand {
   readonly parser: HostEventParser;
   readonly input?: string;
   readonly signal?: AbortSignal;
+  readonly terminationGraceMilliseconds?: number;
 }
 
 export interface HostCommandResult {
@@ -159,16 +161,25 @@ export const runHostCommand = async (options: HostCommand): Promise<HostCommandR
       windowsHide: true,
     });
     const decoder = new BoundedJsonLineDecoder();
+    const stdoutDecoder = new StringDecoder("utf8");
     const events: NormalizedHostEvent[] = [];
     const stderrChunks: Buffer[] = [];
     let stderrBytes = 0;
     let settled = false;
     let failure: HostTraceError | undefined;
+    let forceKillTimer: NodeJS.Timeout | undefined;
 
     const stop = (error: HostTraceError): void => {
       if (failure !== undefined) return;
       failure = error;
       killProcessGroup(child.pid, "SIGTERM");
+      forceKillTimer = setTimeout(() => {
+        try {
+          killProcessGroup(child.pid, "SIGKILL");
+        } catch {
+          // The close/error path preserves the original timeout or cancellation failure.
+        }
+      }, options.terminationGraceMilliseconds ?? 5_000);
     };
     const timeout = setTimeout(() => {
       stop(new HostTraceError("process_timeout", `Host process exceeded ${options.timeoutMilliseconds}ms`));
@@ -177,10 +188,11 @@ export const runHostCommand = async (options: HostCommand): Promise<HostCommandR
       stop(new HostTraceError("process_cancelled", "Host process was cancelled"));
     };
     options.signal?.addEventListener("abort", abort, { once: true });
+    if (options.signal?.aborted === true) abort();
 
     child.stdout.on("data", (chunk: Buffer) => {
       try {
-        for (const value of decoder.push(chunk.toString("utf8"))) events.push(...options.parser.parse(value));
+        for (const value of decoder.push(stdoutDecoder.write(chunk))) events.push(...options.parser.parse(value));
       } catch (error) {
         stop(error instanceof HostTraceError
           ? error
@@ -201,12 +213,14 @@ export const runHostCommand = async (options: HostCommand): Promise<HostCommandR
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
+      if (forceKillTimer !== undefined) clearTimeout(forceKillTimer);
       options.signal?.removeEventListener("abort", abort);
       if (failure !== undefined) {
         reject(failure);
         return;
       }
       try {
+        for (const value of decoder.push(stdoutDecoder.end())) events.push(...options.parser.parse(value));
         for (const value of decoder.finish()) events.push(...options.parser.parse(value));
       } catch (error) {
         reject(error);

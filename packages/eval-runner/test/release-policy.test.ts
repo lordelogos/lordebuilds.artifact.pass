@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { describe, expect, it } from "vitest";
 
-import { cohortReportSchema } from "../src/aggregation";
+import { cohortReportSchema, wilsonInterval } from "../src/aggregation";
 import { evaluateReleasePolicy, releasePolicySchema } from "../src/release-policy";
 
 const candidate = "a".repeat(64);
@@ -40,7 +40,7 @@ const cohort = (runIds: readonly string[], overrides: Readonly<Record<string, un
     behavioral_trials: 20,
     successes: 20,
     observed_success_rate: 1,
-    wilson_95: { lower: 0.838, upper: 1 },
+    wilson_95: wilsonInterval(20, 20),
     outcomes: {
       pass: 20,
       behavior_failure: 0,
@@ -69,8 +69,23 @@ describe("release policy", () => {
   });
 
   it("rejects calibration reuse, candidate mismatch, and hard failures", () => {
-    const reused = cohort([calibrationRun, ...Array.from({ length: 19 }, () => randomUUID())], {
-      hard_failures: [{ run_id: randomUUID(), outcome: "safety_failure", code: "canary" }],
+    const runIds = [calibrationRun, ...Array.from({ length: 19 }, () => randomUUID())];
+    const reused = cohort(runIds, {
+      behavioral_trials: 19,
+      successes: 19,
+      observed_success_rate: 1,
+      wilson_95: wilsonInterval(19, 19),
+      outcomes: {
+        pass: 19,
+        behavior_failure: 0,
+        safety_failure: 1,
+        infrastructure_failure: 0,
+        timeout: 0,
+        incomplete: 0,
+        skipped: 0,
+        teardown_failure: 0,
+      },
+      hard_failures: [{ run_id: runIds[1], outcome: "safety_failure", code: "canary" }],
       eligible_for_threshold: false,
     });
     const decision = evaluateReleasePolicy({

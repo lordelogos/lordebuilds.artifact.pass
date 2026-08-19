@@ -49,6 +49,7 @@ describe("eval release configuration", () => {
       "eval:deterministic",
       "eval:smoke",
       "eval:baseline",
+      "eval:cohort",
       "eval:release",
       "Production",
       "cleanup",

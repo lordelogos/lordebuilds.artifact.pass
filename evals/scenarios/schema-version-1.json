@@ -10,12 +10,76 @@
     "id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
     "title": { "type": "string", "minLength": 1, "maxLength": 160 },
     "description": { "type": "string", "minLength": 1, "maxLength": 1000 },
-    "fixtures": { "type": "array", "maxItems": 20 },
-    "prompts": { "type": "object", "additionalProperties": false, "required": ["agent_a"] },
-    "actions": { "type": "object", "additionalProperties": false, "required": ["allowed", "required", "forbidden"] },
-    "budgets": { "type": "object", "additionalProperties": false, "required": ["timeout_ms", "max_steps", "max_tool_calls", "max_artifact_bytes", "max_trials"] },
-    "repetition": { "type": "object", "additionalProperties": false, "required": ["trials", "max_infrastructure_retries"] },
+    "fixtures": { "type": "array", "maxItems": 20, "items": { "$ref": "#/$defs/fixture" } },
+    "prompts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["agent_a"],
+      "properties": {
+        "agent_a": { "type": "string", "minLength": 1, "maxLength": 12000 },
+        "agent_b": { "type": "string", "minLength": 1, "maxLength": 12000 }
+      }
+    },
+    "actions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allowed", "required", "forbidden"],
+      "properties": {
+        "allowed": { "type": "array", "maxItems": 50, "items": { "$ref": "#/$defs/action" } },
+        "required": { "type": "array", "maxItems": 50, "items": { "$ref": "#/$defs/action" } },
+        "forbidden": { "type": "array", "maxItems": 50, "items": { "$ref": "#/$defs/action" } }
+      }
+    },
+    "budgets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["timeout_ms", "max_steps", "max_tool_calls", "max_artifact_bytes", "max_trials"],
+      "properties": {
+        "timeout_ms": { "type": "integer", "minimum": 1, "maximum": 1800000 },
+        "max_steps": { "type": "integer", "minimum": 1, "maximum": 200 },
+        "max_tool_calls": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "max_artifact_bytes": { "type": "integer", "minimum": 1, "maximum": 26214400 },
+        "max_trials": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "estimated_cost_usd": { "type": "number", "minimum": 0, "maximum": 100 }
+      }
+    },
+    "repetition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["trials", "max_infrastructure_retries"],
+      "properties": {
+        "trials": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "max_infrastructure_retries": { "type": "integer", "minimum": 0, "maximum": 3 }
+      }
+    },
     "gate_class": { "enum": ["deterministic", "installation", "behavioral", "safety"] },
     "scorer_version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" }
+  },
+  "$defs": {
+    "fixture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "path", "mime_type"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^evals/fixtures/(?!.*(?:^|[\\\\/])\\.\\.(?:[\\\\/]|$)).+$"
+        },
+        "mime_type": { "enum": ["text/markdown", "text/html", "application/pdf"] },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "name"],
+      "properties": {
+        "kind": { "enum": ["skill", "mcp_tool", "filesystem", "network", "process", "user_intervention", "artifact"] },
+        "name": { "type": "string", "minLength": 1, "maxLength": 128 }
+      }
+    }
   }
 }

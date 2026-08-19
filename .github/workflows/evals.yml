@@ -10,9 +10,14 @@ on:
         description: Evaluation profile
         required: true
         type: choice
-        options: [smoke, baseline, release, production]
+        options: [smoke, generic-baseline, model-baseline, release, production]
       host:
-        description: Model host for smoke
+        description: Agent A model host
+        required: false
+        type: choice
+        options: [codex, claude]
+      agent_b:
+        description: Agent B model host
         required: false
         type: choice
         options: [codex, claude]
@@ -54,6 +59,7 @@ jobs:
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      EVAL_TRIALS: ${{ inputs.trials }}
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
@@ -67,9 +73,22 @@ jobs:
       - name: Smoke
         if: inputs.profile == 'smoke'
         run: pnpm eval:smoke --host "${{ inputs.host }}"
-      - name: Baseline preflight
-        if: inputs.profile == 'baseline'
-        run: pnpm eval:baseline --hosts generic --trials "${{ inputs.trials }}"
+      - name: Trial preflight
+        if: inputs.profile == 'generic-baseline' || inputs.profile == 'model-baseline'
+        run: |
+          case "$EVAL_TRIALS" in
+            ''|*[!0-9]*) echo "trials must be an integer" >&2; exit 1 ;;
+          esac
+          if [ "$EVAL_TRIALS" -lt 10 ] || [ "$EVAL_TRIALS" -gt 100 ]; then
+            echo "trials must be between 10 and 100" >&2
+            exit 1
+          fi
+      - name: Generic baseline
+        if: inputs.profile == 'generic-baseline'
+        run: pnpm eval:baseline --hosts generic --trials "$EVAL_TRIALS"
+      - name: Ordered model baseline
+        if: inputs.profile == 'model-baseline'
+        run: pnpm eval:cohort --agent-a "${{ inputs.host }}" --agent-b "${{ inputs.agent_b }}" --profile baseline --trials "$EVAL_TRIALS"
       - name: Release decision
         if: inputs.profile == 'release'
         run: pnpm eval:release

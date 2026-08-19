@@ -11,7 +11,7 @@ export interface PortableIntegration {
   readonly skillsDirectory: string;
 }
 
-const treeDigest = async (root: string): Promise<string> => {
+export const portableIntegrationDigest = async (root: string): Promise<string> => {
   const hash = createHash("sha256");
   const visit = async (directory: string): Promise<void> => {
     const entries = await readdir(directory, { withFileTypes: true });
@@ -46,7 +46,7 @@ export const installPortableIntegration = async (options: {
   const sourceStats = await stat(sourceRoot);
   if (!sourceStats.isDirectory()) throw new Error("Portable integration source must be a directory");
 
-  const digest = await treeDigest(sourceRoot);
+  const digest = await portableIntegrationDigest(sourceRoot);
   const destinationDirectory = resolve(
     options.destinationDirectory ?? defaultPortableIntegrationDirectory(),
   );
@@ -58,7 +58,7 @@ export const installPortableIntegration = async (options: {
 
   const verify = async (): Promise<void> => {
     const [installedDigest, bridgeStats, skillsStats, mcpConfigStats] = await Promise.all([
-      treeDigest(pluginRoot),
+      portableIntegrationDigest(pluginRoot),
       stat(bridgePath),
       stat(skillsDirectory),
       stat(mcpConfig),

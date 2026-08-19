@@ -1,8 +1,8 @@
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 import { cohortReportSchema } from "./aggregation";
+import { candidateDigest } from "./candidate-digest";
 import { evalScenarioSchema } from "./contracts";
 import { buildMatrixPreflight, matrixReleaseEligible } from "./host-matrix";
 import { evaluateReleasePolicy, releasePolicySchema } from "./release-policy";
@@ -12,9 +12,7 @@ const values = (name: string): readonly string[] => process.argv.flatMap((value,
 
 const main = async (): Promise<void> => {
   const repositoryRoot = resolve(process.cwd());
-  const candidateSha256 = createHash("sha256").update(await readFile(
-    join(repositoryRoot, "plugins/artifactpass/dist/cli.mjs"),
-  )).digest("hex");
+  const candidateSha256 = await candidateDigest(repositoryRoot);
   const policy = releasePolicySchema.parse(JSON.parse(await readFile(
     join(repositoryRoot, "evals/release-policy.json"),
     "utf8",

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { evalResultSchema, evalScenarioSchema } from "../src/contracts";
+import { evalReportSchema, evalResultSchema, evalScenarioSchema } from "../src/contracts";
 
 const validScenario = () => ({
   version: 1,
@@ -77,5 +77,45 @@ describe("eval contracts", () => {
       failures: [],
     };
     expect(evalResultSchema.parse(result).outcome).toBe(outcome);
+  });
+
+  it("rejects nested report identities that disagree with the envelope", () => {
+    const runId = "8e885d98-7491-4ef8-84fe-1b8fea4c7235";
+    const report = {
+      version: 1,
+      run_id: runId,
+      candidate: { sha256: "a".repeat(64) },
+      receipt_version: 1,
+      scenario: { id: "publish-markdown", version: 1 },
+      scorer_version: "1.0.0",
+      host: { agent_a: "generic", runtime: "node-test" },
+      cohort: { profile: "smoke", trial_index: 1, trial_count: 1 },
+      result: {
+        version: 1,
+        run_id: runId,
+        scenario_id: "publish-markdown",
+        candidate_sha256: "a".repeat(64),
+        started_at: "2026-08-19T03:00:00.000Z",
+        completed_at: "2026-08-19T03:00:01.000Z",
+        trial_outcome: "pass",
+        outcome: "pass",
+        gate_class: "behavioral",
+        host_pair: { agent_a: "generic" },
+        teardown: "passed",
+        observed_actions: [],
+        failures: [],
+      },
+      latency_ms: 1000,
+      usage: {},
+    } as const;
+    expect(evalReportSchema.parse(report).run_id).toBe(runId);
+    expect(evalReportSchema.safeParse({
+      ...report,
+      result: { ...report.result, candidate_sha256: "b".repeat(64) },
+    }).success).toBe(false);
+    expect(evalReportSchema.safeParse({
+      ...report,
+      result: { ...report.result, scenario_id: "another-scenario" },
+    }).success).toBe(false);
   });
 });

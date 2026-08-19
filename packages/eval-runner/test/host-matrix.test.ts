@@ -28,6 +28,8 @@ const posture = (host: MatrixHost, principalId: string): HostPosture => ({
   approvalMode: "normal",
   mcpTools: ["publish_artifact", "read_artifact"],
   principalId,
+  principalIsolation: "proven",
+  skillSelectionEvidence: "explicit",
   portableBundleSha256: bundle,
 });
 
@@ -76,6 +78,8 @@ describe("representative host matrix", () => {
     ["parser_incompatible", { parserFixtureVersion: 2 }],
     ["bundle_mismatch", { portableBundleSha256: "b".repeat(64) }],
     ["mcp_contract_blocked", { mcpTools: ["publish_artifact"] }],
+    ["skill_observability_blocked", { skillSelectionEvidence: "unavailable" }],
+    ["identity_blocked", { principalIsolation: "unproven" }],
   ] as const)("classifies %s without turning it into model failure", async (status, override) => {
     const scenario = await loadScenario();
     const dispatch = assessHostPair({
@@ -107,14 +111,15 @@ describe("representative host matrix", () => {
     expect(matrixReleaseEligible(dispatches)).toBe(true);
   });
 
-  it("reports current credentialless model pairs as blockers without hiding generic readiness", async () => {
+  it("blocks every posture whose process containment is not independently enforced", async () => {
     const scenario = await loadScenario();
     const dispatches = buildMatrixPreflight({
       scenario,
       portableBundleSha256: bundle,
       environment: {},
     });
-    expect(dispatches.find((dispatch) => dispatch.pair.join("->") === "generic->generic")?.status).toBe("ready");
+    expect(dispatches.find((dispatch) => dispatch.pair.join("->") === "generic->generic")?.status)
+      .toBe("containment_blocked");
     expect(dispatches.find((dispatch) => dispatch.pair.join("->") === "codex->claude")?.status)
       .toBe("authentication_blocked");
     expect(matrixReleaseEligible(dispatches)).toBe(false);

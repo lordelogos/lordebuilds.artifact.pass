@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { describe, expect, it } from "vitest";
 
-import { aggregateCohort, wilsonInterval } from "../src/aggregation";
+import { aggregateCohort, cohortReportSchema, wilsonInterval } from "../src/aggregation";
 import type { EvalReport } from "../src/contracts";
 
 const candidate = "a".repeat(64);
@@ -69,5 +69,26 @@ describe("cohort aggregation", () => {
       report("pass"),
       { ...other, candidate: { sha256: "b".repeat(64) } },
     ])).toThrow(/must share/u);
+  });
+
+  it("rejects duplicate trial IDs", () => {
+    const duplicate = randomUUID();
+    expect(() => aggregateCohort([report("pass", duplicate), report("pass", duplicate)]))
+      .toThrow(/unique/u);
+  });
+
+  it("rejects internally inconsistent serialized cohorts", () => {
+    const cohort = aggregateCohort([report("pass")]);
+    expect(cohortReportSchema.safeParse({ ...cohort, total_trials: 20 }).success).toBe(false);
+    expect(cohortReportSchema.safeParse({
+      ...cohort,
+      trial_run_ids: [cohort.trial_run_ids[0], cohort.trial_run_ids[0]],
+      total_trials: 2,
+      outcomes: { ...cohort.outcomes, pass: 2 },
+      behavioral_trials: 2,
+      successes: 2,
+      observed_success_rate: 1,
+      wilson_95: wilsonInterval(2, 2),
+    }).success).toBe(false);
   });
 });

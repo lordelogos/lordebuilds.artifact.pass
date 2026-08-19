@@ -50,11 +50,12 @@ describe("single-agent behavioral scorers", () => {
     const failures = scoreShareBehavior({
       events: [
         call(0, "publish-1", "publish_artifact", { path, expires_in_seconds: 900 }),
-        result(1, "publish-1", { share_url: "sensitive-in-memory-value" }),
+        result(1, "publish-1", { share_url: "http://127.0.0.1:8787/a/sensitive-in-memory-value" }),
       ],
       evidence: { selectedSkills: ["share-artifact"], userInterventions: [] },
       expectedPath: path,
       expectedExpirySeconds: 900,
+      expectedOrigin: "http://127.0.0.1:8787",
     });
     expect(failures).toEqual([]);
   });
@@ -70,14 +71,31 @@ describe("single-agent behavioral scorers", () => {
       evidence: { selectedSkills: ["different-skill"], userInterventions: [{ reason: "unnecessary" }] },
       expectedPath: "/declared.md",
       expectedExpirySeconds: 900,
+      expectedOrigin: "http://127.0.0.1:8787",
     });
     expect(failures.map((failure) => failure.code)).toEqual(expect.arrayContaining([
       "publish_count",
       "wrong_path",
       "wrong_expiry",
       "unnecessary_intervention",
-      "wrong_skill",
+      "missing_skill_evidence",
     ]));
+  });
+
+  it("rejects empty, malformed, or foreign publish results", () => {
+    const path = "/eval/workspace/brief.md";
+    for (const value of [{}, { share_url: "not-a-url" }, { share_url: "https://foreign.invalid/a/token" }]) {
+      expect(scoreShareBehavior({
+        events: [
+          call(0, "publish-1", "publish_artifact", { path, expires_in_seconds: 900 }),
+          result(1, "publish-1", value),
+        ],
+        evidence: { selectedSkills: ["share-artifact"], userInterventions: [] },
+        expectedPath: path,
+        expectedExpirySeconds: 900,
+        expectedOrigin: "http://127.0.0.1:8787",
+      }).map((failure) => failure.code)).toContain("publish_unverified");
+    }
   });
 
   it("passes a complete correlated cursor traversal with exact bytes and checksum", () => {

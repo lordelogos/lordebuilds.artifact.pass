@@ -12,7 +12,10 @@
       { "kind": "skill", "name": "share-artifact" },
       { "kind": "mcp_tool", "name": "publish_artifact" }
     ],
-    "required": [{ "kind": "mcp_tool", "name": "publish_artifact" }],
+    "required": [
+      { "kind": "skill", "name": "share-artifact" },
+      { "kind": "mcp_tool", "name": "publish_artifact" }
+    ],
     "forbidden": [
       { "kind": "mcp_tool", "name": "read_artifact" },
       { "kind": "user_intervention", "name": "unnecessary" }

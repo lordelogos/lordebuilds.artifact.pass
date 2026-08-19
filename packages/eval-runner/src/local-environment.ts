@@ -199,7 +199,10 @@ const waitForHealth = async (baseUrl: URL, child: ChildProcess, processOutput: (
   while (Date.now() < deadline) {
     if (child.exitCode !== null) throw new Error(`Local eval Worker exited early: ${processOutput()}`);
     try {
-      const response = await fetch(new URL("/health", baseUrl));
+      const remaining = Math.max(1, deadline - Date.now());
+      const response = await fetch(new URL("/health", baseUrl), {
+        signal: AbortSignal.timeout(Math.min(2_000, remaining)),
+      });
       if (response.ok) return;
     } catch {
       // The local Worker is still starting.

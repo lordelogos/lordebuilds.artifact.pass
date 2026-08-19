@@ -3,8 +3,9 @@ import { copyFile, mkdir, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import { evalScenarioSchema, type EvalReport } from "./contracts";
+import { candidateDigest } from "./candidate-digest";
 import { connectGenericMcpHost, type GenericMcpHost } from "./hosts/generic";
-import { runGenericHandoffGates } from "./handoff-runner";
+import { runGenericTransportGates } from "./handoff-runner";
 import { installCandidateIntoLocalEval } from "./install-lifecycle";
 import {
   createLocalEvalProcessEnvironment,
@@ -199,7 +200,7 @@ export const runDeterministicProfile = async (options: {
     });
     failures = [
       ...trial.failures,
-      ...await runGenericHandoffGates({
+      ...await runGenericTransportGates({
         repositoryRoot: options.repositoryRoot,
         environment,
         agentA: host,
@@ -222,12 +223,12 @@ export const runDeterministicProfile = async (options: {
     await environment?.stop().catch(() => { teardownFailed = true; });
   }
   const combined = outcomeWithTeardown(trialOutcome, teardownFailed);
-  const candidateBytes = await readFile(join(options.repositoryRoot, "plugins/artifactpass/dist/cli.mjs"));
+  const candidateSha256 = await candidateDigest(options.repositoryRoot);
   const completedAt = Date.now();
   const report = {
     version: 1 as const,
     run_id: runId,
-    candidate: { sha256: sha256(candidateBytes) },
+    candidate: { sha256: candidateSha256 },
     receipt_version: receiptVersion,
     scenario: { id: scenario.id, version: scenario.version },
     scorer_version: scenario.scorer_version,
@@ -237,7 +238,7 @@ export const runDeterministicProfile = async (options: {
       version: 1 as const,
       run_id: runId,
       scenario_id: scenario.id,
-      candidate_sha256: sha256(candidateBytes),
+      candidate_sha256: candidateSha256,
       started_at: startedAtIso,
       completed_at: new Date(completedAt).toISOString(),
       trial_outcome: combined.trialOutcome,

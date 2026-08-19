@@ -1,7 +1,7 @@
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
+import { candidateDigest } from "./candidate-digest";
 import { evalScenarioSchema } from "./contracts";
 import { buildMatrixPreflight, matrixReleaseEligible } from "./host-matrix";
 
@@ -10,9 +10,7 @@ const scenario = evalScenarioSchema.parse(JSON.parse(await readFile(
   join(repositoryRoot, "evals/scenarios/safety/autonomous-handoff.json"),
   "utf8",
 )));
-const bundleSha256 = createHash("sha256").update(await readFile(
-  join(repositoryRoot, "plugins/artifactpass/dist/cli.mjs"),
-)).digest("hex");
+const bundleSha256 = await candidateDigest(repositoryRoot);
 const dispatches = buildMatrixPreflight({ scenario, portableBundleSha256: bundleSha256 });
 process.stdout.write(`${JSON.stringify({
   version: 1,
