@@ -36,7 +36,7 @@ OPENAI_API_KEY=... ANTHROPIC_API_KEY=... pnpm eval:cohort --agent-a claude --age
 
 The runner installs the same candidate separately for Agent A and Agent B, gives Agent A the declared fixture, extracts the volatile link only from its correlated `publish_artifact` result, and gives Agent B only the shared scenario prompt plus that link. It scores exact cursor traversal, bytes, checksum, business output, unrelated tools, canary writes, config mutation, and explicit skill-selection events. Raw streams and capability links never enter durable reports.
 
-A completed behavioral cohort is not automatically release-qualified. `pnpm eval:matrix` remains authoritative for host containment, distinct principals, compatible trace parsers, and explicit skill observability. Model runs expose only the selected ArtifactPass MCP tool plus the portable Skill capability: Claude uses its `--tools` allowlist, while Codex disables its shell, unified-exec, browser, web, computer-use, image, and app capabilities. The MCP bridge independently restricts filesystem access to the agent's disposable workspace and network access to the local ArtifactPass origin.
+A completed behavioral cohort is not automatically release-qualified. `pnpm eval:matrix` remains authoritative for host containment, distinct principals, compatible trace parsers, and explicit skill observability. Model runs expose only the selected ArtifactPass MCP tool plus the portable Skill capability. A vendor-neutral MCP proxy filters both `tools/list` and `tools/call`; Claude also uses its `--tools` allowlist, while Codex disables its shell, unified-exec, browser, web, computer-use, image, and app capabilities. The MCP bridge independently restricts filesystem access to the agent's disposable workspace and network access to the local ArtifactPass origin.
 
 Claude's stream emits explicit `Skill` tool activation and the adapter records it directly. Codex `exec --json` 0.147.0 exposes MCP use but no first-class skill-activation event, so Codex behavioral runs remain fail-closed on skill observability rather than inferring activation from prose or tool use. Track the upstream [Codex JSON skill-catalog/activation gap](https://github.com/openai/codex/issues/31088) before qualifying Codex skill-selection evidence.
 
@@ -59,6 +59,16 @@ pnpm eval:release --dry-run
 A real release check accepts fresh cohort files with repeated `--cohort <path>` arguments. It rejects candidate mismatches, calibration-trial reuse, hard failures, missing trials, stale or uncalibrated rules, and either missing cross-vendor direction.
 
 For a model baseline, use `eval:cohort --profile baseline`; for fresh release evidence, use `--profile release --trials 20`, then pass the resulting cohort JSON to `eval:release --cohort <path>`. Calibration and release cohorts must be separate runs.
+
+Local `--cohort` files are operator diagnostics, not a production authorization boundary. Before a tag may publish artifacts, a protected release job must generate its own generic and cross-vendor cohorts, evaluate those exact files in the same trusted job or verify an attested manifest derived from their trial reports, and block `release:build` unless the decision is eligible. The current tag and manual release workflows intentionally do not claim this trust boundary yet.
+
+Release activation remains fail-closed until all of these conditions are met:
+
+- isolated `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` secrets are configured in the `artifactpass-evals` protected environment;
+- Codex exposes trustworthy first-class Skill activation telemetry, or another non-inferential source is approved;
+- both ordered cross-vendor directions have separate approved baseline cohorts and fresh 20-trial release cohorts;
+- the operator approves the total model budget and chooses same-job evidence or an attested cohort manifest for tag releases; and
+- the tag workflow makes the eligible behavioral decision a prerequisite for build, attestation, and upload.
 
 ## Production
 
