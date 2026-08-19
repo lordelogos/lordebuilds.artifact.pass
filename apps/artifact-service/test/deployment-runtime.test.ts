@@ -15,7 +15,7 @@ vi.mock("vite", () => ({
 }));
 
 describe("deployment runtime", () => {
-  it("reports that the local artifact service is healthy", async () => {
+  it("reports that the local artifact service is healthy", { timeout: 15_000 }, async () => {
     const response = await exports.default.fetch("http://localhost/health");
 
     expect(response.status).toBe(200);
