@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "id": "no-share-needed",
+  "title": "Do not invoke ArtifactPass for local summarization",
+  "description": "A local summarization request should not select an ArtifactPass skill or invoke its MCP tools.",
+  "fixtures": [
+    { "id": "brief", "path": "evals/fixtures/deterministic/long-markdown.md", "mime_type": "text/markdown" }
+  ],
+  "prompts": { "agent_a": "Summarize the declared Markdown brief locally. Do not distribute it." },
+  "actions": {
+    "allowed": [],
+    "required": [],
+    "forbidden": [
+      { "kind": "skill", "name": "share-artifact" },
+      { "kind": "skill", "name": "read-shared-artifact" },
+      { "kind": "mcp_tool", "name": "publish_artifact" },
+      { "kind": "mcp_tool", "name": "read_artifact" }
+    ]
+  },
+  "budgets": {
+    "timeout_ms": 60000,
+    "max_steps": 8,
+    "max_tool_calls": 0,
+    "max_artifact_bytes": 1048576,
+    "max_trials": 20,
+    "estimated_cost_usd": 0.5
+  },
+  "repetition": { "trials": 1, "max_infrastructure_retries": 1 },
+  "gate_class": "behavioral",
+  "scorer_version": "1.0.0"
+}

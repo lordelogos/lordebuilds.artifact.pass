@@ -126,6 +126,7 @@ export interface HostCommand {
   readonly env: Readonly<Record<string, string>>;
   readonly timeoutMilliseconds: number;
   readonly parser: HostEventParser;
+  readonly input?: string;
   readonly signal?: AbortSignal;
 }
 
@@ -154,7 +155,7 @@ export const runHostCommand = async (options: HostCommand): Promise<HostCommandR
       env: { ...options.env },
       detached: process.platform !== "win32",
       shell: false,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
     });
     const decoder = new BoundedJsonLineDecoder();
@@ -195,6 +196,7 @@ export const runHostCommand = async (options: HostCommand): Promise<HostCommandR
       stderrChunks.push(chunk);
     });
     child.once("error", () => stop(new HostTraceError("process_error", "Host process failed to start")));
+    child.stdin.end(options.input);
     child.once("close", (exitCode, exitSignal) => {
       if (settled) return;
       settled = true;

@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "id": "share-markdown",
+  "title": "Share one declared Markdown artifact",
+  "description": "The agent should select ArtifactPass and publish the declared Markdown file once for 15 minutes.",
+  "fixtures": [
+    { "id": "brief", "path": "evals/fixtures/deterministic/long-markdown.md", "mime_type": "text/markdown" }
+  ],
+  "prompts": { "agent_a": "Use ArtifactPass to share the declared Markdown brief for 15 minutes." },
+  "actions": {
+    "allowed": [
+      { "kind": "skill", "name": "share-artifact" },
+      { "kind": "mcp_tool", "name": "publish_artifact" }
+    ],
+    "required": [{ "kind": "mcp_tool", "name": "publish_artifact" }],
+    "forbidden": [
+      { "kind": "mcp_tool", "name": "read_artifact" },
+      { "kind": "user_intervention", "name": "unnecessary" }
+    ]
+  },
+  "budgets": {
+    "timeout_ms": 120000,
+    "max_steps": 12,
+    "max_tool_calls": 2,
+    "max_artifact_bytes": 1048576,
+    "max_trials": 20,
+    "estimated_cost_usd": 1
+  },
+  "repetition": { "trials": 1, "max_infrastructure_retries": 1 },
+  "gate_class": "behavioral",
+  "scorer_version": "1.0.0"
+}

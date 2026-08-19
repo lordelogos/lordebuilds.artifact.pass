@@ -117,6 +117,7 @@ const eventBaseSchema = z.object({
 export const normalizedHostEventSchema = z.discriminatedUnion("kind", [
   eventBaseSchema.extend({ kind: z.literal("session"), sessionId: z.string().min(1) }).strict(),
   eventBaseSchema.extend({ kind: z.literal("assistant_output"), text: z.string() }).strict(),
+  eventBaseSchema.extend({ kind: z.literal("skill_selection"), skillName: z.string().min(1) }).strict(),
   eventBaseSchema.extend({
     kind: z.literal("tool_call"),
     callId: z.string().min(1),
