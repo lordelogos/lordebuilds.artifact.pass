@@ -1,0 +1,5 @@
+{"type":"system","subtype":"init","session_id":"claude-session-1"}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_1","name":"mcp__artifactpass_eval__echo","input":{"nonce":"artifactpass-trace-probe"}}],"usage":{"input_tokens":100,"cache_read_input_tokens":10,"output_tokens":8}}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_1","content":[{"type":"text","text":"{\"echoed\":\"artifactpass-trace-probe\"}"}],"is_error":false}]}}
+{"type":"assistant","message":{"content":[{"type":"text","text":"Probe completed."}],"usage":{"input_tokens":12,"output_tokens":4}}}
+{"type":"result","subtype":"success","is_error":false,"result":"Probe completed.","session_id":"claude-session-1","total_cost_usd":0.002,"usage":{"input_tokens":112,"cache_read_input_tokens":10,"output_tokens":12}}
