@@ -14,6 +14,8 @@
     "eval:deterministic": "pnpm plugin:build && pnpm --dir packages/eval-runner build && node packages/eval-runner/dist/deterministic-cli.cjs",
     "eval:host-probe": "pnpm --dir packages/eval-runner build && node packages/eval-runner/dist/trace-probe.mjs",
     "eval:matrix": "pnpm --dir packages/eval-runner build && node packages/eval-runner/dist/matrix-cli.mjs",
+    "eval:baseline": "pnpm plugin:build && pnpm --dir packages/eval-runner build && node packages/eval-runner/dist/baseline-cli.cjs",
+    "eval:release": "pnpm --dir packages/eval-runner build && node packages/eval-runner/dist/release-cli.cjs",
     "eval:smoke": "pnpm plugin:build && pnpm --dir packages/eval-runner build && node packages/eval-runner/dist/smoke-cli.cjs",
     "lint": "oxlint --deny-warnings .",
     "plugin:build": "pnpm --dir packages/agent-bridge build && node scripts/build-plugin.mjs",

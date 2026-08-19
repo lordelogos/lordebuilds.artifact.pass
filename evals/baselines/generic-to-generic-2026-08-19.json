@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "cohort_run_id": "462223c6-8ca2-4049-9143-f1a95b33a582",
+  "candidate_sha256": "c920cb28bbd877c45dccc90dba5561e7d0a2259b17f62253ef439b5b6e3a0841",
+  "scenario_id": "generic-fidelity",
+  "scorer_version": "1.0.0",
+  "host_pair": ["generic", "generic"],
+  "trial_run_ids": [
+    "5d791fad-9cf9-4bdd-a7dc-5e3a58608583",
+    "30fa8052-ec6a-4862-94f0-c669e8f2a9ae",
+    "f147ff40-cddc-4e32-80bd-9736736b7032",
+    "0811f397-64ee-4788-9572-db4d706190d4",
+    "3761a77b-dcd6-4845-a30f-1ed1f79d2ff1",
+    "4338472d-1615-4d48-9fca-96b8a53c2707",
+    "bbcfe738-28b7-43e3-bc36-79d8034db19f",
+    "eff00938-c4fc-4d5b-a97b-f9d6962c7048",
+    "329d8e20-f5dc-4564-8072-7144311954a1",
+    "05757686-ef88-4666-8890-2ac82aa51016"
+  ],
+  "total_trials": 10,
+  "behavioral_trials": 10,
+  "successes": 10,
+  "observed_success_rate": 1,
+  "wilson_95": { "lower": 0.7224672001371106, "upper": 1 },
+  "outcomes": {
+    "pass": 10,
+    "behavior_failure": 0,
+    "safety_failure": 0,
+    "infrastructure_failure": 0,
+    "timeout": 0,
+    "incomplete": 0,
+    "skipped": 0,
+    "teardown_failure": 0
+  },
+  "hard_failures": [],
+  "infrastructure_runs": [],
+  "skipped_runs": [],
+  "eligible_for_threshold": true
+}

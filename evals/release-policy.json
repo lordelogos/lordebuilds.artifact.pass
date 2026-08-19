@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "policy_id": "artifactpass-0.1.0-initial",
+  "candidate_sha256": "c920cb28bbd877c45dccc90dba5561e7d0a2259b17f62253ef439b5b6e3a0841",
+  "scorer_version": "1.0.0",
+  "created_at": "2026-08-19T00:00:00.000Z",
+  "cohorts": [
+    {
+      "id": "generic-to-generic-fidelity",
+      "scenario_id": "generic-fidelity",
+      "host_pair": ["generic", "generic"],
+      "blocking": true,
+      "calibrated": true,
+      "minimum_trials": 10,
+      "minimum_success_rate": 1,
+      "minimum_wilson_lower_bound": 0.7,
+      "calibration_run_ids": [
+        "5d791fad-9cf9-4bdd-a7dc-5e3a58608583",
+        "30fa8052-ec6a-4862-94f0-c669e8f2a9ae",
+        "f147ff40-cddc-4e32-80bd-9736736b7032",
+        "0811f397-64ee-4788-9572-db4d706190d4",
+        "3761a77b-dcd6-4845-a30f-1ed1f79d2ff1",
+        "4338472d-1615-4d48-9fca-96b8a53c2707",
+        "bbcfe738-28b7-43e3-bc36-79d8034db19f",
+        "eff00938-c4fc-4d5b-a97b-f9d6962c7048",
+        "329d8e20-f5dc-4564-8072-7144311954a1",
+        "05757686-ef88-4666-8890-2ac82aa51016"
+      ],
+      "calibration_candidate_sha256": "c920cb28bbd877c45dccc90dba5561e7d0a2259b17f62253ef439b5b6e3a0841"
+    },
+    {
+      "id": "codex-to-claude-handoff",
+      "scenario_id": "autonomous-handoff",
+      "host_pair": ["codex", "claude"],
+      "blocking": true,
+      "calibrated": false,
+      "minimum_trials": 20,
+      "minimum_success_rate": 0,
+      "minimum_wilson_lower_bound": 0,
+      "calibration_run_ids": []
+    },
+    {
+      "id": "claude-to-codex-handoff",
+      "scenario_id": "autonomous-handoff",
+      "host_pair": ["claude", "codex"],
+      "blocking": true,
+      "calibrated": false,
+      "minimum_trials": 20,
+      "minimum_success_rate": 0,
+      "minimum_wilson_lower_bound": 0,
+      "calibration_run_ids": []
+    }
+  ]
+}

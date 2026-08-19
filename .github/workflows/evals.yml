@@ -1,0 +1,101 @@
+name: ArtifactPass evals
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: Evaluation profile
+        required: true
+        type: choice
+        options: [smoke, baseline, release, production]
+      host:
+        description: Model host for smoke
+        required: false
+        type: choice
+        options: [codex, claude]
+      trials:
+        description: Approved trial count
+        required: false
+        default: "10"
+      maximum_budget_usd:
+        description: Approved maximum model budget
+        required: false
+        default: "10"
+      production_approval_id:
+        description: Required single-use production approval ID
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  deterministic:
+    if: github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.11.0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm eval:deterministic
+
+  credentialed:
+    if: github.event_name == 'workflow_dispatch' && inputs.profile != 'production'
+    runs-on: ubuntu-latest
+    environment: artifactpass-evals
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.11.0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Smoke
+        if: inputs.profile == 'smoke'
+        run: pnpm eval:smoke --host "${{ inputs.host }}"
+      - name: Baseline preflight
+        if: inputs.profile == 'baseline'
+        run: pnpm eval:baseline --hosts generic --trials "${{ inputs.trials }}"
+      - name: Release decision
+        if: inputs.profile == 'release'
+        run: pnpm eval:release
+
+  production:
+    if: github.event_name == 'workflow_dispatch' && inputs.profile == 'production'
+    runs-on: ubuntu-latest
+    environment: artifactpass-production-evals
+    env:
+      ARTIFACTPASS_PRODUCTION_APPROVAL_ID: ${{ inputs.production_approval_id }}
+      ARTIFACTPASS_MAXIMUM_BUDGET_USD: ${{ inputs.maximum_budget_usd }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.11.0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Refuse missing approval
+        run: test -n "$ARTIFACTPASS_PRODUCTION_APPROVAL_ID"
+      - name: Production approval verifier
+        run: |
+          echo "Production mutation remains fail-closed until the signed approval and replay ledger are configured."
+          exit 1
