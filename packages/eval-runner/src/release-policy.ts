@@ -35,11 +35,21 @@ export const releasePolicySchema = z.object({
       context.addIssue({ code: "custom", path: ["cohorts", index, "host_pair"], message: "Scenario host-pair rules must be unique" });
     }
     pairs.add(pair);
-    if (cohort.calibrated && (
-      cohort.calibration_run_ids.length === 0 ||
-      cohort.calibration_candidate_sha256 === undefined
-    )) {
-      context.addIssue({ code: "custom", path: ["cohorts", index], message: "Calibrated cohorts require candidate-bound run evidence" });
+    if (cohort.calibrated) {
+      if (cohort.calibration_run_ids.length < cohort.minimum_trials) {
+        context.addIssue({
+          code: "custom",
+          path: ["cohorts", index, "calibration_run_ids"],
+          message: "Calibrated cohorts require at least minimum_trials calibration runs",
+        });
+      }
+      if (cohort.calibration_candidate_sha256 === undefined) {
+        context.addIssue({
+          code: "custom",
+          path: ["cohorts", index, "calibration_candidate_sha256"],
+          message: "Calibrated cohorts require candidate-bound run evidence",
+        });
+      }
     }
   }
 });
@@ -65,6 +75,9 @@ export const evaluateReleasePolicy = (options: {
     if (!rule.calibrated || rule.calibration_run_ids.length === 0) {
       failures.push(`${rule.id} has no approved calibration cohort`);
       continue;
+    }
+    if (rule.calibration_run_ids.length < rule.minimum_trials) {
+      failures.push(`${rule.id} has fewer than ${rule.minimum_trials} calibration trials`);
     }
     if (rule.calibration_candidate_sha256 !== options.policy.candidate_sha256) {
       failures.push(`${rule.id} calibration evidence is bound to a different candidate`);
