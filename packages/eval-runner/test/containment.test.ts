@@ -1,0 +1,49 @@
+import { mkdir, mkdtemp, symlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { describe, expect, it } from "vitest";
+
+import {
+  assertLoopbackOrigin,
+  assertPathWithinRoot,
+  assertRoutineNetworkTarget,
+  createLocalEvalProcessEnvironment,
+} from "../src/local-environment";
+
+describe("local eval containment", () => {
+  it.each([
+    "https://artifactpass.com",
+    "http://192.168.1.20:8787",
+    "http://127.0.0.1:8787/upload",
+    "http://user:secret@127.0.0.1:8787",
+  ])("rejects the non-routine origin %s", (origin) => {
+    expect(() => assertLoopbackOrigin(new URL(origin))).toThrow(/loopback/u);
+  });
+
+  it("accepts only plain loopback HTTP origins", () => {
+    expect(() => assertLoopbackOrigin(new URL("http://127.0.0.1:8787"))).not.toThrow();
+    expect(() => assertLoopbackOrigin(new URL("http://localhost:8787"))).not.toThrow();
+  });
+
+  it("permits only the selected local service and does not inherit production credentials", () => {
+    const origin = new URL("http://127.0.0.1:8787");
+    expect(() => assertRoutineNetworkTarget(new URL("/health", origin), origin)).not.toThrow();
+    expect(() => assertRoutineNetworkTarget(new URL("http://127.0.0.1:9999/health"), origin)).toThrow(/escaped/u);
+    const environment = createLocalEvalProcessEnvironment("/tmp/artifactpass-eval-home");
+    expect(environment).not.toHaveProperty("CLOUDFLARE_API_TOKEN");
+    expect(environment).not.toHaveProperty("ARTIFACTPASS_TOKEN");
+    expect(environment).not.toHaveProperty("ANTHROPIC_API_KEY");
+    expect(environment).not.toHaveProperty("OPENAI_API_KEY");
+  });
+
+  it("rejects traversal and symbolic-link escapes", async () => {
+    const root = await mkdtemp(join(tmpdir(), "artifactpass-containment-root-"));
+    const outside = await mkdtemp(join(tmpdir(), "artifactpass-containment-outside-"));
+    await mkdir(join(root, "safe"));
+    await symlink(outside, join(root, "escape"));
+    await expect(assertPathWithinRoot(root, join(root, "safe", "result.json"))).resolves.toBeUndefined();
+    await expect(assertPathWithinRoot(root, join(root, "..", "outside.json"))).rejects.toThrow(/escaped/u);
+    await expect(assertPathWithinRoot(root, join(root, "escape", "result.json"))).rejects.toThrow(/symbolic link/u);
+  });
+});
