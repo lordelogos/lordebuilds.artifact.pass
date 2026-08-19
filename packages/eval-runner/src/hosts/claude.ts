@@ -5,6 +5,13 @@ import {
   type NormalizedHostEvent,
 } from "./host";
 
+export const CLAUDE_ADAPTER_COMPATIBILITY = {
+  adapterVersion: 1,
+  fixtureVersion: 1,
+  testedCliVersion: "2.1.197",
+  model: "claude-sonnet-4-6",
+} as const;
+
 const record = (value: unknown): Record<string, unknown> | undefined =>
   typeof value === "object" && value !== null ? value as Record<string, unknown> : undefined;
 const text = (value: unknown): string | undefined => typeof value === "string" ? value : undefined;

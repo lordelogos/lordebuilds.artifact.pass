@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "representative_hosts": ["generic", "codex", "claude"],
+  "ordered_pairs": [
+    ["generic", "generic"],
+    ["codex", "codex"],
+    ["claude", "claude"],
+    ["codex", "claude"],
+    ["claude", "codex"]
+  ],
+  "blocking_before": "0.1.0",
+  "required_cross_vendor_pairs": [
+    ["codex", "claude"],
+    ["claude", "codex"]
+  ]
+}

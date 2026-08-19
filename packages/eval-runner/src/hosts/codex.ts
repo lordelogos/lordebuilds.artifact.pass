@@ -5,6 +5,13 @@ import {
   type NormalizedHostEvent,
 } from "./host";
 
+export const CODEX_ADAPTER_COMPATIBILITY = {
+  adapterVersion: 1,
+  fixtureVersion: 1,
+  testedCliVersion: "0.147.0",
+  model: "gpt-5.4",
+} as const;
+
 const record = (value: unknown): Record<string, unknown> | undefined =>
   typeof value === "object" && value !== null ? value as Record<string, unknown> : undefined;
 const text = (value: unknown): string | undefined => typeof value === "string" ? value : undefined;
