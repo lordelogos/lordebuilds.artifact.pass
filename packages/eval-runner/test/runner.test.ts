@@ -16,6 +16,7 @@ describe("generic deterministic profile", () => {
       teardown: "passed",
       failures: [],
     });
+    expect(result.report.host).toMatchObject({ agent_a: "generic", agent_b: "generic" });
     expect(result.report.result.observed_actions).toEqual(expect.arrayContaining([
       { kind: "mcp_tool", name: "publish_artifact" },
       { kind: "mcp_tool", name: "read_artifact" },

@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 
 import { evalScenarioSchema, type EvalReport } from "./contracts";
 import { connectGenericMcpHost, type GenericMcpHost } from "./hosts/generic";
+import { runGenericHandoffGates } from "./handoff-runner";
 import { installCandidateIntoLocalEval } from "./install-lifecycle";
 import {
   createLocalEvalProcessEnvironment,
@@ -74,6 +75,7 @@ const runTrial = async (
   const scenarioPath = join(repositoryRoot, "evals/scenarios/deterministic/generic-fidelity.json");
   const scenario = evalScenarioSchema.parse(JSON.parse(await readFile(scenarioPath, "utf8")));
   const failures: ScoreFailure[] = [];
+  const publishedUrls: string[] = [];
   for (const fixture of scenario.fixtures) {
     const sourcePath = join(repositoryRoot, fixture.path);
     const targetPath = join(environment.workspaces.agentA, "fixtures", fixture.id, fixture.path.split("/").at(-1)!);
@@ -81,6 +83,7 @@ const runTrial = async (
     await copyFile(sourcePath, targetPath);
     const expected = await readFile(sourcePath);
     const shareUrl = await publish(host, targetPath);
+    publishedUrls.push(shareUrl);
     const reconstructed = await reconstruct(host, shareUrl);
     failures.push(...verifyExactBytes({
       expected,
@@ -96,6 +99,35 @@ const runTrial = async (
     failures,
     "foreign_origin_accepted",
   );
+  const futureNow = Date.now() + 901_000;
+  const timeResponse = await fetch(new URL("/__local-test/time", environment.baseUrl), {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-artifact-test-control": environment.controlToken,
+    },
+    body: JSON.stringify({ now_ms: futureNow }),
+  });
+  if (!timeResponse.ok) throw new Error("Could not advance deterministic local service time");
+  for (const shareUrl of publishedUrls) {
+    await expectRefusal(host, shareUrl, failures, "expired_link_accepted");
+  }
+  const cleanupResponse = await fetch(new URL("/__local-test/cleanup", environment.baseUrl), {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-artifact-test-control": environment.controlToken,
+    },
+    body: "{}",
+  });
+  const cleanup = await cleanupResponse.json().catch(() => null) as {
+    readonly failed?: unknown;
+    readonly rows?: unknown;
+    readonly objects?: unknown;
+  } | null;
+  if (!cleanupResponse.ok || cleanup?.failed !== 0 || cleanup.rows !== 0 || cleanup.objects !== 0) {
+    failures.push({ code: "physical_cleanup", message: "Expired artifact cleanup left local state", safety: true });
+  }
   const actionScore = scoreObservedActions(scenario, host.events);
   failures.push(...actionScore.failures);
   return { failures, scenario };
@@ -116,6 +148,7 @@ export const runDeterministicProfile = async (options: {
   const runId = randomUUID();
   let environment: LocalEvalEnvironment | undefined;
   let host: GenericMcpHost | undefined;
+  let agentBHost: GenericMcpHost | undefined;
   let teardownFailed = false;
   let failures: readonly ScoreFailure[] = [];
   let scenario = evalScenarioSchema.parse(JSON.parse(await readFile(
@@ -149,7 +182,30 @@ export const runDeterministicProfile = async (options: {
       throw new Error("Installed MCP bridge exposed an unexpected tool contract");
     }
     const trial = await runTrial(options.repositoryRoot, environment, host);
-    failures = trial.failures;
+    const agentBInstall = await installCandidateIntoLocalEval({
+      environment,
+      repositoryRoot: options.repositoryRoot,
+      agent: "agent-b",
+    });
+    const agentBMcpConfigPath = agentBInstall.receipt.portable_bundle.mcp_config;
+    if (agentBMcpConfigPath === undefined) throw new Error("Handoff eval requires Agent B portable MCP registration");
+    agentBHost = await connectGenericMcpHost({
+      mcpConfigPath: agentBMcpConfigPath,
+      cwd: environment.workspaces.agentB,
+      environment: {
+        ...createLocalEvalProcessEnvironment(environment.homes.agentB),
+        ARTIFACTPASS_CONFIG_PATH: join(environment.homes.agentB, ".artifactpass", "config.json"),
+      },
+    });
+    failures = [
+      ...trial.failures,
+      ...await runGenericHandoffGates({
+        repositoryRoot: options.repositoryRoot,
+        environment,
+        agentA: host,
+        agentB: agentBHost,
+      }),
+    ];
     scenario = trial.scenario;
     if (failures.some((failure) => failure.safety)) trialOutcome = "safety_failure";
     else if (failures.length > 0) trialOutcome = "behavior_failure";
@@ -161,6 +217,7 @@ export const runDeterministicProfile = async (options: {
       safety: false,
     }];
   } finally {
+    await agentBHost?.close().catch(() => { teardownFailed = true; });
     await host?.close().catch(() => { teardownFailed = true; });
     await environment?.stop().catch(() => { teardownFailed = true; });
   }
@@ -174,7 +231,7 @@ export const runDeterministicProfile = async (options: {
     receipt_version: receiptVersion,
     scenario: { id: scenario.id, version: scenario.version },
     scorer_version: scenario.scorer_version,
-    host: { agent_a: "generic" as const, runtime: `node-${process.version}` },
+    host: { agent_a: "generic" as const, agent_b: "generic" as const, runtime: `node-${process.version}` },
     cohort: { profile: "deterministic" as const, trial_index: 1, trial_count: 1 },
     result: {
       version: 1 as const,
@@ -186,12 +243,12 @@ export const runDeterministicProfile = async (options: {
       trial_outcome: combined.trialOutcome,
       outcome: combined.outcome,
       gate_class: scenario.gate_class,
-      host_pair: { agent_a: "generic" as const },
+      host_pair: { agent_a: "generic" as const, agent_b: "generic" as const },
       ...(trialOutcome === "infrastructure_failure"
         ? { infrastructure_code: "deterministic_runner" }
         : {}),
       teardown: teardownFailed ? "failed" as const : "passed" as const,
-      observed_actions: host?.events
+      observed_actions: [...(host?.events ?? []), ...(agentBHost?.events ?? [])]
         .filter((event) => event.kind === "tool_call")
         .map((event) => ({ kind: "mcp_tool" as const, name: event.kind === "tool_call" ? event.toolName : "" })) ?? [],
       failures: failures.map(({ code, message }) => ({ code, message })),
