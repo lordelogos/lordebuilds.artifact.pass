@@ -5,6 +5,7 @@ import {
   NORMALIZED_HOST_EVENT_VERSION,
   type NormalizedHostEvent,
 } from "../contracts";
+import { countsAsModelStep } from "../budget-enforcement";
 
 export { NORMALIZED_HOST_EVENT_VERSION };
 export type { NormalizedHostEvent };
@@ -29,7 +30,8 @@ export type HostTraceErrorCode =
   | "oversized_line"
   | "process_error"
   | "process_timeout"
-  | "process_cancelled";
+  | "process_cancelled"
+  | "budget_exceeded";
 
 export class HostTraceError extends Error {
   readonly code: HostTraceErrorCode;
@@ -130,6 +132,9 @@ export interface HostCommand {
   readonly input?: string;
   readonly signal?: AbortSignal;
   readonly terminationGraceMilliseconds?: number;
+  readonly maxSteps?: number;
+  readonly maxToolCalls?: number;
+  readonly maximumCostUsd?: number;
 }
 
 export interface HostCommandResult {
@@ -168,6 +173,9 @@ export const runHostCommand = async (options: HostCommand): Promise<HostCommandR
     let settled = false;
     let failure: HostTraceError | undefined;
     let forceKillTimer: NodeJS.Timeout | undefined;
+    let steps = 0;
+    let toolCalls = 0;
+    let costUsd = 0;
 
     const stop = (error: HostTraceError): void => {
       if (failure !== undefined) return;
@@ -190,9 +198,31 @@ export const runHostCommand = async (options: HostCommand): Promise<HostCommandR
     options.signal?.addEventListener("abort", abort, { once: true });
     if (options.signal?.aborted === true) abort();
 
+    const capture = (normalized: readonly NormalizedHostEvent[]): void => {
+      for (const event of normalized) {
+        if (failure !== undefined) return;
+        if (countsAsModelStep(event)) steps += 1;
+        if (event.kind === "tool_call") toolCalls += 1;
+        if (event.kind === "usage") costUsd += event.costUsd ?? 0;
+        events.push(event);
+        if (options.maxSteps !== undefined && steps > options.maxSteps) {
+          stop(new HostTraceError("budget_exceeded", `Host exceeded max_steps=${options.maxSteps}`));
+          return;
+        }
+        if (options.maxToolCalls !== undefined && toolCalls > options.maxToolCalls) {
+          stop(new HostTraceError("budget_exceeded", `Host exceeded max_tool_calls=${options.maxToolCalls}`));
+          return;
+        }
+        if (options.maximumCostUsd !== undefined && costUsd > options.maximumCostUsd) {
+          stop(new HostTraceError("budget_exceeded", `Host exceeded estimated_cost_usd=${options.maximumCostUsd}`));
+          return;
+        }
+      }
+    };
+
     child.stdout.on("data", (chunk: Buffer) => {
       try {
-        for (const value of decoder.push(stdoutDecoder.write(chunk))) events.push(...options.parser.parse(value));
+        for (const value of decoder.push(stdoutDecoder.write(chunk))) capture(options.parser.parse(value));
       } catch (error) {
         stop(error instanceof HostTraceError
           ? error
@@ -220,8 +250,8 @@ export const runHostCommand = async (options: HostCommand): Promise<HostCommandR
         return;
       }
       try {
-        for (const value of decoder.push(stdoutDecoder.end())) events.push(...options.parser.parse(value));
-        for (const value of decoder.finish()) events.push(...options.parser.parse(value));
+        for (const value of decoder.push(stdoutDecoder.end())) capture(options.parser.parse(value));
+        for (const value of decoder.finish()) capture(options.parser.parse(value));
       } catch (error) {
         reject(error);
         return;

@@ -94,6 +94,66 @@ describe("host adapters", () => {
     }));
   });
 
+  it("terminates a host when its tool-call budget is exceeded", async () => {
+    const lines = [
+      { type: "thread.started", thread_id: "budget-session" },
+      { type: "item.started", item: { type: "mcp_tool_call", id: "call-1", server: "artifactpass", tool: "publish_artifact", arguments: {} } },
+    ].map((line) => `${JSON.stringify(line)}\n`).join("");
+    const promise = runHostCommand({
+      host: "codex",
+      command: process.execPath,
+      args: ["-e", `process.stdout.write(${JSON.stringify(lines)}); setInterval(() => {}, 1000)`],
+      cwd: process.cwd(),
+      env: { PATH: process.env.PATH ?? "" },
+      timeoutMilliseconds: 1_000,
+      maxToolCalls: 0,
+      parser: new CodexEventParser(),
+    });
+    await expect(promise).rejects.toEqual(expect.objectContaining<Partial<HostTraceError>>({
+      code: "budget_exceeded",
+    }));
+  });
+
+  it("terminates a host when its step budget is exceeded", async () => {
+    const lines = [
+      { type: "thread.started", thread_id: "budget-session" },
+      { type: "item.completed", item: { type: "agent_message", id: "message-1", text: "done" } },
+    ].map((line) => `${JSON.stringify(line)}\n`).join("");
+    const promise = runHostCommand({
+      host: "codex",
+      command: process.execPath,
+      args: ["-e", `process.stdout.write(${JSON.stringify(lines)}); setInterval(() => {}, 1000)`],
+      cwd: process.cwd(),
+      env: { PATH: process.env.PATH ?? "" },
+      timeoutMilliseconds: 1_000,
+      maxSteps: 0,
+      parser: new CodexEventParser(),
+    });
+    await expect(promise).rejects.toEqual(expect.objectContaining<Partial<HostTraceError>>({
+      code: "budget_exceeded",
+    }));
+  });
+
+  it("terminates a host when reported cost exceeds its remaining budget", async () => {
+    const lines = [
+      { type: "system", subtype: "init", session_id: "budget-session" },
+      { type: "result", subtype: "success", is_error: false, total_cost_usd: 0.51 },
+    ].map((line) => `${JSON.stringify(line)}\n`).join("");
+    const promise = runHostCommand({
+      host: "claude",
+      command: process.execPath,
+      args: ["-e", `process.stdout.write(${JSON.stringify(lines)}); setInterval(() => {}, 1000)`],
+      cwd: process.cwd(),
+      env: { PATH: process.env.PATH ?? "" },
+      timeoutMilliseconds: 1_000,
+      maximumCostUsd: 0.5,
+      parser: new ClaudeEventParser(),
+    });
+    await expect(promise).rejects.toEqual(expect.objectContaining<Partial<HostTraceError>>({
+      code: "budget_exceeded",
+    }));
+  });
+
   it.runIf(process.platform !== "win32")("force-kills a child that ignores SIGTERM", async () => {
     const promise = runHostCommand({
       host: "codex",

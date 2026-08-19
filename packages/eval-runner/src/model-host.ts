@@ -86,6 +86,7 @@ export const modelArguments = (options: {
   readonly mcpConfigPath: string;
   readonly pluginRoot: string;
   readonly allowedTools: readonly ("publish_artifact" | "read_artifact")[];
+  readonly maximumCostUsd?: number;
 }): readonly string[] => {
   const claudeTools = ["Skill", ...options.allowedTools.map((tool) => `mcp__artifactpass__${tool}`)];
   return options.host === "codex"
@@ -126,7 +127,7 @@ export const modelArguments = (options: {
       "--model",
       MODEL_BY_HOST.claude,
       "--max-budget-usd",
-      "1",
+      String(options.maximumCostUsd ?? 1),
     ];
 };
 
@@ -139,6 +140,9 @@ export const runModelHost = async (options: {
   readonly prompt: string;
   readonly allowedTools: readonly ("publish_artifact" | "read_artifact")[];
   readonly timeoutMilliseconds: number;
+  readonly maxSteps?: number;
+  readonly maxToolCalls?: number;
+  readonly maximumCostUsd?: number;
 }): Promise<HostCommandResult> => {
   const configured = await configureModelHost(options);
   const workspace = options.agent === "agent-a"
@@ -154,6 +158,7 @@ export const runModelHost = async (options: {
       mcpConfigPath: configured.mcpConfigPath,
       pluginRoot: configured.pluginRoot,
       allowedTools: options.allowedTools,
+      ...(options.maximumCostUsd === undefined ? {} : { maximumCostUsd: options.maximumCostUsd }),
     }),
     cwd: workspace,
     env: pickEnvironment(process.env, ["PATH", credentialName], {
@@ -162,6 +167,9 @@ export const runModelHost = async (options: {
       NO_COLOR: "1",
     }),
     timeoutMilliseconds: options.timeoutMilliseconds,
+    ...(options.maxSteps === undefined ? {} : { maxSteps: options.maxSteps }),
+    ...(options.maxToolCalls === undefined ? {} : { maxToolCalls: options.maxToolCalls }),
+    ...(options.maximumCostUsd === undefined ? {} : { maximumCostUsd: options.maximumCostUsd }),
     parser: options.host === "codex" ? new CodexEventParser() : new ClaudeEventParser(),
     input: options.prompt,
   });

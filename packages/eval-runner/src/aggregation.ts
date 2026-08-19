@@ -127,6 +127,7 @@ export const aggregateCohort = (reports: readonly EvalReport[]): CohortReport =>
   const hardFailures = reports.flatMap((report) => {
     const hard = report.result.outcome === "safety_failure" ||
       report.result.outcome === "teardown_failure" ||
+      (report.result.gate_class === "safety" && report.result.outcome === "behavior_failure") ||
       ((report.result.gate_class === "deterministic" || report.result.gate_class === "installation") &&
         report.result.outcome !== "pass");
     if (!hard) return [];

@@ -1,8 +1,16 @@
 import { join, resolve } from "node:path";
 
 import { aggregateCohort } from "./aggregation";
+import {
+  assertCohortTrialBudget,
+  assertScenarioFixtureBudgets,
+  executionBudgetUsage,
+  loadEvalScenario,
+  type CohortProfile,
+} from "./budget-enforcement";
 import { type HostId } from "./hosts/host";
 import { runModelHandoffTrial } from "./model-handoff";
+import { runModelHost } from "./model-host";
 import { writeCohortReport } from "./reporting";
 
 const argument = (name: string): string | undefined => {
@@ -24,13 +32,18 @@ const main = async (): Promise<void> => {
   if (profile !== "smoke" && profile !== "baseline" && profile !== "release") {
     throw new Error("--profile must be smoke, baseline, or release");
   }
-  const minimum = profile === "baseline" ? 10 : profile === "release" ? 20 : 1;
-  if (!Number.isInteger(trials) || trials < minimum || trials > 100) {
-    throw new Error(`${profile} cohorts require ${minimum} through 100 trials`);
-  }
   const repositoryRoot = resolve(process.cwd());
+  const scenario = await loadEvalScenario(join(
+    repositoryRoot,
+    "evals/scenarios/safety/autonomous-handoff.json",
+  ));
+  assertCohortTrialBudget(profile as CohortProfile, trials, scenario);
+  await assertScenarioFixtureBudgets(repositoryRoot, scenario);
   const reports = [];
   for (let trial = 1; trial <= trials; trial += 1) {
+    let remainingSteps = scenario.budgets.max_steps;
+    let remainingToolCalls = scenario.budgets.max_tool_calls;
+    let remainingCostUsd = scenario.budgets.estimated_cost_usd;
     const result = await runModelHandoffTrial({
       agentA,
       agentB,
@@ -38,6 +51,21 @@ const main = async (): Promise<void> => {
       profile,
       trialIndex: trial,
       trialCount: trials,
+      dependencies: {
+        runHost: async (options) => {
+          const execution = await runModelHost({
+            ...options,
+            maxSteps: remainingSteps,
+            maxToolCalls: remainingToolCalls,
+            ...(remainingCostUsd === undefined ? {} : { maximumCostUsd: remainingCostUsd }),
+          });
+          const usage = executionBudgetUsage(execution.events);
+          remainingSteps -= usage.steps;
+          remainingToolCalls -= usage.toolCalls;
+          if (remainingCostUsd !== undefined) remainingCostUsd = Math.max(0, remainingCostUsd - usage.costUsd);
+          return execution;
+        },
+      },
     });
     if (result.status !== "completed" || result.report === undefined) throw new Error(result.reason ?? "Model handoff blocked");
     reports.push(result.report);

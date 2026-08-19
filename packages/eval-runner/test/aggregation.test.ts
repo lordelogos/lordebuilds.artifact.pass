@@ -6,7 +6,11 @@ import { aggregateCohort, cohortReportSchema, wilsonInterval } from "../src/aggr
 import type { EvalReport } from "../src/contracts";
 
 const candidate = "a".repeat(64);
-const report = (outcome: EvalReport["result"]["outcome"], runId = randomUUID()): EvalReport => ({
+const report = (
+  outcome: EvalReport["result"]["outcome"],
+  runId = randomUUID(),
+  gateClass: EvalReport["result"]["gate_class"] = "behavioral",
+): EvalReport => ({
   version: 1,
   run_id: runId,
   candidate: { sha256: candidate },
@@ -24,7 +28,7 @@ const report = (outcome: EvalReport["result"]["outcome"], runId = randomUUID()):
     completed_at: "2026-08-19T03:00:01.000Z",
     trial_outcome: outcome === "teardown_failure" ? "pass" : outcome,
     outcome,
-    gate_class: "behavioral",
+    gate_class: gateClass,
     host_pair: { agent_a: "generic", agent_b: "generic" },
     ...(outcome === "infrastructure_failure" ? { infrastructure_code: "fixture" } : {}),
     teardown: outcome === "teardown_failure" ? "failed" : "passed",
@@ -61,6 +65,18 @@ describe("cohort aggregation", () => {
     expect(cohort.hard_failures).toHaveLength(2);
     expect(cohort.infrastructure_runs).toHaveLength(1);
     expect(cohort.skipped_runs).toHaveLength(1);
+  });
+
+  it("makes safety-gate behavior failures threshold-ineligible", () => {
+    const runId = randomUUID();
+    const cohort = aggregateCohort([report("behavior_failure", runId, "safety")]);
+
+    expect(cohort.eligible_for_threshold).toBe(false);
+    expect(cohort.hard_failures).toEqual([{
+      run_id: runId,
+      outcome: "behavior_failure",
+      code: "behavior_failure",
+    }]);
   });
 
   it("rejects mixed candidates or host pairs", () => {
