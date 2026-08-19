@@ -1,6 +1,12 @@
 import { spawn } from "node:child_process";
 
-export const NORMALIZED_HOST_EVENT_VERSION = 1 as const;
+import {
+  NORMALIZED_HOST_EVENT_VERSION,
+  type NormalizedHostEvent,
+} from "../contracts";
+
+export { NORMALIZED_HOST_EVENT_VERSION };
+export type { NormalizedHostEvent };
 export const DEFAULT_MAX_TRACE_BYTES = 4 * 1024 * 1024;
 export const DEFAULT_MAX_TRACE_LINE_BYTES = 512 * 1024;
 
@@ -13,53 +19,6 @@ export type AuthorizationState =
   | "denied"
   | "expired"
   | "blocked";
-
-interface EventBase {
-  readonly version: typeof NORMALIZED_HOST_EVENT_VERSION;
-  readonly host: HostId;
-  readonly sequence: number;
-}
-
-export type NormalizedHostEvent =
-  | (EventBase & { readonly kind: "session"; readonly sessionId: string })
-  | (EventBase & { readonly kind: "assistant_output"; readonly text: string })
-  | (EventBase & {
-      readonly kind: "tool_call";
-      readonly callId: string;
-      readonly hostToolName: string;
-      readonly serverName?: string;
-      readonly toolName: string;
-      readonly arguments: unknown;
-    })
-  | (EventBase & {
-      readonly kind: "tool_result";
-      readonly callId: string;
-      readonly result: unknown;
-      readonly isError: boolean;
-    })
-  | (EventBase & {
-      readonly kind: "usage";
-      readonly inputTokens?: number;
-      readonly cachedInputTokens?: number;
-      readonly outputTokens?: number;
-      readonly costUsd?: number;
-    })
-  | (EventBase & {
-      readonly kind: "terminal";
-      readonly status: "succeeded" | "failed" | "cancelled";
-      readonly message?: string;
-    })
-  | (EventBase & { readonly kind: "timing"; readonly durationMilliseconds: number })
-  | (EventBase & {
-      readonly kind: "process_exit";
-      readonly exitCode: number | null;
-      readonly signal: NodeJS.Signals | null;
-    })
-  | (EventBase & {
-      readonly kind: "infrastructure_error";
-      readonly code: HostTraceErrorCode;
-      readonly message: string;
-    });
 
 export type HostTraceErrorCode =
   | "invalid_json"

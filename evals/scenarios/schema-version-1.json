@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://artifactpass.com/schemas/eval-scenario-version-1.json",
+  "title": "ArtifactPass portable eval scenario version 1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "id", "title", "description", "fixtures", "prompts", "actions", "budgets", "repetition", "gate_class", "scorer_version"],
+  "properties": {
+    "version": { "const": 1 },
+    "id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+    "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "description": { "type": "string", "minLength": 1, "maxLength": 1000 },
+    "fixtures": { "type": "array", "maxItems": 20 },
+    "prompts": { "type": "object", "additionalProperties": false, "required": ["agent_a"] },
+    "actions": { "type": "object", "additionalProperties": false, "required": ["allowed", "required", "forbidden"] },
+    "budgets": { "type": "object", "additionalProperties": false, "required": ["timeout_ms", "max_steps", "max_tool_calls", "max_artifact_bytes", "max_trials"] },
+    "repetition": { "type": "object", "additionalProperties": false, "required": ["trials", "max_infrastructure_retries"] },
+    "gate_class": { "enum": ["deterministic", "installation", "behavioral", "safety"] },
+    "scorer_version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" }
+  }
+}
