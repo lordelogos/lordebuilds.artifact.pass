@@ -15,7 +15,7 @@ const report = (
   run_id: runId,
   candidate: { sha256: candidate },
   receipt_version: 1,
-  scenario: { id: "generic-fidelity", version: 1 },
+  scenario: { id: "generic-fidelity", version: 1, sha256: "b".repeat(64) },
   scorer_version: "1.0.0",
   host: { agent_a: "generic", agent_b: "generic", runtime: "node-test" },
   cohort: { profile: "baseline", trial_index: 1, trial_count: 10 },
@@ -77,6 +77,16 @@ describe("cohort aggregation", () => {
       outcome: "behavior_failure",
       code: "behavior_failure",
     }]);
+  });
+
+  it("does not label deterministic passes as behavioral calibration evidence", () => {
+    const cohort = aggregateCohort([report("pass", randomUUID(), "deterministic")]);
+    expect(cohort).toMatchObject({
+      gate_class: "deterministic",
+      behavioral_trials: 0,
+      successes: 0,
+      eligible_for_threshold: false,
+    });
   });
 
   it("rejects mixed candidates or host pairs", () => {

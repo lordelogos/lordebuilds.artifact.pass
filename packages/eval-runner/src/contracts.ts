@@ -248,7 +248,11 @@ export const evalReportSchema = z.object({
   run_id: z.uuid(),
   candidate: z.object({ sha256: sha256Schema }).strict(),
   receipt_version: z.number().int().positive(),
-  scenario: z.object({ id: kebabIdSchema, version: z.number().int().positive() }).strict(),
+  scenario: z.object({
+    id: kebabIdSchema,
+    version: z.number().int().positive(),
+    sha256: sha256Schema,
+  }).strict(),
   scorer_version: z.string().regex(/^\d+\.\d+\.\d+$/u),
   host: z.object({
     agent_a: z.enum(["generic", "codex", "claude"]),
@@ -295,6 +299,13 @@ export const evalReportSchema = z.object({
   ];
   for (const [matches, path, message] of identities) {
     if (!matches) context.addIssue({ code: "custom", path, message });
+  }
+  if (report.cohort.trial_index > report.cohort.trial_count) {
+    context.addIssue({
+      code: "custom",
+      path: ["cohort", "trial_index"],
+      message: "Cohort trial index cannot exceed its trial count",
+    });
   }
 });
 

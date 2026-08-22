@@ -15,7 +15,7 @@ describe("eval reporting", () => {
       run_id: "8e885d98-7491-4ef8-84fe-1b8fea4c7235",
       candidate: { sha256: "a".repeat(64) },
       receipt_version: 1,
-      scenario: { id: "generic-fidelity", version: 1 },
+      scenario: { id: "generic-fidelity", version: 1, sha256: "b".repeat(64) },
       scorer_version: "1.0.0",
       host: { agent_a: "generic", agent_b: "codex", runtime: "node-test", model: "model-test" },
       cohort: { profile: "deterministic", trial_index: 2, trial_count: 3 },

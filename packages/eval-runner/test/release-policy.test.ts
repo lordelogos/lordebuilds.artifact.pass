@@ -17,9 +17,13 @@ const policy = releasePolicySchema.parse({
   cohorts: [{
     id: "cross-vendor",
     scenario_id: "autonomous-handoff",
+    scenario_version: 1,
+    scenario_sha256: "b".repeat(64),
     host_pair: ["codex", "claude"],
     blocking: true,
+    evaluation: "behavioral_threshold",
     calibrated: true,
+    minimum_calibration_trials: 20,
     minimum_trials: 20,
     minimum_success_rate: 0.9,
     minimum_wilson_lower_bound: 0.7,
@@ -34,7 +38,10 @@ const cohort = (runIds: readonly string[], overrides: Readonly<Record<string, un
     cohort_run_id: randomUUID(),
     candidate_sha256: candidate,
     scenario_id: "autonomous-handoff",
+    scenario_version: 1,
+    scenario_sha256: "b".repeat(64),
     scorer_version: "1.0.0",
+    gate_class: "behavioral",
     host_pair: ["codex", "claude"],
     trial_run_ids: runIds,
     total_trials: 20,
@@ -72,7 +79,7 @@ describe("release policy", () => {
       expect(parsed.error.issues).toEqual(expect.arrayContaining([
         expect.objectContaining({
           path: ["cohorts", 0, "calibration_run_ids"],
-          message: "Calibrated cohorts require at least minimum_trials calibration runs",
+          message: "Calibrated cohorts require at least minimum_calibration_trials calibration runs",
         }),
       ]));
     }
@@ -92,6 +99,45 @@ describe("release policy", () => {
       cohorts: [cohort(Array.from({ length: 20 }, () => randomUUID()))],
     });
     expect(decision).toEqual({ eligible: true, failures: [] });
+  });
+
+  it("requires every hard-gate trial to pass without calibration", () => {
+    const hardPolicy = releasePolicySchema.parse({
+      ...policy,
+      cohorts: [{
+        id: "cross-vendor-hard-gate",
+        scenario_id: "autonomous-handoff",
+        scenario_version: 1,
+        scenario_sha256: "b".repeat(64),
+        host_pair: ["codex", "claude"],
+        blocking: true,
+        evaluation: "hard_gate",
+        minimum_trials: 20,
+      }],
+    });
+    const passing = cohort(Array.from({ length: 20 }, () => randomUUID()), {
+      gate_class: "safety",
+      behavioral_trials: 0,
+      successes: 0,
+      observed_success_rate: 0,
+      wilson_95: wilsonInterval(0, 0),
+      eligible_for_threshold: false,
+    });
+    expect(evaluateReleasePolicy({ policy: hardPolicy, candidateSha256: candidate, cohorts: [passing] }))
+      .toEqual({ eligible: true, failures: [] });
+    const outcomes = { ...passing.outcomes, pass: 19, safety_failure: 1 };
+    const failing = cohort(passing.trial_run_ids, {
+      gate_class: "safety",
+      behavioral_trials: 0,
+      successes: 0,
+      observed_success_rate: 0,
+      wilson_95: wilsonInterval(0, 0),
+      outcomes,
+      hard_failures: [{ run_id: passing.trial_run_ids[0], outcome: "safety_failure", code: "canary" }],
+      eligible_for_threshold: false,
+    });
+    expect(evaluateReleasePolicy({ policy: hardPolicy, candidateSha256: candidate, cohorts: [failing] }).failures)
+      .toEqual(["cross-vendor-hard-gate did not pass every required hard-gate trial"]);
   });
 
   it("rejects calibration reuse, candidate mismatch, and hard failures", () => {
@@ -129,6 +175,17 @@ describe("release policy", () => {
     const uncalibrated = { ...policy, cohorts: [{ ...policy.cohorts[0]!, calibrated: false, calibration_run_ids: [] }] };
     const decision = evaluateReleasePolicy({ policy: uncalibrated, candidateSha256: candidate, cohorts: [] });
     expect(decision.failures).toEqual(["cross-vendor has no approved calibration cohort"]);
+  });
+
+  it("rejects a cohort generated from different scenario bytes", () => {
+    const decision = evaluateReleasePolicy({
+      policy,
+      candidateSha256: candidate,
+      cohorts: [cohort(Array.from({ length: 20 }, () => randomUUID()), {
+        scenario_sha256: "c".repeat(64),
+      })],
+    });
+    expect(decision.failures).toEqual(["cross-vendor has no fresh evaluation cohort"]);
   });
 
   it.each([

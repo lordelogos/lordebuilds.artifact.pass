@@ -28,6 +28,15 @@ describe("eval redaction", () => {
     expect(output).not.toContain(escaped);
   });
 
+  it("removes base64 and base64url capability links", () => {
+    const base64 = Buffer.from(productionUrl).toString("base64");
+    const base64url = Buffer.from(localUrl).toString("base64url");
+    const output = redactSensitiveText(`${base64} ${base64url}`);
+    expect(output).not.toContain(base64);
+    expect(output).not.toContain(base64url);
+    expect(output).toBe("[REDACTED] [REDACTED]");
+  });
+
   it("redacts nested headers, exceptions, raw streams, and sensitive paths", () => {
     const output = serializeRedacted({
       headers: { authorization: "Bearer secret-value" },

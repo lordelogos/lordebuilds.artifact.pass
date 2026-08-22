@@ -18,6 +18,7 @@
     "eval:baseline": "pnpm eval:build && node packages/eval-runner/dist/baseline-cli.cjs",
     "eval:cohort": "pnpm eval:build && node packages/eval-runner/dist/cohort-cli.cjs",
     "eval:release": "pnpm --dir packages/eval-runner build && node packages/eval-runner/dist/release-cli.cjs",
+    "eval:release:fresh": "pnpm eval:build && node scripts/run-release-evals.mjs",
     "eval:smoke": "pnpm eval:build && node packages/eval-runner/dist/smoke-cli.cjs",
     "lint": "oxlint --deny-warnings .",
     "plugin:build": "pnpm --dir packages/agent-bridge build && node scripts/build-plugin.mjs",

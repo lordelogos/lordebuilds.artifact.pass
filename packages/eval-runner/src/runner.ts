@@ -14,6 +14,7 @@ import {
 } from "./local-environment";
 import { writeEvalReport } from "./reporting";
 import { outcomeWithTeardown, scoreObservedActions, verifyExactBytes, type ScoreFailure } from "./scoring";
+import { scenarioDigest } from "./scenario-digest";
 
 const sha256 = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
 
@@ -236,6 +237,11 @@ export interface DeterministicProfileResult {
 export const runDeterministicProfile = async (options: {
   readonly repositoryRoot: string;
   readonly outputRoot?: string;
+  readonly cohort?: {
+    readonly profile: "deterministic" | "baseline" | "release";
+    readonly trialIndex: number;
+    readonly trialCount: number;
+  };
 }): Promise<DeterministicProfileResult> => {
   const startedAt = Date.now();
   const startedAtIso = new Date(startedAt).toISOString();
@@ -317,16 +323,26 @@ export const runDeterministicProfile = async (options: {
   }
   const combined = outcomeWithTeardown(trialOutcome, teardownFailed);
   const candidateSha256 = await candidateDigest(options.repositoryRoot);
+  const scenarioSha256 = await scenarioDigest(join(
+    options.repositoryRoot,
+    "evals/scenarios/deterministic/generic-fidelity.json",
+  ));
   const completedAt = Date.now();
   const report = {
     version: 1 as const,
     run_id: runId,
     candidate: { sha256: candidateSha256 },
     receipt_version: receiptVersion,
-    scenario: { id: scenario.id, version: scenario.version },
+    scenario: { id: scenario.id, version: scenario.version, sha256: scenarioSha256 },
     scorer_version: scenario.scorer_version,
     host: { agent_a: "generic" as const, agent_b: "generic" as const, runtime: `node-${process.version}` },
-    cohort: { profile: "deterministic" as const, trial_index: 1, trial_count: 1 },
+    cohort: options.cohort === undefined
+      ? { profile: "deterministic" as const, trial_index: 1, trial_count: 1 }
+      : {
+          profile: options.cohort.profile,
+          trial_index: options.cohort.trialIndex,
+          trial_count: options.cohort.trialCount,
+        },
     result: {
       version: 1 as const,
       run_id: runId,

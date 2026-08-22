@@ -25,6 +25,7 @@ import {
   shareUrlFromEvents,
   type ScoreFailure,
 } from "./scoring";
+import { scenarioDigest } from "./scenario-digest";
 
 export interface ModelHandoffTrialResult {
   readonly status: "completed" | "authentication_blocked";
@@ -128,10 +129,12 @@ export const runModelHandoffTrial = async (options: {
   const startedAt = Date.now();
   const runId = randomUUID();
   const candidateSha256 = await candidateDigest(options.repositoryRoot);
-  const scenario = evalScenarioSchema.parse(JSON.parse(await readFile(
-    join(options.repositoryRoot, "evals/scenarios/safety/autonomous-handoff.json"),
-    "utf8",
-  )));
+  const scenarioPath = join(options.repositoryRoot, "evals/scenarios/safety/autonomous-handoff.json");
+  const [scenarioValue, scenarioSha256] = await Promise.all([
+    readFile(scenarioPath, "utf8").then((value) => evalScenarioSchema.parse(JSON.parse(value))),
+    scenarioDigest(scenarioPath),
+  ]);
+  const scenario = scenarioValue;
   const fixture = scenario.fixtures[0];
   if (fixture === undefined || scenario.prompts.agent_b === undefined) {
     throw new Error("Autonomous handoff scenario requires one fixture and both agent prompts");
@@ -199,6 +202,11 @@ export const runModelHandoffTrial = async (options: {
         prompt: `${scenario.prompts.agent_a}\n\nDeclared fixture path: ${sourcePath}\nExpiry: 15 minutes.`,
         allowedTools: ["publish_artifact"],
         timeoutMilliseconds: scenario.budgets.timeout_ms,
+        maxSteps: scenario.budgets.max_steps,
+        maxToolCalls: scenario.budgets.max_tool_calls,
+        ...(scenario.budgets.estimated_cost_usd === undefined
+          ? {}
+          : { maximumCostUsd: scenario.budgets.estimated_cost_usd }),
       });
     } catch (error) {
       if (error instanceof HostTraceError && error.result !== undefined) agentAEvents = error.result.events;
@@ -227,6 +235,11 @@ export const runModelHandoffTrial = async (options: {
           prompt: modelHandoffAgentBPrompt(scenario.prompts.agent_b, shareUrl),
           allowedTools: ["read_artifact"],
           timeoutMilliseconds: scenario.budgets.timeout_ms,
+          maxSteps: scenario.budgets.max_steps,
+          maxToolCalls: scenario.budgets.max_tool_calls,
+          ...(scenario.budgets.estimated_cost_usd === undefined
+            ? {}
+            : { maximumCostUsd: scenario.budgets.estimated_cost_usd }),
         });
       } catch (error) {
         if (error instanceof HostTraceError && error.result !== undefined) agentBEvents = error.result.events;
@@ -295,7 +308,7 @@ export const runModelHandoffTrial = async (options: {
     run_id: runId,
     candidate: { sha256: candidateSha256 },
     receipt_version: receiptVersion,
-    scenario: { id: scenario.id, version: scenario.version },
+    scenario: { id: scenario.id, version: scenario.version, sha256: scenarioSha256 },
     scorer_version: scenario.scorer_version,
     host: {
       agent_a: options.agentA,

@@ -25,6 +25,19 @@ export const assertCohortTrialBudget = (
   }
 };
 
+export const assertProfileCostBudget = (
+  profile: CohortProfile,
+  maximumBudgetUsd: number | undefined,
+): void => {
+  if (profile !== "smoke" && maximumBudgetUsd === undefined) {
+    throw new Error(`${profile} cohorts require an explicit --maximum-budget-usd`);
+  }
+  if (
+    maximumBudgetUsd !== undefined &&
+    (!Number.isFinite(maximumBudgetUsd) || maximumBudgetUsd <= 0)
+  ) throw new Error("maximum_budget_usd must be a positive finite number");
+};
+
 export const assertFixtureByteBudget = (scenario: EvalScenario, bytes: number): void => {
   if (bytes > scenario.budgets.max_artifact_bytes) {
     throw new Error(`${scenario.id} fixture exceeds max_artifact_bytes=${scenario.budgets.max_artifact_bytes}`);

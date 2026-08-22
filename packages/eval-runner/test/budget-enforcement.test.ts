@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   assertCohortTrialBudget,
   assertFixtureByteBudget,
+  assertProfileCostBudget,
   executionBudgetUsage,
   loadEvalScenario,
 } from "../src/budget-enforcement";
@@ -35,6 +36,13 @@ describe("eval budget enforcement", () => {
     expect(() => assertFixtureByteBudget(scenario, scenario.budgets.max_artifact_bytes + 1)).toThrow(
       "autonomous-handoff fixture exceeds max_artifact_bytes=1048576",
     );
+  });
+
+  it("requires an explicit positive profile cost budget for baseline and release", () => {
+    expect(() => assertProfileCostBudget("smoke", undefined)).not.toThrow();
+    expect(() => assertProfileCostBudget("baseline", undefined)).toThrow(/explicit/u);
+    expect(() => assertProfileCostBudget("release", 0)).toThrow(/positive/u);
+    expect(() => assertProfileCostBudget("release", 40)).not.toThrow();
   });
 
   it("accounts for model steps, tool calls, and reported cost", () => {

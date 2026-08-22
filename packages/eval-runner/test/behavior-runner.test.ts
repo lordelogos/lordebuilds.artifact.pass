@@ -155,6 +155,9 @@ describe("portable behavior scenario runner", () => {
       repositoryRoot,
       scenarioId: "path-and-expiry",
       runtimeVersion: "test",
+      profile: "baseline",
+      trialIndex: 3,
+      trialCount: 10,
       dependencies: {
         startEnvironment: async () => environment,
         installCandidate: async () => install,
@@ -164,6 +167,7 @@ describe("portable behavior scenario runner", () => {
     });
 
     expect(execution.report.result.outcome).toBe("pass");
+    expect(execution.report.cohort).toEqual({ profile: "baseline", trial_index: 3, trial_count: 10 });
     expect(runHost).toHaveBeenCalledWith(expect.objectContaining({
       prompt: "Share the requested file for 15 minutes. If no unique path is declared, ask one concise clarification.",
       maxSteps: 8,

@@ -21,6 +21,11 @@ on:
         required: false
         type: choice
         options: [codex, claude]
+      scenario:
+        description: Behavioral or handoff scenario for model baselines
+        required: false
+        type: choice
+        options: [share-markdown, read-shared-artifact, no-share-needed, path-and-expiry, autonomous-handoff]
       trials:
         description: Approved trial count
         required: false
@@ -28,7 +33,7 @@ on:
       maximum_budget_usd:
         description: Approved maximum model budget
         required: false
-        default: "10"
+        default: "40"
       production_approval_id:
         description: Required single-use production approval ID
         required: false
@@ -53,13 +58,14 @@ jobs:
       - run: pnpm eval:deterministic
 
   credentialed:
-    if: github.event_name == 'workflow_dispatch' && inputs.profile != 'production'
+    if: github.event_name == 'workflow_dispatch' && inputs.profile != 'production' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: artifactpass-evals
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       EVAL_TRIALS: ${{ inputs.trials }}
+      ARTIFACTPASS_MAXIMUM_BUDGET_USD: ${{ inputs.maximum_budget_usd }}
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
@@ -74,7 +80,7 @@ jobs:
         if: inputs.profile == 'smoke'
         run: pnpm eval:smoke --host "${{ inputs.host }}"
       - name: Trial preflight
-        if: inputs.profile == 'generic-baseline' || inputs.profile == 'model-baseline'
+        if: inputs.profile == 'generic-baseline' || inputs.profile == 'model-baseline' || inputs.profile == 'release'
         run: |
           case "$EVAL_TRIALS" in
             ''|*[!0-9]*) echo "trials must be an integer" >&2; exit 1 ;;
@@ -83,38 +89,41 @@ jobs:
             echo "trials must be between 10 and 100" >&2
             exit 1
           fi
+          case "$ARTIFACTPASS_MAXIMUM_BUDGET_USD" in
+            ''|*[!0-9.]*) echo "maximum budget must be a positive number" >&2; exit 1 ;;
+          esac
+          node -e 'const value = Number(process.env.ARTIFACTPASS_MAXIMUM_BUDGET_USD); if (!Number.isFinite(value) || value <= 0) process.exit(1)'
       - name: Generic baseline
         if: inputs.profile == 'generic-baseline'
         run: pnpm eval:baseline --hosts generic --trials "$EVAL_TRIALS"
       - name: Ordered model baseline
         if: inputs.profile == 'model-baseline'
-        run: pnpm eval:cohort --agent-a "${{ inputs.host }}" --agent-b "${{ inputs.agent_b }}" --profile baseline --trials "$EVAL_TRIALS"
-      - name: Release decision
+        run: |
+          if [ "${{ inputs.scenario }}" = "autonomous-handoff" ]; then
+            pnpm eval:cohort --agent-a "${{ inputs.host }}" --agent-b "${{ inputs.agent_b }}" --scenario autonomous-handoff --profile baseline --trials "$EVAL_TRIALS" --maximum-budget-usd "$ARTIFACTPASS_MAXIMUM_BUDGET_USD"
+          else
+            pnpm eval:cohort --agent-a "${{ inputs.host }}" --scenario "${{ inputs.scenario }}" --profile baseline --trials "$EVAL_TRIALS" --maximum-budget-usd "$ARTIFACTPASS_MAXIMUM_BUDGET_USD"
+          fi
+      - name: Fresh release evidence and decision
         if: inputs.profile == 'release'
-        run: pnpm eval:release
+        run: pnpm eval:release:fresh -- --trials 20 --maximum-budget-usd "$ARTIFACTPASS_MAXIMUM_BUDGET_USD"
+      - name: Upload immutable release evidence
+        if: inputs.profile == 'release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifactpass-release-evidence
+          path: eval-results/release-evidence/
+          if-no-files-found: error
 
   production:
-    if: github.event_name == 'workflow_dispatch' && inputs.profile == 'production'
+    if: github.event_name == 'workflow_dispatch' && inputs.profile == 'production' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: artifactpass-production-evals
-    env:
-      ARTIFACTPASS_PRODUCTION_APPROVAL_ID: ${{ inputs.production_approval_id }}
-      ARTIFACTPASS_MAXIMUM_BUDGET_USD: ${{ inputs.maximum_budget_usd }}
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
     steps:
-      - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v6
-        with:
-          version: 10.11.0
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - name: Refuse missing approval
-        run: test -n "$ARTIFACTPASS_PRODUCTION_APPROVAL_ID"
-      - name: Production approval verifier
+      - name: Production remains unavailable before secret exposure
+        env:
+          ARTIFACTPASS_PRODUCTION_APPROVAL_ID: ${{ inputs.production_approval_id }}
         run: |
+          test -n "$ARTIFACTPASS_PRODUCTION_APPROVAL_ID"
           echo "Production mutation remains fail-closed until the signed approval and replay ledger are configured."
           exit 1

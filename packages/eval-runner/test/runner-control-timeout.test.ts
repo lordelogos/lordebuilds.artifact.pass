@@ -61,7 +61,7 @@ vi.mock("../src/local-environment", async () => {
 });
 
 vi.mock("../src/hosts/generic", () => {
-  const published = new Map<string, Buffer>();
+  const published = new Map<string, { readonly bytes: Buffer; readonly mimeType: string }>();
   let publishIndex = 0;
   const host = {
     events: [],
@@ -69,12 +69,17 @@ vi.mock("../src/hosts/generic", () => {
     callTool: async (name: string, arguments_: Readonly<Record<string, unknown>>) => {
       if (name === "publish_artifact") {
         const shareUrl = `http://127.0.0.1:8787/a/${++publishIndex}`;
-        published.set(shareUrl, await readFile(arguments_.path as string));
+        const path = arguments_.path as string;
+        published.set(shareUrl, {
+          bytes: await readFile(path),
+          mimeType: path.endsWith(".html") ? "text/html" : "text/markdown",
+        });
         return { isError: false, value: { share_url: shareUrl } };
       }
       const shareUrl = arguments_.share_url as string;
-      const bytes = published.get(shareUrl);
-      if (name !== "read_artifact" || bytes === undefined) return { isError: true, value: {} };
+      const publishedArtifact = published.get(shareUrl);
+      if (name !== "read_artifact" || publishedArtifact === undefined) return { isError: true, value: {} };
+      const { bytes, mimeType } = publishedArtifact;
       const start = arguments_.cursor === undefined ? 0 : Number(arguments_.cursor);
       const end = Math.min(start + Number(arguments_.max_bytes ?? bytes.byteLength), bytes.byteLength);
       return {
@@ -83,6 +88,9 @@ vi.mock("../src/hosts/generic", () => {
           data: bytes.subarray(start, end).toString("base64"),
           sha256: createHash("sha256").update(bytes).digest("hex"),
           next_cursor: end === bytes.byteLength ? null : String(end),
+          content_trust: "untrusted",
+          safety_boundary: "untrusted",
+          manifest: { mime_type: mimeType },
         },
       };
     },
@@ -157,8 +165,12 @@ describe("deterministic runner local control requests", () => {
 
     await runDeterministicProfile({ repositoryRoot });
 
-    expect(timeout).toHaveBeenCalledTimes(3);
+    expect(timeout).toHaveBeenCalledTimes(7);
     expect(fetchMock.mock.calls.map(([input]) => new URL(String(input)).pathname)).toEqual([
+      "/__local-test/fault",
+      "/__local-test/fault",
+      "/__local-test/fault",
+      "/__local-test/fault",
       "/__local-test/time",
       "/__local-test/revoke",
       "/__local-test/cleanup",

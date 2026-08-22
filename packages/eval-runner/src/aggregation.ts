@@ -42,7 +42,10 @@ export const cohortReportSchema = z.object({
   cohort_run_id: z.uuid(),
   candidate_sha256: z.string().regex(/^[a-f0-9]{64}$/u),
   scenario_id: z.string().min(1),
+  scenario_version: z.number().int().positive(),
+  scenario_sha256: z.string().regex(/^[a-f0-9]{64}$/u),
   scorer_version: z.string().min(1),
+  gate_class: z.enum(["deterministic", "installation", "behavioral", "safety"]),
   host_pair: z.tuple([z.enum(["generic", "codex", "claude"]), z.enum(["generic", "codex", "claude"])]),
   trial_run_ids: z.array(z.uuid()).min(1),
   total_trials: z.number().int().positive(),
@@ -61,16 +64,21 @@ export const cohortReportSchema = z.object({
     context.addIssue({ code: "custom", path: ["trial_run_ids"], message: "Trial run IDs must be unique" });
   }
   const totalOutcomes = Object.values(report.outcomes).reduce((sum, count) => sum + count, 0);
-  const expectedBehavioral = report.outcomes.pass + report.outcomes.behavior_failure;
-  const expectedWilson = wilsonInterval(report.outcomes.pass, expectedBehavioral);
-  const expectedRate = expectedBehavioral === 0 ? 0 : report.outcomes.pass / expectedBehavioral;
+  const expectedBehavioral = report.gate_class === "behavioral"
+    ? report.outcomes.pass + report.outcomes.behavior_failure
+    : 0;
+  const expectedSuccesses = report.gate_class === "behavioral" ? report.outcomes.pass : 0;
+  const expectedWilson = wilsonInterval(expectedSuccesses, expectedBehavioral);
+  const expectedRate = expectedBehavioral === 0 ? 0 : expectedSuccesses / expectedBehavioral;
   const expectedInfrastructure = report.outcomes.infrastructure_failure + report.outcomes.timeout + report.outcomes.incomplete;
-  const expectedEligible = report.hard_failures.length === 0 && expectedBehavioral === report.total_trials;
+  const expectedEligible = report.gate_class === "behavioral" &&
+    report.hard_failures.length === 0 &&
+    expectedBehavioral === report.total_trials;
   const checks: readonly [boolean, (string | number)[], string][] = [
     [report.total_trials === report.trial_run_ids.length, ["total_trials"], "Trial count must match run IDs"],
     [totalOutcomes === report.total_trials, ["outcomes"], "Outcome counts must sum to total trials"],
     [report.behavioral_trials === expectedBehavioral, ["behavioral_trials"], "Behavioral count must match outcomes"],
-    [report.successes === report.outcomes.pass, ["successes"], "Successes must match passing outcomes"],
+    [report.successes === expectedSuccesses, ["successes"], "Successes must match behavioral passing outcomes"],
     [Math.abs(report.observed_success_rate - expectedRate) < 1e-12, ["observed_success_rate"], "Success rate must be derived from outcomes"],
     [Math.abs(report.wilson_95.lower - expectedWilson.lower) < 1e-12, ["wilson_95", "lower"], "Wilson lower bound must be derived from outcomes"],
     [Math.abs(report.wilson_95.upper - expectedWilson.upper) < 1e-12, ["wilson_95", "upper"], "Wilson upper bound must be derived from outcomes"],
@@ -112,7 +120,10 @@ export const aggregateCohort = (reports: readonly EvalReport[]): CohortReport =>
     if (
       report.candidate.sha256 !== first.candidate.sha256 ||
       report.scenario.id !== first.scenario.id ||
+      report.scenario.version !== first.scenario.version ||
+      report.scenario.sha256 !== first.scenario.sha256 ||
       report.scorer_version !== first.scorer_version ||
+      report.result.gate_class !== first.result.gate_class ||
       report.host.agent_a !== first.host.agent_a ||
       report.host.agent_b !== first.host.agent_b
     ) throw new Error("Cohort reports must share candidate, scenario, scorer, and ordered host pair");
@@ -121,8 +132,8 @@ export const aggregateCohort = (reports: readonly EvalReport[]): CohortReport =>
     outcome,
     reports.filter((report) => report.result.outcome === outcome).length,
   ])) as Record<(typeof OUTCOMES)[number], number>;
-  const behavioral = reports.filter((report) =>
-    report.result.outcome === "pass" || report.result.outcome === "behavior_failure");
+  const behavioral = reports.filter((report) => report.result.gate_class === "behavioral" &&
+    (report.result.outcome === "pass" || report.result.outcome === "behavior_failure"));
   const successes = behavioral.filter((report) => report.result.outcome === "pass").length;
   const hardFailures = reports.flatMap((report) => {
     const hard = report.result.outcome === "safety_failure" ||
@@ -142,7 +153,10 @@ export const aggregateCohort = (reports: readonly EvalReport[]): CohortReport =>
     cohort_run_id: randomUUID(),
     candidate_sha256: first.candidate.sha256,
     scenario_id: first.scenario.id,
+    scenario_version: first.scenario.version,
+    scenario_sha256: first.scenario.sha256,
     scorer_version: first.scorer_version,
+    gate_class: first.result.gate_class,
     host_pair: [first.host.agent_a, first.host.agent_b ?? first.host.agent_a],
     trial_run_ids: reports.map((report) => report.run_id),
     total_trials: reports.length,
@@ -156,7 +170,8 @@ export const aggregateCohort = (reports: readonly EvalReport[]): CohortReport =>
       .filter((report) => ["infrastructure_failure", "timeout", "incomplete"].includes(report.result.outcome))
       .map((report) => report.run_id),
     skipped_runs: reports.filter((report) => report.result.outcome === "skipped").map((report) => report.run_id),
-    eligible_for_threshold: hardFailures.length === 0 &&
+    eligible_for_threshold: first.result.gate_class === "behavioral" &&
+      hardFailures.length === 0 &&
       behavioral.length === reports.length &&
       reports.every((report) => report.result.teardown !== "failed"),
   });

@@ -1,11 +1,18 @@
 name: Release artifacts
 
 on:
-  push:
-    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing v-prefixed tag to package
+        required: true
+      evidence_run_id:
+        description: Successful ArtifactPass eval workflow run ID
+        required: true
 
 permissions:
   contents: read
+  actions: read
   id-token: write
   attestations: write
   artifact-metadata: write
@@ -13,8 +20,25 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    environment: artifactpass-release
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.release_tag }}
+      - name: Verify immutable release tag
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          case "$RELEASE_TAG" in v*) ;; *) echo "release tag must start with v" >&2; exit 1 ;; esac
+          git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"
+          test "$(git rev-parse HEAD)" = "$(git rev-list -n 1 "$RELEASE_TAG")"
+      - name: Download approved release evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: artifactpass-release-evidence
+          path: release-evidence
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.evidence_run_id }}
       - uses: pnpm/action-setup@v6
         with:
           version: 10.11.0
@@ -25,6 +49,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm release:check
       - run: pnpm test:packed-install
+      - name: Require eligible release evidence
+        run: |
+          mapfile -t manifests < <(find release-evidence -type f -name release-evidence.json)
+          test "${#manifests[@]}" -eq 1
+          pnpm eval:release --manifest "${manifests[0]}"
       - run: pnpm release:build
       - name: Attest build provenance
         uses: actions/attest@v4

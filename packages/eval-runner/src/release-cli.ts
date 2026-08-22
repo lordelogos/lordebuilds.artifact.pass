@@ -1,9 +1,9 @@
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
-import { cohortReportSchema } from "./aggregation";
+import { aggregateCohort, cohortReportSchema } from "./aggregation";
 import { candidateDigest } from "./candidate-digest";
-import { evalScenarioSchema } from "./contracts";
+import { evalReportSchema, evalScenarioSchema } from "./contracts";
 import {
   buildMatrixPreflight,
   hostMatrixConfigurationSchema,
@@ -11,6 +11,7 @@ import {
 } from "./host-matrix";
 import { runtimeVersionForHost } from "./model-host";
 import { evaluateReleasePolicy, releasePolicySchema } from "./release-policy";
+import { loadReleaseEvidenceManifest } from "./release-evidence";
 
 const values = (name: string): readonly string[] => process.argv.flatMap((value, index) =>
   value === name && process.argv[index + 1] !== undefined ? [process.argv[index + 1]!] : []);
@@ -22,8 +23,20 @@ const main = async (): Promise<void> => {
     join(repositoryRoot, "evals/release-policy.json"),
     "utf8",
   )));
-  const cohorts = await Promise.all(values("--cohort").map(async (path) =>
+  const manifestPath = values("--manifest")[0];
+  const manifestEvidence = manifestPath === undefined
+    ? undefined
+    : await loadReleaseEvidenceManifest(resolve(manifestPath));
+  if (manifestEvidence !== undefined && manifestEvidence.manifest.candidate_sha256 !== candidateSha256) {
+    throw new Error("Release evidence manifest is bound to a different candidate");
+  }
+  const cohortPaths = [...values("--cohort"), ...(manifestEvidence?.cohorts ?? [])];
+  const reportPaths = [...values("--report"), ...(manifestEvidence?.reports ?? [])];
+  const suppliedCohorts = await Promise.all(cohortPaths.map(async (path) =>
     cohortReportSchema.parse(JSON.parse(await readFile(resolve(path), "utf8")))));
+  const hardGateReports = await Promise.all(reportPaths.map(async (path) =>
+    evalReportSchema.parse(JSON.parse(await readFile(resolve(path), "utf8")))));
+  const cohorts = [...suppliedCohorts, ...hardGateReports.map((report) => aggregateCohort([report]))];
   const scenario = evalScenarioSchema.parse(JSON.parse(await readFile(
     join(repositoryRoot, "evals/scenarios/safety/autonomous-handoff.json"),
     "utf8",

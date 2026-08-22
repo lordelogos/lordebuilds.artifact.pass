@@ -23,14 +23,17 @@ const main = async (): Promise<void> => {
   const repositoryRoot = resolve(process.cwd());
   const reports = [];
   for (let trial = 0; trial < trials; trial += 1) {
-    const result = await runDeterministicProfile({ repositoryRoot });
+    const result = await runDeterministicProfile({
+      repositoryRoot,
+      cohort: { profile: "baseline", trialIndex: trial + 1, trialCount: trials },
+    });
     reports.push(result.report);
     process.stderr.write(`ArtifactPass baseline trial ${trial + 1}/${trials}: ${result.report.result.outcome}\n`);
   }
   const cohort = aggregateCohort(reports);
   const paths = await writeCohortReport(join(repositoryRoot, "eval-results", "baselines"), cohort);
   process.stdout.write(`${JSON.stringify({ cohort, ...paths }, null, 2)}\n`);
-  if (!cohort.eligible_for_threshold) process.exitCode = 1;
+  if (cohort.hard_failures.length > 0 || cohort.outcomes.pass !== cohort.total_trials) process.exitCode = 1;
 };
 
 void main().catch((error: unknown) => {

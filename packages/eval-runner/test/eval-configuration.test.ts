@@ -1,33 +1,40 @@
 import { readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-import { cohortReportSchema } from "../src/aggregation";
 import { releasePolicySchema } from "../src/release-policy";
+import { candidateDigest } from "../src/candidate-digest";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 
 describe("eval release configuration", () => {
-  it("binds the calibrated generic policy to checked-in non-secret baseline evidence", async () => {
+  it("keeps hard gates separate from uncalibrated behavioral thresholds", async () => {
     const policy = releasePolicySchema.parse(JSON.parse(await readFile(
       join(repositoryRoot, "evals/release-policy.json"),
       "utf8",
     )));
-    const baseline = cohortReportSchema.parse(JSON.parse(await readFile(
-      join(repositoryRoot, "evals/baselines/generic-to-generic-2026-08-19.json"),
-      "utf8",
-    )));
     const rule = policy.cohorts.find((cohort) => cohort.id === "generic-to-generic-fidelity");
-    expect(rule).toMatchObject({ calibrated: true, host_pair: ["generic", "generic"] });
-    expect(rule?.calibration_run_ids).toEqual(baseline.trial_run_ids);
-    expect(rule?.calibration_candidate_sha256).toBe(baseline.candidate_sha256);
-    expect(policy.cohorts.filter((cohort) => cohort.host_pair[0] !== "generic"))
-      .toEqual(expect.arrayContaining([
-        expect.objectContaining({ blocking: true, calibrated: false }),
-        expect.objectContaining({ blocking: true, calibrated: false }),
-      ]));
+    expect(policy.candidate_sha256).toBe(await candidateDigest(repositoryRoot));
+    expect(rule).toMatchObject({ evaluation: "hard_gate", host_pair: ["generic", "generic"] });
+    expect(policy.cohorts.every((cohort) => cohort.blocking)).toBe(true);
+    expect(policy.cohorts
+      .filter((cohort) => cohort.evaluation === "behavioral_threshold")
+      .every((cohort) => !cohort.calibrated)).toBe(true);
+    const scenarioPaths = {
+      "generic-fidelity": "evals/scenarios/deterministic/generic-fidelity.json",
+      "share-markdown": "evals/scenarios/behavior/share-markdown.json",
+      "read-shared-artifact": "evals/scenarios/behavior/read-shared-artifact.json",
+      "autonomous-handoff": "evals/scenarios/safety/autonomous-handoff.json",
+    } as const;
+    for (const rule of policy.cohorts) {
+      const path = scenarioPaths[rule.scenario_id as keyof typeof scenarioPaths];
+      expect(path, rule.scenario_id).toBeDefined();
+      const digest = createHash("sha256").update(await readFile(join(repositoryRoot, path!))).digest("hex");
+      expect(rule.scenario_sha256, rule.id).toBe(digest);
+    }
   });
 
   it("keeps pull-request evaluation deterministic and production fail-closed", async () => {

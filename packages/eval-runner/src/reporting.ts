@@ -59,7 +59,9 @@ export const writeEvalReport = async (outputRoot: string, reportValue: unknown):
 export const renderCohortScorecard = (report: CohortReport): string => [
   `# ArtifactPass cohort: ${report.eligible_for_threshold ? "ELIGIBLE" : "NOT ELIGIBLE"}`,
   "",
-  `- Scenario: ${report.scenario_id}`,
+  `- Scenario: ${report.scenario_id} v${report.scenario_version}`,
+  `- Scenario digest: ${report.scenario_sha256}`,
+  `- Gate class: ${report.gate_class}`,
   `- Host pair: ${report.host_pair[0]} -> ${report.host_pair[1]}`,
   `- Candidate: ${report.candidate_sha256}`,
   `- Trials: ${report.total_trials}`,

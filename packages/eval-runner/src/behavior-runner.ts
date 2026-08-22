@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { candidateDigest } from "./candidate-digest";
 import { evalScenarioSchema, type EvalReport, type EvalScenario, type NormalizedHostEvent } from "./contracts";
-import { connectGenericMcpHost, type GenericMcpHost } from "./hosts/generic";
+import { connectGenericMcpHost } from "./hosts/generic";
 import { HostTraceError, type HostCommandResult, type HostId } from "./hosts/host";
 import { installCandidateIntoLocalEval, type EvalInstallResult } from "./install-lifecycle";
 import {
@@ -24,6 +24,7 @@ import {
   scoreShareBehavior,
   type ScoreFailure,
 } from "./scoring";
+import { scenarioDigest } from "./scenario-digest";
 
 export const BEHAVIOR_SCENARIO_IDS = [
   "share-markdown",
@@ -171,16 +172,21 @@ export const runBehaviorScenario = async (options: {
   readonly repositoryRoot: string;
   readonly scenarioId: BehaviorScenarioId;
   readonly runtimeVersion: string;
+  readonly profile?: "smoke" | "baseline" | "release";
+  readonly trialIndex?: number;
+  readonly trialCount?: number;
   readonly dependencies?: Partial<BehaviorRunnerDependencies>;
 }): Promise<BehaviorScenarioResult> => {
   const dependencies = { ...defaultDependencies, ...options.dependencies };
   const startedAt = Date.now();
   const runId = randomUUID();
   const candidateSha256 = await candidateDigest(options.repositoryRoot);
-  const scenario = evalScenarioSchema.parse(JSON.parse(await readFile(
-    join(options.repositoryRoot, "evals/scenarios/behavior", `${options.scenarioId}.json`),
-    "utf8",
-  )));
+  const scenarioPath = join(options.repositoryRoot, "evals/scenarios/behavior", `${options.scenarioId}.json`);
+  const [scenarioValue, scenarioSha256] = await Promise.all([
+    readFile(scenarioPath, "utf8").then((value) => evalScenarioSchema.parse(JSON.parse(value))),
+    scenarioDigest(scenarioPath),
+  ]);
+  const scenario = scenarioValue;
   let environment: LocalEvalEnvironment | undefined;
   let teardownFailed = false;
   let infrastructureFailure = false;
@@ -282,14 +288,18 @@ export const runBehaviorScenario = async (options: {
     run_id: runId,
     candidate: { sha256: candidateSha256 },
     receipt_version: receiptVersion,
-    scenario: { id: scenario.id, version: scenario.version },
+    scenario: { id: scenario.id, version: scenario.version, sha256: scenarioSha256 },
     scorer_version: scenario.scorer_version,
     host: {
       agent_a: options.host,
       runtime: `${options.host}@${options.runtimeVersion}`,
       model: MODEL_BY_HOST[options.host],
     },
-    cohort: { profile: "smoke" as const, trial_index: 1, trial_count: 1 },
+    cohort: {
+      profile: options.profile ?? "smoke",
+      trial_index: options.trialIndex ?? 1,
+      trial_count: options.trialCount ?? 1,
+    },
     result: {
       version: 1 as const,
       run_id: runId,
