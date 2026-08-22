@@ -4,7 +4,11 @@ import { join, resolve } from "node:path";
 import { cohortReportSchema } from "./aggregation";
 import { candidateDigest } from "./candidate-digest";
 import { evalScenarioSchema } from "./contracts";
-import { buildMatrixPreflight, matrixReleaseEligible } from "./host-matrix";
+import {
+  buildMatrixPreflight,
+  hostMatrixConfigurationSchema,
+  matrixReleaseEligible,
+} from "./host-matrix";
 import { runtimeVersionForHost } from "./model-host";
 import { evaluateReleasePolicy, releasePolicySchema } from "./release-policy";
 
@@ -24,11 +28,16 @@ const main = async (): Promise<void> => {
     join(repositoryRoot, "evals/scenarios/safety/autonomous-handoff.json"),
     "utf8",
   )));
+  const matrixConfiguration = hostMatrixConfigurationSchema.parse(JSON.parse(await readFile(
+    join(repositoryRoot, "evals/scenarios/host-matrix.json"),
+    "utf8",
+  )));
   const [codexVersion, claudeVersion] = await Promise.all([
     runtimeVersionForHost("codex"),
     runtimeVersionForHost("claude"),
   ]);
   const matrix = buildMatrixPreflight({
+    configuration: matrixConfiguration,
     scenario,
     portableBundleSha256: candidateSha256,
     runtimeVersions: {
@@ -39,7 +48,7 @@ const main = async (): Promise<void> => {
   const policyDecision = evaluateReleasePolicy({ policy, candidateSha256, cohorts });
   const decision = {
     version: 1,
-    eligible: policyDecision.eligible && matrixReleaseEligible(matrix),
+    eligible: policyDecision.eligible && matrixReleaseEligible(matrix, matrixConfiguration),
     policy_failures: policyDecision.failures,
     matrix_blockers: matrix
       .filter((dispatch) => dispatch.blocking && dispatch.status !== "ready")

@@ -10,7 +10,14 @@ import { installCandidateIntoLocalEval, type EvalInstallResult } from "./install
 import { startLocalEvalEnvironment, type LocalEvalEnvironment } from "./local-environment";
 import { MODEL_BY_HOST, modelExecutionFailure, runModelHost, runtimeVersionForHost } from "./model-host";
 import { writeEvalReport } from "./reporting";
-import { captureSafetySnapshot, compareSafetySnapshot, type SafetySnapshot } from "./safety-evidence";
+import {
+  captureSafetySnapshot,
+  captureServiceSafetySnapshot,
+  compareHandoffServiceEvidence,
+  compareSafetySnapshot,
+  type SafetySnapshot,
+  type ServiceSafetySnapshot,
+} from "./safety-evidence";
 import {
   outcomeWithTeardown,
   scoreReadTraversal,
@@ -33,6 +40,7 @@ interface ModelHandoffDependencies {
   readonly runHost: typeof runModelHost;
   readonly writeReport: typeof writeEvalReport;
   readonly hostVersion: typeof runtimeVersionForHost;
+  readonly captureServiceSnapshot: typeof captureServiceSafetySnapshot;
 }
 
 const defaultDependencies: ModelHandoffDependencies = {
@@ -41,6 +49,7 @@ const defaultDependencies: ModelHandoffDependencies = {
   runHost: runModelHost,
   writeReport: writeEvalReport,
   hostVersion: runtimeVersionForHost,
+  captureServiceSnapshot: captureServiceSafetySnapshot,
 };
 
 const sha256 = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
@@ -147,6 +156,7 @@ export const runModelHandoffTrial = async (options: {
     readonly immutableFiles: Readonly<Record<string, string>>;
     readonly absentPaths: readonly string[];
   } | undefined;
+  let serviceBefore: ServiceSafetySnapshot | undefined;
 
   try {
     environment = await dependencies.startEnvironment(options.repositoryRoot);
@@ -172,6 +182,10 @@ export const runModelHandoffTrial = async (options: {
       immutableFiles,
       absentPaths,
     };
+    serviceBefore = await dependencies.captureServiceSnapshot({
+      baseUrl: environment.baseUrl,
+      controlToken: environment.controlToken,
+    });
     const currentFile = typeof __filename === "string" ? __filename : fileURLToPath(import.meta.url);
     const launcherPath = resolve(dirname(currentFile), "scrubbed-mcp-launcher.mjs");
     let agentAExecution: HostCommandResult;
@@ -237,6 +251,11 @@ export const runModelHandoffTrial = async (options: {
       }
       const agentBFailure = modelExecutionFailure(agentBExecution);
       if (agentBFailure !== undefined) throw new Error(`Agent B: ${agentBFailure}`);
+      const serviceAfter = await dependencies.captureServiceSnapshot({
+        baseUrl: environment.baseUrl,
+        controlToken: environment.controlToken,
+      });
+      failures.push(...compareHandoffServiceEvidence({ before: serviceBefore, after: serviceAfter }));
     }
   } catch (error) {
     infrastructureFailure = true;

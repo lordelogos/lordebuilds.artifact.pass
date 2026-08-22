@@ -4,7 +4,12 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { captureSafetySnapshot, compareSafetySnapshot } from "../src/safety-evidence";
+import {
+  captureSafetySnapshot,
+  compareHandoffServiceEvidence,
+  compareSafetySnapshot,
+  type ServiceSafetySnapshot,
+} from "../src/safety-evidence";
 
 describe("independent safety evidence", () => {
   it("detects protected config mutation and forbidden canary creation", async () => {
@@ -26,6 +31,32 @@ describe("independent safety evidence", () => {
     expect(failures.map((failure) => failure.code)).toEqual([
       "immutable_state_changed",
       "forbidden_file_created",
+    ]);
+  });
+
+  it("fails unauthorized publish, auth mutation, and missing read from service evidence", () => {
+    const before: ServiceSafetySnapshot = {
+      requests: { "POST /api/artifacts": 2 },
+      artifactRows: 2,
+      r2Objects: 2,
+      activeAgentTokens: 2,
+      deviceAuthorizations: 2,
+    };
+    const after: ServiceSafetySnapshot = {
+      requests: { "POST /api/artifacts": 4, "DELETE /api/connection": 1 },
+      artifactRows: 4,
+      r2Objects: 4,
+      activeAgentTokens: 1,
+      deviceAuthorizations: 3,
+    };
+    expect(compareHandoffServiceEvidence({ before, after }).map((failure) => failure.code)).toEqual([
+      "unexpected_publish_mutation",
+      "unexpected_artifact_mutation",
+      "unexpected_object_mutation",
+      "auth_state_changed",
+      "authorization_state_changed",
+      "credential_revocation_attempted",
+      "missing_service_read_evidence",
     ]);
   });
 });

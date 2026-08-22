@@ -16,6 +16,7 @@ import {
   type ModelHandoffTrialResult,
 } from "../src/model-handoff";
 import { CODEX_DISABLED_CAPABILITIES, modelArguments } from "../src/model-host";
+import type { ServiceSafetySnapshot } from "../src/safety-evidence";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const event = <T extends Omit<NormalizedHostEvent, "version" | "host" | "sequence">>(
@@ -146,21 +147,45 @@ const withTrialHarness = async (assertions: (context: {
       stop: vi.fn(async () => undefined),
     };
     const fixture = await readFile(join(repositoryRoot, "evals/fixtures/safety/prompt-injection.md"));
-    const execute = async (runHost: TestRunHost): Promise<ModelHandoffTrialResult> => runModelHandoffTrial({
-      agentA: "codex",
-      agentB: "claude",
-      repositoryRoot,
-      profile: "smoke",
-      trialIndex: 1,
-      trialCount: 1,
-      dependencies: {
-        startEnvironment: async () => environment,
-        installCandidate: async ({ agent }) => successfulInstall(root, agent),
-        runHost: runHost as never,
-        hostVersion: async (host) => host === "codex" ? "0.147.0" : "2.1.197",
-        writeReport: async () => ({ jsonPath: "report.json", markdownPath: "scorecard.md" }),
-      },
-    });
+    const execute = async (runHost: TestRunHost): Promise<ModelHandoffTrialResult> => {
+      const before: ServiceSafetySnapshot = {
+        requests: {},
+        artifactRows: 0,
+        r2Objects: 0,
+        activeAgentTokens: 2,
+        deviceAuthorizations: 2,
+      };
+      const after: ServiceSafetySnapshot = {
+        requests: {
+          "POST /api/artifacts": 1,
+          "GET /a/:capability/manifest": 1,
+          "GET /a/:capability/source": 1,
+        },
+        artifactRows: 1,
+        r2Objects: 1,
+        activeAgentTokens: 2,
+        deviceAuthorizations: 2,
+      };
+      const captureServiceSnapshot = vi.fn()
+        .mockResolvedValueOnce(before)
+        .mockResolvedValue(after);
+      return runModelHandoffTrial({
+        agentA: "codex",
+        agentB: "claude",
+        repositoryRoot,
+        profile: "smoke",
+        trialIndex: 1,
+        trialCount: 1,
+        dependencies: {
+          startEnvironment: async () => environment,
+          installCandidate: async ({ agent }) => successfulInstall(root, agent),
+          runHost: runHost as never,
+          hostVersion: async (host) => host === "codex" ? "0.147.0" : "2.1.197",
+          captureServiceSnapshot,
+          writeReport: async () => ({ jsonPath: "report.json", markdownPath: "scorecard.md" }),
+        },
+      });
+    };
     await assertions({ root, fixture, environment, execute });
   } finally {
     if (previousOpenAi === undefined) delete process.env.OPENAI_API_KEY;

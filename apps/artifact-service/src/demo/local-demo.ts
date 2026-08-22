@@ -26,6 +26,15 @@ const requiresHumanIdentity = (pathname: string): boolean =>
   pathname === "/connect/approve" ||
   pathname.startsWith("/connect/approve/");
 
+const auditRoute = (pathname: string): string => {
+  if (pathname === "/api/artifacts") return "/api/artifacts";
+  if (pathname === "/api/connection") return "/api/connection";
+  const shareRoute = /^\/a\/[A-Za-z0-9_-]{43}\/(manifest|source|derived|raw)$/u.exec(pathname);
+  if (shareRoute !== null) return `/a/:capability/${shareRoute[1]}`;
+  if (/^\/a\/[A-Za-z0-9_-]{43}$/u.test(pathname)) return "/a/:capability";
+  return pathname;
+};
+
 export interface LocalDemoHandler {
   readonly fetch: (
     request: Request,
@@ -42,6 +51,7 @@ export const createLocalDemoHandler = async (): Promise<LocalDemoHandler> => {
   });
   let controlledNow: number | undefined;
   const responseFaults = new Map<string, "redirect-manifest" | "malformed-manifest">();
+  const requestCounts = new Map<string, number>();
   const now = () => controlledNow ?? Date.now();
   const application = createArtifactApplication({
     accessJwks,
@@ -85,6 +95,11 @@ export const createLocalDemoHandler = async (): Promise<LocalDemoHandler> => {
         ACCESS_AUD: audience,
       };
 
+      if (!url.pathname.startsWith("/__local-test/")) {
+        const key = `${request.method.toUpperCase()} ${auditRoute(url.pathname)}`;
+        requestCounts.set(key, (requestCounts.get(key) ?? 0) + 1);
+      }
+
       const shareToken = /^\/a\/([A-Za-z0-9_-]{43})\/manifest$/u.exec(url.pathname)?.[1];
       const responseFault = shareToken === undefined ? undefined : responseFaults.get(shareToken);
       if (request.method === "GET" && responseFault === "redirect-manifest") {
@@ -116,6 +131,31 @@ export const createLocalDemoHandler = async (): Promise<LocalDemoHandler> => {
           }
           controlledNow = body?.now_ms as number;
           return Response.json({ now_ms: controlledNow }, { headers: { "Cache-Control": "no-store" } });
+        }
+        if (request.method === "GET" && url.pathname === "/__local-test/evidence") {
+          const [artifactRows, activeAgentTokens, deviceAuthorizations] = await Promise.all([
+            bindings.ARTIFACT_DB.prepare("SELECT COUNT(*) AS count FROM artifacts").first<number>("count"),
+            bindings.ARTIFACT_DB.prepare(
+              "SELECT COUNT(*) AS count FROM agent_tokens WHERE revoked_at IS NULL AND expires_at > ?",
+            ).bind(now()).first<number>("count"),
+            bindings.ARTIFACT_DB.prepare("SELECT COUNT(*) AS count FROM device_authorizations")
+              .first<number>("count"),
+          ]);
+          let objects = 0;
+          let cursor: string | undefined;
+          do {
+            const page = await bindings.ARTIFACTS.list(cursor === undefined ? undefined : { cursor });
+            objects += page.objects.length;
+            cursor = page.truncated ? page.cursor : undefined;
+          } while (cursor !== undefined);
+          return Response.json({
+            requests: Object.fromEntries([...requestCounts.entries()].sort(([left], [right]) =>
+              left.localeCompare(right))),
+            artifact_rows: artifactRows ?? 0,
+            r2_objects: objects,
+            active_agent_tokens: activeAgentTokens ?? 0,
+            device_authorizations: deviceAuthorizations ?? 0,
+          }, { headers: { "Cache-Control": "no-store" } });
         }
         if (request.method === "POST" && url.pathname === "/__local-test/cleanup") {
           const result = await expireArtifacts({

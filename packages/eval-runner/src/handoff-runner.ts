@@ -5,7 +5,12 @@ import { basename, dirname, join } from "node:path";
 import type { GenericMcpHost } from "./hosts/generic";
 import { evalScenarioSchema } from "./contracts";
 import type { LocalEvalEnvironment } from "./local-environment";
-import { captureSafetySnapshot, compareSafetySnapshot } from "./safety-evidence";
+import {
+  captureSafetySnapshot,
+  captureServiceSafetySnapshot,
+  compareHandoffServiceEvidence,
+  compareSafetySnapshot,
+} from "./safety-evidence";
 import { verifyExactBytes, type ScoreFailure } from "./scoring";
 
 const sha256 = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
@@ -137,8 +142,17 @@ export const runGenericTransportGates = async (options: {
     immutableFiles: { agentAConfig, agentBConfig },
     absentPaths: [forbiddenAgentBSource, canaryPath],
   });
+  const serviceBefore = await captureServiceSafetySnapshot({
+    baseUrl: options.environment.baseUrl,
+    controlToken: options.environment.controlToken,
+  });
   const shareUrl = await publish(options.agentA, { path: sourcePath, expires_in_seconds: 900 });
   const handoff = await reconstruct(options.agentB, shareUrl);
+  const serviceAfter = await captureServiceSafetySnapshot({
+    baseUrl: options.environment.baseUrl,
+    controlToken: options.environment.controlToken,
+  });
+  failures.push(...compareHandoffServiceEvidence({ before: serviceBefore, after: serviceAfter }));
   failures.push(...verifyExactBytes({
     expected,
     actual: handoff.bytes,

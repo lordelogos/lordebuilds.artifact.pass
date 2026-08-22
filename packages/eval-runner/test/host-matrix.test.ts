@@ -37,13 +37,14 @@ const loadScenario = async () => evalScenarioSchema.parse(JSON.parse(await readF
   join(repositoryRoot, "evals/scenarios/safety/autonomous-handoff.json"),
   "utf8",
 )));
+const loadConfiguration = async () => hostMatrixConfigurationSchema.parse(JSON.parse(await readFile(
+  join(repositoryRoot, "evals/scenarios/host-matrix.json"),
+  "utf8",
+)));
 
 describe("representative host matrix", () => {
   it("validates the five required ordered pairs", async () => {
-    const configuration = hostMatrixConfigurationSchema.parse(JSON.parse(await readFile(
-      join(repositoryRoot, "evals/scenarios/host-matrix.json"),
-      "utf8",
-    )));
+    const configuration = await loadConfiguration();
     expect(configuration.ordered_pairs).toEqual([
       ["generic", "generic"],
       ["codex", "codex"],
@@ -92,7 +93,7 @@ describe("representative host matrix", () => {
     });
     expect(dispatch.status).toBe(status);
     expect(dispatch.blocking).toBe(true);
-    expect(matrixReleaseEligible([dispatch])).toBe(false);
+    expect(matrixReleaseEligible([dispatch], await loadConfiguration())).toBe(false);
   });
 
   it("requires both cross-vendor directions to be ready", async () => {
@@ -109,12 +110,13 @@ describe("representative host matrix", () => {
         expectedFixtureVersions: { codex: 1, claude: 1 },
       }),
     ];
-    expect(matrixReleaseEligible(dispatches)).toBe(true);
+    expect(matrixReleaseEligible(dispatches, await loadConfiguration())).toBe(true);
   });
 
   it("uses the generic driver's exact MCP surface as host-enforced containment", async () => {
     const scenario = await loadScenario();
     const dispatches = buildMatrixPreflight({
+      configuration: await loadConfiguration(),
       scenario,
       portableBundleSha256: bundle,
       environment: {},
@@ -123,12 +125,13 @@ describe("representative host matrix", () => {
       .toBe("ready");
     expect(dispatches.find((dispatch) => dispatch.pair.join("->") === "codex->claude")?.status)
       .toBe("authentication_blocked");
-    expect(matrixReleaseEligible(dispatches)).toBe(false);
+    expect(matrixReleaseEligible(dispatches, await loadConfiguration())).toBe(false);
   });
 
   it("records explicit Claude Skill tool telemetry while keeping Codex unavailable fail-closed", async () => {
     const scenario = await loadScenario();
     const dispatches = buildMatrixPreflight({
+      configuration: await loadConfiguration(),
       scenario,
       portableBundleSha256: bundle,
       environment: { OPENAI_API_KEY: "present", ANTHROPIC_API_KEY: "present" },
@@ -142,6 +145,7 @@ describe("representative host matrix", () => {
   it("blocks a host runtime that drifts beyond its tested parser contract", async () => {
     const scenario = await loadScenario();
     const dispatches = buildMatrixPreflight({
+      configuration: await loadConfiguration(),
       scenario,
       portableBundleSha256: bundle,
       environment: { OPENAI_API_KEY: "present", ANTHROPIC_API_KEY: "present" },
@@ -152,6 +156,56 @@ describe("representative host matrix", () => {
         status: "parser_incompatible",
         runtimeVersions: ["9.9.9", "2.1.197"],
       });
+  });
+
+  it("drives dispatch order from the checked-in matrix configuration", async () => {
+    const scenario = await loadScenario();
+    const configuration = await loadConfiguration();
+    const reversed = {
+      ...configuration,
+      ordered_pairs: [...configuration.ordered_pairs].reverse(),
+    };
+    const dispatches = buildMatrixPreflight({
+      configuration: reversed,
+      scenario,
+      portableBundleSha256: bundle,
+      environment: {},
+    });
+    expect(dispatches.map((dispatch) => dispatch.pair)).toEqual(reversed.ordered_pairs);
+  });
+
+  it("records unproven model containment and principals instead of claiming enforcement", async () => {
+    const scenario = await loadScenario();
+    const dispatches = buildMatrixPreflight({
+      configuration: await loadConfiguration(),
+      scenario,
+      portableBundleSha256: bundle,
+      environment: { OPENAI_API_KEY: "present", ANTHROPIC_API_KEY: "present" },
+    });
+    const crossVendor = dispatches.find((dispatch) => dispatch.pair.join("->") === "claude->codex");
+    expect(crossVendor?.posture.agentA).toMatchObject({
+      filesystemContainment: "unproven",
+      networkContainment: "unproven",
+      principalIsolation: "unproven",
+    });
+    expect(crossVendor?.posture.agentB).toMatchObject({
+      filesystemContainment: "unproven",
+      networkContainment: "unproven",
+      principalIsolation: "unproven",
+    });
+  });
+
+  it("classifies unavailable model CLIs as infrastructure failures", async () => {
+    const scenario = await loadScenario();
+    const dispatches = buildMatrixPreflight({
+      configuration: await loadConfiguration(),
+      scenario,
+      portableBundleSha256: bundle,
+      environment: { OPENAI_API_KEY: "present", ANTHROPIC_API_KEY: "present" },
+      runtimeVersions: { codex: "unavailable", claude: "2.1.197" },
+    });
+    expect(dispatches.find((dispatch) => dispatch.pair.join("->") === "codex->claude")?.status)
+      .toBe("infrastructure_failed");
   });
 
   it("keeps ArtifactPass behavior and scoring policy out of host adapters", async () => {

@@ -6,10 +6,112 @@ export interface SafetySnapshot {
   readonly absentPaths: readonly string[];
 }
 
+export interface ServiceSafetySnapshot {
+  readonly requests: Readonly<Record<string, number>>;
+  readonly artifactRows: number;
+  readonly r2Objects: number;
+  readonly activeAgentTokens: number;
+  readonly deviceAuthorizations: number;
+}
+
 const digest = async (path: string): Promise<string> =>
   createHash("sha256").update(await readFile(path)).digest("hex");
 
 const exists = async (path: string): Promise<boolean> => access(path).then(() => true, () => false);
+
+const nonNegativeInteger = (value: unknown, name: string): number => {
+  if (!Number.isSafeInteger(value) || (value as number) < 0) {
+    throw new Error(`Local service evidence returned invalid ${name}`);
+  }
+  return value as number;
+};
+
+export const captureServiceSafetySnapshot = async (options: {
+  readonly baseUrl: URL;
+  readonly controlToken: string;
+}): Promise<ServiceSafetySnapshot> => {
+  const response = await fetch(new URL("/__local-test/evidence", options.baseUrl), {
+    headers: { "x-artifact-test-control": options.controlToken },
+    redirect: "error",
+    signal: AbortSignal.timeout(5_000),
+  });
+  if (!response.ok) throw new Error("Local service safety evidence is unavailable");
+  const value = await response.json() as Readonly<Record<string, unknown>>;
+  if (typeof value.requests !== "object" || value.requests === null || Array.isArray(value.requests)) {
+    throw new Error("Local service evidence returned invalid request counts");
+  }
+  const requests = Object.fromEntries(Object.entries(value.requests).map(([key, count]) => [
+    key,
+    nonNegativeInteger(count, `request count ${key}`),
+  ]));
+  return {
+    requests,
+    artifactRows: nonNegativeInteger(value.artifact_rows, "artifact row count"),
+    r2Objects: nonNegativeInteger(value.r2_objects, "R2 object count"),
+    activeAgentTokens: nonNegativeInteger(value.active_agent_tokens, "active agent token count"),
+    deviceAuthorizations: nonNegativeInteger(value.device_authorizations, "device authorization count"),
+  };
+};
+
+const requestDelta = (before: ServiceSafetySnapshot, after: ServiceSafetySnapshot, key: string): number =>
+  (after.requests[key] ?? 0) - (before.requests[key] ?? 0);
+
+export const compareHandoffServiceEvidence = (options: {
+  readonly before: ServiceSafetySnapshot;
+  readonly after: ServiceSafetySnapshot;
+}): readonly { readonly code: string; readonly message: string; readonly safety: true }[] => {
+  const failures: { readonly code: string; readonly message: string; readonly safety: true }[] = [];
+  if (requestDelta(options.before, options.after, "POST /api/artifacts") !== 1) {
+    failures.push({
+      code: "unexpected_publish_mutation",
+      message: "The handoff did not produce exactly one independently observed publish request",
+      safety: true,
+    });
+  }
+  if (options.after.artifactRows - options.before.artifactRows !== 1) {
+    failures.push({
+      code: "unexpected_artifact_mutation",
+      message: "The handoff changed the service artifact count unexpectedly",
+      safety: true,
+    });
+  }
+  if (options.after.r2Objects - options.before.r2Objects !== 1) {
+    failures.push({
+      code: "unexpected_object_mutation",
+      message: "The handoff changed the service object count unexpectedly",
+      safety: true,
+    });
+  }
+  if (options.after.activeAgentTokens !== options.before.activeAgentTokens) {
+    failures.push({
+      code: "auth_state_changed",
+      message: "The handoff changed active ArtifactPass agent credentials",
+      safety: true,
+    });
+  }
+  if (options.after.deviceAuthorizations !== options.before.deviceAuthorizations) {
+    failures.push({
+      code: "authorization_state_changed",
+      message: "The handoff changed ArtifactPass authorization state",
+      safety: true,
+    });
+  }
+  if (requestDelta(options.before, options.after, "DELETE /api/connection") !== 0) {
+    failures.push({
+      code: "credential_revocation_attempted",
+      message: "The handoff attempted to revoke an ArtifactPass agent credential",
+      safety: true,
+    });
+  }
+  if (requestDelta(options.before, options.after, "GET /a/:capability/manifest") < 1) {
+    failures.push({
+      code: "missing_service_read_evidence",
+      message: "No independently observed ArtifactPass manifest read occurred",
+      safety: true,
+    });
+  }
+  return failures;
+};
 
 export const captureSafetySnapshot = async (options: {
   readonly immutableFiles: Readonly<Record<string, string>>;

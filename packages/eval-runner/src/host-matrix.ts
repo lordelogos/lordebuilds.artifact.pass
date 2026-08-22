@@ -19,6 +19,7 @@ export const hostMatrixConfigurationSchema = z.object({
   blocking_before: z.literal("0.1.0"),
   required_cross_vendor_pairs: z.array(hostPairSchema).length(2),
 }).strict();
+export type HostMatrixConfiguration = z.infer<typeof hostMatrixConfigurationSchema>;
 
 export interface HostPosture {
   readonly host: MatrixHost;
@@ -60,6 +61,10 @@ export interface MatrixDispatch {
     readonly agentAHost: MatrixHost;
     readonly agentBHost: MatrixHost;
   };
+  readonly posture: {
+    readonly agentA: HostPosture;
+    readonly agentB: HostPosture;
+  };
   readonly status: MatrixPairStatus;
   readonly blocking: boolean;
   readonly reasons: readonly string[];
@@ -81,6 +86,7 @@ export const assessHostPair = (options: {
   readonly expectedRuntimeVersions?: Readonly<Partial<Record<MatrixHost, string>>>;
   readonly explicitlySkipped?: boolean;
   readonly infrastructureFailure?: string;
+  readonly blocking?: boolean;
 }): MatrixDispatch => {
   const reasons: string[] = [];
   let status: MatrixPairStatus = "ready";
@@ -150,14 +156,21 @@ export const assessHostPair = (options: {
       agentAHost: options.pair[0],
       agentBHost: options.pair[1],
     },
+    posture: {
+      agentA: options.agentA,
+      agentB: options.agentB,
+    },
     status,
-    blocking: isCrossVendor(options.pair),
+    blocking: options.blocking ?? isCrossVendor(options.pair),
     reasons,
   };
 };
 
-export const matrixReleaseEligible = (dispatches: readonly MatrixDispatch[]): boolean => {
-  const required = new Set(["codex->claude", "claude->codex"]);
+export const matrixReleaseEligible = (
+  dispatches: readonly MatrixDispatch[],
+  configuration: HostMatrixConfiguration,
+): boolean => {
+  const required = new Set(configuration.required_cross_vendor_pairs.map((pair) => `${pair[0]}->${pair[1]}`));
   for (const dispatch of dispatches) {
     if (!dispatch.blocking) continue;
     const key = `${dispatch.pair[0]}->${dispatch.pair[1]}`;
@@ -167,6 +180,7 @@ export const matrixReleaseEligible = (dispatches: readonly MatrixDispatch[]): bo
 };
 
 export const buildMatrixPreflight = (options: {
+  readonly configuration: HostMatrixConfiguration;
   readonly scenario: EvalScenario;
   readonly portableBundleSha256: string;
   readonly environment?: NodeJS.ProcessEnv;
@@ -194,12 +208,12 @@ export const buildMatrixPreflight = (options: {
       parserFixtureVersion: 1,
       model: "gpt-5.4",
       authentication: environment.OPENAI_API_KEY === undefined ? "blocked" : "isolated",
-      filesystemContainment: "enforced",
-      networkContainment: "enforced",
+      filesystemContainment: "unproven",
+      networkContainment: "unproven",
       approvalMode: "normal",
       mcpTools: ["publish_artifact", "read_artifact"],
       principalId: "openai-api-key",
-      principalIsolation: "proven",
+      principalIsolation: "unproven",
       skillSelectionEvidence: "unavailable",
       portableBundleSha256: options.portableBundleSha256,
     }),
@@ -209,23 +223,19 @@ export const buildMatrixPreflight = (options: {
       parserFixtureVersion: 1,
       model: "claude-sonnet-4-6",
       authentication: environment.ANTHROPIC_API_KEY === undefined ? "blocked" : "isolated",
-      filesystemContainment: "enforced",
-      networkContainment: "enforced",
+      filesystemContainment: "unproven",
+      networkContainment: "unproven",
       approvalMode: "normal",
       mcpTools: ["publish_artifact", "read_artifact"],
       principalId: "anthropic-api-key",
-      principalIsolation: "proven",
+      principalIsolation: "unproven",
       skillSelectionEvidence: "explicit",
       portableBundleSha256: options.portableBundleSha256,
     }),
   };
-  const pairs: readonly HostPair[] = [
-    ["generic", "generic"],
-    ["codex", "codex"],
-    ["claude", "claude"],
-    ["codex", "claude"],
-    ["claude", "codex"],
-  ];
+  const pairs = options.configuration.ordered_pairs;
+  const blockingPairs = new Set(options.configuration.required_cross_vendor_pairs
+    .map((pair) => `${pair[0]}->${pair[1]}`));
   return pairs.map((pair) => assessHostPair({
     pair,
     scenario: options.scenario,
@@ -237,5 +247,10 @@ export const buildMatrixPreflight = (options: {
       codex: CODEX_ADAPTER_COMPATIBILITY.testedCliVersion,
       claude: CLAUDE_ADAPTER_COMPATIBILITY.testedCliVersion,
     },
+    blocking: blockingPairs.has(`${pair[0]}->${pair[1]}`),
+    ...((pair[0] !== "generic" && postures[pair[0]]("a").runtimeVersion === "unavailable") ||
+      (pair[1] !== "generic" && postures[pair[1]]("b").runtimeVersion === "unavailable")
+      ? { infrastructureFailure: "A selected model-host CLI is unavailable" }
+      : {}),
   }));
 };
