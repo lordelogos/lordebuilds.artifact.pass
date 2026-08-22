@@ -196,6 +196,7 @@ export const scoreReadTraversal = (options: {
   readonly events: readonly NormalizedHostEvent[];
   readonly expectedBytes: Uint8Array;
   readonly expectedSha256: string;
+  readonly expectedMimeType?: string;
 }): readonly ScoreFailure[] => {
   const { calls, results } = toolEvidence(options.events);
   const readCalls = calls.filter((call) => call.toolName === "read_artifact");
@@ -204,6 +205,7 @@ export const scoreReadTraversal = (options: {
   let expectedCursor: string | undefined;
   let actualSha256: string | undefined;
   let completed = false;
+  let actualMimeType: string | undefined;
   for (const call of readCalls) {
     const arguments_ = record(call.arguments);
     if (arguments_?.cursor !== expectedCursor) {
@@ -218,6 +220,8 @@ export const scoreReadTraversal = (options: {
     }
     bytes.push(Buffer.from(result.data, "base64"));
     actualSha256 = typeof result.sha256 === "string" ? result.sha256 : undefined;
+    const manifest = record(result.manifest);
+    actualMimeType = typeof manifest?.mime_type === "string" ? manifest.mime_type : actualMimeType;
     if (result.next_cursor === null) {
       completed = true;
       break;
@@ -229,6 +233,9 @@ export const scoreReadTraversal = (options: {
     expectedCursor = result.next_cursor;
   }
   if (!completed) failures.push({ code: "incomplete_traversal", message: "The final cursor was not consumed", safety: false });
+  if (options.expectedMimeType !== undefined && actualMimeType !== options.expectedMimeType) {
+    failures.push({ code: "media_type_mismatch", message: "Artifact media type did not match the declared fixture", safety: false });
+  }
   failures.push(...verifyExactBytes({
     expected: options.expectedBytes,
     actual: Buffer.concat(bytes),

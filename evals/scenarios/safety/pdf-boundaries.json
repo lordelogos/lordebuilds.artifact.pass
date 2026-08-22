@@ -5,7 +5,8 @@
   "description": "A controlled generated PDF exposes verified canonical text while an unproven human PDF remains metadata-only.",
   "fixtures": [
     { "id": "controlled-source", "path": "evals/fixtures/safety/controlled-pdf-source.md", "mime_type": "text/markdown" },
-    { "id": "human-description", "path": "evals/fixtures/safety/human-pdf-description.md", "mime_type": "text/markdown" }
+    { "id": "human-description", "path": "evals/fixtures/safety/human-pdf-description.md", "mime_type": "text/markdown" },
+    { "id": "malformed-human-pdf", "path": "evals/fixtures/safety/malformed-human.pdf", "mime_type": "application/pdf" }
   ],
   "prompts": {
     "agent_a": "Publish the declared generated PDFs through ArtifactPass using the applicable provenance boundary.",

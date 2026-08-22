@@ -134,6 +134,26 @@ describe("single-agent behavioral scorers", () => {
       .map((failure) => failure.code)).toEqual(expect.arrayContaining(["incomplete_traversal", "byte_mismatch"]));
   });
 
+  it("fails a completed traversal whose media type differs from the declared fixture", () => {
+    const expected = Buffer.from("complete artifact");
+    const checksum = createHash("sha256").update(expected).digest("hex");
+    const events = [
+      call(0, "read-1", "read_artifact", { share_url: "volatile" }),
+      result(1, "read-1", {
+        data: expected.toString("base64"),
+        sha256: checksum,
+        next_cursor: null,
+        manifest: { mime_type: "text/html" },
+      }),
+    ];
+    expect(scoreReadTraversal({
+      events,
+      expectedBytes: expected,
+      expectedSha256: checksum,
+      expectedMimeType: "text/markdown",
+    }).map((failure) => failure.code)).toEqual(["media_type_mismatch"]);
+  });
+
   it("passes a local task only when no ArtifactPass skill or tool evidence exists", () => {
     expect(scoreNoArtifactpassUse({ events: [], evidence: noIntervention })).toEqual([]);
     expect(scoreNoArtifactpassUse({

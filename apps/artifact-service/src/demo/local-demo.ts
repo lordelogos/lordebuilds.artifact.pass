@@ -41,6 +41,7 @@ export const createLocalDemoHandler = async (): Promise<LocalDemoHandler> => {
     keys: [{ ...publicJwk, alg: "RS256", kid: keyId, use: "sig" }],
   });
   let controlledNow: number | undefined;
+  const responseFaults = new Map<string, "redirect-manifest" | "malformed-manifest">();
   const now = () => controlledNow ?? Date.now();
   const application = createArtifactApplication({
     accessJwks,
@@ -83,6 +84,21 @@ export const createLocalDemoHandler = async (): Promise<LocalDemoHandler> => {
         ACCESS_TEAM_DOMAIN: issuer,
         ACCESS_AUD: audience,
       };
+
+      const shareToken = /^\/a\/([A-Za-z0-9_-]{43})\/manifest$/u.exec(url.pathname)?.[1];
+      const responseFault = shareToken === undefined ? undefined : responseFaults.get(shareToken);
+      if (request.method === "GET" && responseFault === "redirect-manifest") {
+        return new Response(null, {
+          status: 302,
+          headers: { Location: "https://leak.invalid/artifactpass-eval" },
+        });
+      }
+      if (request.method === "GET" && responseFault === "malformed-manifest") {
+        return new Response("{malformed", {
+          status: 200,
+          headers: { "content-type": "application/json", "Cache-Control": "no-store" },
+        });
+      }
 
       if (url.pathname.startsWith("/__local-test/")) {
         const expectedToken = bindings.LOCAL_TEST_CONTROL_TOKEN;
@@ -145,6 +161,63 @@ export const createLocalDemoHandler = async (): Promise<LocalDemoHandler> => {
           await repository.markCleanupPending(artifact.id);
           return Response.json(
             { revoked: true },
+            { headers: { "Cache-Control": "no-store" } },
+          );
+        }
+        if (request.method === "POST" && url.pathname === "/__local-test/fault") {
+          const body = await request.json().catch(() => null) as {
+            share_url?: unknown;
+            mode?: unknown;
+          } | null;
+          if (
+            typeof body?.share_url !== "string" ||
+            !new Set([
+              "corrupt-source",
+              "delete-source",
+              "redirect-manifest",
+              "malformed-manifest",
+            ]).has(body.mode as string)
+          ) {
+            return Response.json({ error: "share_url and a supported fault mode are required" }, { status: 400 });
+          }
+          let faultUrl: URL;
+          try {
+            faultUrl = new URL(body.share_url);
+          } catch {
+            return Response.json({ error: "share_url must be a valid URL" }, { status: 400 });
+          }
+          const faultToken = /^\/a\/([A-Za-z0-9_-]{43})$/u.exec(faultUrl.pathname)?.[1];
+          if (
+            faultUrl.origin !== url.origin ||
+            faultToken === undefined ||
+            faultUrl.search !== "" ||
+            faultUrl.hash !== ""
+          ) {
+            return Response.json({ error: "share_url must be a local ArtifactPass capability" }, { status: 400 });
+          }
+          const mode = body.mode as "corrupt-source" | "delete-source" | "redirect-manifest" | "malformed-manifest";
+          if (mode === "redirect-manifest" || mode === "malformed-manifest") {
+            responseFaults.set(faultToken, mode);
+          } else {
+            const repository = new D1ArtifactRepository(bindings.ARTIFACT_DB);
+            const artifact = await repository.findActiveByShareTokenHash(await hashShareToken(faultToken));
+            if (artifact === null) return new Response(null, { status: 404 });
+            if (mode === "delete-source") {
+              await bindings.ARTIFACTS.delete(artifact.objectKey);
+            } else {
+              const object = await bindings.ARTIFACTS.get(artifact.objectKey);
+              if (object === null) return new Response(null, { status: 404 });
+              const bytes = new Uint8Array(await object.arrayBuffer());
+              if (bytes.byteLength === 0) return Response.json({ error: "source is empty" }, { status: 409 });
+              bytes[0] = (bytes[0] ?? 0) ^ 0xff;
+              await bindings.ARTIFACTS.put(artifact.objectKey, bytes, {
+                ...(object.httpMetadata === undefined ? {} : { httpMetadata: object.httpMetadata }),
+                ...(object.customMetadata === undefined ? {} : { customMetadata: object.customMetadata }),
+              });
+            }
+          }
+          return Response.json(
+            { fault: mode, armed: true },
             { headers: { "Cache-Control": "no-store" } },
           );
         }

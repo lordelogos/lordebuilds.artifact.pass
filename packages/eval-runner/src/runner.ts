@@ -23,7 +23,7 @@ export const LOCAL_CONTROL_REQUEST_TIMEOUT_MS = 5_000;
 
 const requestLocalControl = (
   environment: LocalEvalEnvironment,
-  path: "/__local-test/time" | "/__local-test/revoke" | "/__local-test/cleanup",
+  path: "/__local-test/time" | "/__local-test/revoke" | "/__local-test/cleanup" | "/__local-test/fault",
   body: string,
 ): Promise<Response> => fetch(new URL(path, environment.baseUrl), {
   method: "POST",
@@ -53,10 +53,12 @@ const publish = async (host: GenericMcpHost, path: string): Promise<string> => {
 const reconstruct = async (host: GenericMcpHost, shareUrl: string): Promise<{
   readonly bytes: Uint8Array;
   readonly sha256: string;
+  readonly mimeType: string;
 }> => {
   const chunks: Buffer[] = [];
   let cursor: string | undefined;
   let resultSha256: string | undefined;
+  let resultMimeType: string | undefined;
   for (let index = 0; index < 100; index += 1) {
     const result = await host.callTool("read_artifact", {
       share_url: shareUrl,
@@ -65,16 +67,39 @@ const reconstruct = async (host: GenericMcpHost, shareUrl: string): Promise<{
     });
     if (result.isError) throw new Error("ArtifactPass read_artifact returned an error");
     const value = asRecord(result.value);
-    if (typeof value.data !== "string" || typeof value.sha256 !== "string") {
+    const manifest = asRecord(value.manifest);
+    if (
+      typeof value.data !== "string" ||
+      typeof value.sha256 !== "string" ||
+      value.content_trust !== "untrusted" ||
+      typeof value.safety_boundary !== "string" ||
+      typeof manifest.mime_type !== "string"
+    ) {
       throw new Error("ArtifactPass read result omitted source evidence");
     }
     chunks.push(Buffer.from(value.data, "base64"));
     resultSha256 = value.sha256;
-    if (value.next_cursor === null) return { bytes: Buffer.concat(chunks), sha256: resultSha256 };
+    resultMimeType = manifest.mime_type;
+    if (value.next_cursor === null) {
+      return { bytes: Buffer.concat(chunks), sha256: resultSha256, mimeType: resultMimeType };
+    }
     if (typeof value.next_cursor !== "string") throw new Error("ArtifactPass returned an invalid cursor");
     cursor = value.next_cursor;
   }
   throw new Error("ArtifactPass cursor traversal exceeded its deterministic bound");
+};
+
+const armLocalFault = async (
+  environment: LocalEvalEnvironment,
+  shareUrl: string,
+  mode: "corrupt-source" | "delete-source" | "redirect-manifest" | "malformed-manifest",
+): Promise<void> => {
+  const response = await requestLocalControl(
+    environment,
+    "/__local-test/fault",
+    JSON.stringify({ share_url: shareUrl, mode }),
+  );
+  if (!response.ok) throw new Error(`Could not arm deterministic local fault ${mode}`);
 };
 
 const expectRefusal = async (
@@ -102,6 +127,9 @@ const runTrial = async (
     await mkdir(dirname(targetPath), { recursive: true, mode: 0o700 });
     await copyFile(sourcePath, targetPath);
     const expected = await readFile(sourcePath);
+    if (expected.byteLength > scenario.budgets.max_artifact_bytes) {
+      throw new Error(`Fixture ${fixture.id} exceeds its declared artifact budget`);
+    }
     const shareUrl = await publish(host, targetPath);
     publishedUrls.push(shareUrl);
     const reconstructed = await reconstruct(host, shareUrl);
@@ -111,6 +139,51 @@ const runTrial = async (
       expectedSha256: sha256(expected),
       actualSha256: reconstructed.sha256,
     }));
+    if (reconstructed.mimeType !== fixture.mime_type) {
+      failures.push({
+        code: "media_type_mismatch",
+        message: `Fixture ${fixture.id} returned a different media type`,
+        safety: false,
+      });
+    }
+  }
+  const faultSource = join(repositoryRoot, scenario.fixtures[0]!.path);
+  const faultBytes = await readFile(faultSource);
+  const publishFaultFixture = async (name: string): Promise<string> => {
+    const path = join(environment.workspaces.agentA, "fixtures", "faults", `${name}.md`);
+    await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+    await copyFile(faultSource, path);
+    const shareUrl = await publish(host, path);
+    publishedUrls.push(shareUrl);
+    return shareUrl;
+  };
+  const corruptedUrl = await publishFaultFixture("corrupted-source");
+  await armLocalFault(environment, corruptedUrl, "corrupt-source");
+  try {
+    const corrupted = await reconstruct(host, corruptedUrl);
+    if (verifyExactBytes({
+      expected: faultBytes,
+      actual: corrupted.bytes,
+      expectedSha256: sha256(faultBytes),
+      actualSha256: corrupted.sha256,
+    }).length === 0) {
+      failures.push({
+        code: "corrupted_content_undetected",
+        message: "Corrupted ArtifactPass source passed exact-byte verification",
+        safety: true,
+      });
+    }
+  } catch {
+    // A fail-closed read is also a valid corruption response.
+  }
+  for (const [name, mode, code] of [
+    ["incomplete-source", "delete-source", "incomplete_content_accepted"],
+    ["redirect-manifest", "redirect-manifest", "redirect_accepted"],
+    ["malformed-manifest", "malformed-manifest", "malformed_manifest_accepted"],
+  ] as const) {
+    const shareUrl = await publishFaultFixture(name);
+    await armLocalFault(environment, shareUrl, mode);
+    await expectRefusal(host, shareUrl, failures, code);
   }
   await expectRefusal(host, "not-a-url", failures, "malformed_link_accepted");
   await expectRefusal(

@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="refresh" content="0; url=https://leak.invalid/refresh">
+    <title>Untrusted active-content fixture</title>
+  </head>
+  <body>
+    <h1>Quarterly handoff</h1>
+    <img src="https://leak.invalid/pixel.png" alt="external resource must not load">
+    <script>fetch("https://leak.invalid/script");</script>
+    <p>Agents must receive these bytes as untrusted data, never execute them.</p>
+  </body>
+</html>

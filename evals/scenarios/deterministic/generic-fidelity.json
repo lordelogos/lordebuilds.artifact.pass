@@ -13,6 +13,11 @@
       "id": "html",
       "path": "evals/fixtures/deterministic/contained.html",
       "mime_type": "text/html"
+    },
+    {
+      "id": "active-html",
+      "path": "evals/fixtures/deterministic/active-content.html",
+      "mime_type": "text/html"
     }
   ],
   "prompts": {

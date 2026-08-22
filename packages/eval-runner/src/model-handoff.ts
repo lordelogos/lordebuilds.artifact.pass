@@ -223,6 +223,7 @@ export const runModelHandoffTrial = async (options: {
         events: agentBEvents,
         expectedBytes: fixtureBytes,
         expectedSha256: sha256(fixtureBytes),
+        expectedMimeType: fixture.mime_type,
       }));
       failures.push(...readSkillFailures(agentBEvents));
       failures.push(...businessOutcomeFailures(agentBEvents));
