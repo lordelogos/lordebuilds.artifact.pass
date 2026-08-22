@@ -12,6 +12,7 @@ import { smokeArtifactpassMcp, type McpSmokeResult } from "./mcp-smoke";
 import {
   defaultPortableIntegrationDirectory,
   installPortableIntegration,
+  portableIntegrationWasCreated,
   type PortableIntegration,
 } from "./portable-integration";
 import { runProcess, type ProcessRunner } from "./process";
@@ -61,7 +62,8 @@ export interface ArtifactpassInstallReceipt {
   };
   readonly outcomes: readonly string[];
   readonly restart_required: boolean;
-  readonly rollback: "not-required" | "complete";
+  readonly rollback: "not-required" | "complete" | "incomplete";
+  readonly rollback_failures?: readonly string[];
   readonly failed_stage?: InstallStage;
   readonly resumed_from?: string;
   readonly receipt_path: string;
@@ -93,6 +95,7 @@ export interface ArtifactpassInstallDependencies {
   readonly connect?: typeof connectHost;
   readonly connectDependencies: ConnectDependencies;
   readonly installPortable?: typeof installPortableIntegration;
+  readonly portableWasCreated?: typeof portableIntegrationWasCreated;
   readonly smoke?: typeof smokeArtifactpassMcp;
   readonly runner?: ProcessRunner;
   readonly platform?: NodeJS.Platform;
@@ -185,6 +188,9 @@ const verifySkills = async (portable: PortableIntegration): Promise<readonly str
 
 export const renderInstallReceipt = (receipt: ArtifactpassInstallReceipt): string => {
   if (receipt.status === "failed") {
+    if (receipt.rollback === "incomplete") {
+      return `ArtifactPass installation failed during ${receipt.failed_stage ?? "setup"}. Rollback is incomplete: ${(receipt.rollback_failures ?? ["unknown state"]).join(", ")}.`;
+    }
     return `ArtifactPass installation failed during ${receipt.failed_stage ?? "setup"}. Previous working state was restored.`;
   }
   const registration = receipt.portable_bundle.host_registration === "manual-required"
@@ -217,6 +223,7 @@ export const runArtifactpassInstall = async (
   let smoke: McpSmokeResult | undefined;
   let skills: readonly string[] = [];
   let connectResult: Awaited<ReturnType<typeof connectHost>> | undefined;
+  let configSnapshot: { readonly existed: boolean; readonly bytes?: Buffer } | undefined;
   const outcomes: string[] = [];
   try {
     const previousJournal = await readJournal(journalPath);
@@ -233,6 +240,12 @@ export const runArtifactpassInstall = async (
     };
     await writeJson(journalPath, journal);
     await verifyWorkspace(workspaceRoot, dependencies.homeDirectory ?? homedir());
+    configSnapshot = await readFile(configPath)
+      .then((bytes) => ({ existed: true as const, bytes }))
+      .catch((error: unknown) => {
+        if (isMissing(error)) return { existed: false as const };
+        throw error;
+      });
     if (dependencies.skipCredentialStorePreflight !== true && input.openDevelopment !== true) {
       await verifyCredentialStore(
         dependencies.platform ?? process.platform,
@@ -334,6 +347,21 @@ export const runArtifactpassInstall = async (
     await dependencies.afterStage?.("committed");
     return receipt;
   } catch (error) {
+    const rollbackFailures: string[] = [];
+    if (portable !== undefined && (dependencies.portableWasCreated ?? portableIntegrationWasCreated)(portable)) {
+      await rm(portable.rootDirectory, { recursive: true, force: true })
+        .catch(() => rollbackFailures.push("portable-bundle"));
+    }
+    if (configSnapshot !== undefined) {
+      const restore = configSnapshot.existed && configSnapshot.bytes !== undefined
+        ? writeFile(configPath, configSnapshot.bytes, { mode: 0o600 })
+        : rm(configPath, { force: true });
+      await restore.catch(() => rollbackFailures.push("configuration"));
+    }
+    if ((connectResult?.hosts.length ?? 0) > 0) rollbackFailures.push("host-registration-unverified");
+    if (connectResult?.credentialAction === "created" || connectResult?.credentialAction === "rotated") {
+      rollbackFailures.push("credential-unverified");
+    }
     if (journal !== undefined) {
       await writeJson(journalPath, { ...journal, status: "rolled-back" }).catch(() => undefined);
     }
@@ -362,9 +390,13 @@ export const runArtifactpassInstall = async (
         actions: connectResult?.migration?.actions ?? [],
         legacy_preserved: connectResult?.migration?.legacyPreserved ?? false,
       },
-      outcomes,
+      outcomes: [
+        ...outcomes,
+        rollbackFailures.length === 0 ? "rollback:complete" : "rollback:incomplete",
+      ],
       restart_required: false,
-      rollback: "complete",
+      rollback: rollbackFailures.length === 0 ? "complete" : "incomplete",
+      ...(rollbackFailures.length === 0 ? {} : { rollback_failures: rollbackFailures }),
       failed_stage: stage,
       ...(journal?.resumed_from === undefined ? {} : { resumed_from: journal.resumed_from }),
       receipt_path: receiptPath,

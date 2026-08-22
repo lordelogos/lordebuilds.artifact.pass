@@ -5,7 +5,10 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { installPortableIntegration } from "../src/portable-integration";
+import {
+  installPortableIntegration,
+  portableIntegrationWasCreated,
+} from "../src/portable-integration";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const temporaryDirectories: string[] = [];
@@ -53,6 +56,8 @@ describe("portable integration installation", () => {
     const second = await installPortableIntegration({ sourceRoot, destinationDirectory });
 
     expect(second).toEqual(first);
+    expect(portableIntegrationWasCreated(first)).toBe(true);
+    expect(portableIntegrationWasCreated(second)).toBe(false);
   });
 
   it("repairs a corrupted content-addressed installation without duplicating it", async () => {

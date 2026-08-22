@@ -36,6 +36,16 @@ export interface LocalEvalEnvironment {
   readonly stop: () => Promise<void>;
 }
 
+export class LocalEvalTeardownError extends AggregateError {
+  public constructor(
+    errors: readonly unknown[],
+    public readonly rootRemoved: boolean,
+  ) {
+    super(errors, "ArtifactPass local eval teardown was incomplete");
+    this.name = "LocalEvalTeardownError";
+  }
+}
+
 interface CleanupJournal {
   readonly version: 1;
   readonly run_id: string;
@@ -117,10 +127,11 @@ export const createLocalEvalProcessEnvironment = (home: string): Readonly<Record
     HOME: home,
     XDG_CONFIG_HOME: join(home, ".config"),
     XDG_CACHE_HOME: join(home, ".cache"),
+    TMPDIR: join(home, "tmp"),
     CI: "1",
     NO_COLOR: "1",
   };
-  for (const key of ["PATH", "TMPDIR", "SYSTEMROOT", "WINDIR"]) {
+  for (const key of ["PATH", "SYSTEMROOT", "WINDIR"]) {
     const value = process.env[key];
     if (value !== undefined) environment[key] = value;
   }
@@ -249,11 +260,21 @@ export const startLocalEvalEnvironment = async (repositoryRoot: string): Promise
   let worker: ChildProcess | undefined;
   let stopped = false;
   const stop = async (): Promise<void> => {
-    if (stopped) return;
+    if (stopped) {
+      const rootRemoved = !await stat(root).then(() => true, () => false);
+      if (!rootRemoved) throw new LocalEvalTeardownError([], false);
+      return;
+    }
     stopped = true;
-    await stopProcess(worker);
-    await assertPathWithinRoot(root, root);
-    await rm(root, { recursive: true, force: true, maxRetries: 2 });
+    const errors: unknown[] = [];
+    await stopProcess(worker).catch((error: unknown) => errors.push(error));
+    await assertPathWithinRoot(root, root).catch((error: unknown) => errors.push(error));
+    if (errors.length === 0) {
+      await rm(root, { recursive: true, force: true, maxRetries: 2 })
+        .catch((error: unknown) => errors.push(error));
+    }
+    const rootRemoved = !await stat(root).then(() => true, () => false);
+    if (errors.length > 0 || !rootRemoved) throw new LocalEvalTeardownError(errors, rootRemoved);
   };
   try {
     const applicationRoot = join(repositoryRoot, "apps/artifact-service");
@@ -273,6 +294,7 @@ export const startLocalEvalEnvironment = async (repositoryRoot: string): Promise
       mkdir(receiptRoot, { recursive: true, mode: 0o700 }),
       ...Object.values(workspaces).map((path) => mkdir(path, { recursive: true, mode: 0o700 })),
       ...Object.values(homes).map((path) => mkdir(path, { recursive: true, mode: 0o700 })),
+      ...Object.values(homes).map((path) => mkdir(join(path, "tmp"), { recursive: true, mode: 0o700 })),
     ]);
     const port = await freeLoopbackPort();
     const baseUrl = new URL(`http://127.0.0.1:${port}`);

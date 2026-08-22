@@ -11,6 +11,11 @@ export interface PortableIntegration {
   readonly skillsDirectory: string;
 }
 
+const createdIntegrations = new WeakSet<PortableIntegration>();
+
+export const portableIntegrationWasCreated = (portable: PortableIntegration): boolean =>
+  createdIntegrations.has(portable);
+
 export const portableIntegrationDigest = async (root: string): Promise<string> => {
   const hash = createHash("sha256");
   const visit = async (directory: string): Promise<void> => {
@@ -94,15 +99,19 @@ export const installPortableIntegration = async (options: {
         },
       },
     }, null, 2)}\n`, { mode: 0o600 });
+    let created = true;
     try {
       await rename(temporaryRoot, targetRoot);
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
       if (code !== "EEXIST" && code !== "ENOTEMPTY") throw error;
       await rm(temporaryRoot, { recursive: true, force: true });
+      created = false;
     }
     await verify();
-    return { digest, rootDirectory: targetRoot, mcpConfig, skillsDirectory };
+    const portable = { digest, rootDirectory: targetRoot, mcpConfig, skillsDirectory };
+    if (created) createdIntegrations.add(portable);
+    return portable;
   } catch (error) {
     await rm(temporaryRoot, { recursive: true, force: true });
     throw error;

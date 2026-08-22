@@ -27,6 +27,9 @@ const event = <T extends Omit<NormalizedHostEvent, "version" | "host" | "sequenc
 const successfulInstall = (root: string, agent: "agent-a" | "agent-b"): EvalInstallResult => ({
   profileCount: 1,
   portableBundleCount: 1,
+  registrationCount: 1,
+  hostRestartVerified: true,
+  candidateArchiveSha256: "b".repeat(64),
   receipt: {
     receipt_version: 1,
     product: "ArtifactPass",

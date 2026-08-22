@@ -170,7 +170,10 @@ export const runTraceProbe = async (host: HostId): Promise<TraceProbeReport> => 
     await writeHostConfiguration(host, root, mcpServerPath, evidencePath);
     const homeKey = host === "codex" ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR";
     const homePath = host === "codex" ? join(root, "codex-home") : join(root, "claude-home");
-    await mkdir(homePath, { recursive: true, mode: 0o700 });
+    await Promise.all([
+      mkdir(homePath, { recursive: true, mode: 0o700 }),
+      mkdir(join(homePath, "tmp"), { recursive: true, mode: 0o700 }),
+    ]);
     const parser = host === "codex" ? new CodexEventParser() : new ClaudeEventParser();
     const result = await runHostCommand({
       host,
@@ -179,6 +182,7 @@ export const runTraceProbe = async (host: HostId): Promise<TraceProbeReport> => 
       cwd: workspace,
       env: pickEnvironment(process.env, ["PATH", credentialName], {
         HOME: homePath,
+        TMPDIR: join(homePath, "tmp"),
         [homeKey]: homePath,
         NO_COLOR: "1",
       }),

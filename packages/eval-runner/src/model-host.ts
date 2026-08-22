@@ -174,6 +174,9 @@ export const runModelHost = async (options: {
     cwd: workspace,
     env: pickEnvironment(process.env, ["PATH", credentialName], {
       HOME: configured.home,
+      TMPDIR: join(configured.home, "tmp"),
+      XDG_CACHE_HOME: join(configured.home, ".cache"),
+      XDG_CONFIG_HOME: join(configured.home, ".config"),
       ...(options.host === "codex" ? { CODEX_HOME: configured.home } : { CLAUDE_CONFIG_DIR: configured.home }),
       NO_COLOR: "1",
     }),

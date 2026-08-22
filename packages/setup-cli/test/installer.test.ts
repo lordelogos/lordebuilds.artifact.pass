@@ -8,6 +8,7 @@ import {
   ArtifactpassInstallError,
   renderInstallReceipt,
   runArtifactpassInstall,
+  type ArtifactpassInstallReceipt,
 } from "../src/installer";
 
 const portableFixture = async (root: string) => {
@@ -153,6 +154,108 @@ describe("one-command ArtifactPass installer", () => {
       skills_directory: portable.skillsDirectory,
     });
     expect(renderInstallReceipt(receipt)).toContain(portable.mcpConfig);
+  });
+
+  it("removes a newly created portable bundle when verification fails", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifactpass-installer-rollback-"));
+    const workspace = resolve(root, "workspace");
+    await mkdir(workspace);
+    const configPath = resolve(root, "config.json");
+    const portable = await portableFixture(root);
+    const connect = vi.fn(async (_input, dependencies) => {
+      await dependencies.verifyConnection?.({
+        configPath,
+        profileName: "local-eval",
+        hosts: [],
+      });
+      throw new Error("verification should have failed");
+    });
+    let failure: ArtifactpassInstallError | undefined;
+
+    try {
+      await runArtifactpassInstall({
+        marketplaceSource: "/package/marketplace",
+        workspaceRoot: workspace,
+        configPath,
+        openDevelopment: true,
+        installKnownHostAdapters: false,
+      }, {
+        connect,
+        connectDependencies: { deviceFlowDependencies: { openBrowser: async () => undefined } },
+        installPortable: vi.fn().mockResolvedValue(portable),
+        portableWasCreated: () => true,
+        smoke: vi.fn().mockRejectedValue(new Error("MCP verification failed")),
+        skipCredentialStorePreflight: true,
+        operationId: () => "rollback-operation",
+      });
+    } catch (error) {
+      if (error instanceof ArtifactpassInstallError) failure = error;
+      else throw error;
+    }
+
+    expect(failure?.receipt).toMatchObject({
+      status: "failed",
+      failed_stage: "connection",
+      rollback: "complete",
+      outcomes: expect.arrayContaining(["rollback:complete"]),
+    });
+    await expect(stat(portable.rootDirectory)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(stat(configPath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("reports incomplete rollback when a committed host registration cannot be verified removed", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifactpass-installer-incomplete-"));
+    const workspace = resolve(root, "workspace");
+    await mkdir(workspace);
+    const configPath = resolve(root, "config.json");
+    const portable = await portableFixture(root);
+    const connect = vi.fn(async (_input, dependencies) => {
+      await dependencies.verifyConnection?.({
+        configPath,
+        profileName: "production",
+        hosts: ["codex"],
+      });
+      return {
+        hosts: ["codex"] as const,
+        profileName: "production",
+        configPath,
+        credentialAction: "reused" as const,
+      };
+    });
+
+    let failure: ArtifactpassInstallError | undefined;
+    try {
+      await runArtifactpassInstall({
+        marketplaceSource: "/package/marketplace",
+        workspaceRoot: workspace,
+        configPath,
+      }, {
+        connect,
+        connectDependencies: { deviceFlowDependencies: { openBrowser: async () => undefined } },
+        installPortable: vi.fn().mockResolvedValue(portable),
+        portableWasCreated: () => false,
+        smoke: vi.fn().mockResolvedValue({
+          negotiated: true,
+          tools: ["publish_artifact", "read_artifact"],
+          representativeInvocation: true,
+        }),
+        skipCredentialStorePreflight: true,
+        operationId: () => "incomplete-operation",
+        afterStage: (stage) => {
+          if (stage === "connection") throw new Error("staged failure");
+        },
+      });
+    } catch (error) {
+      if (error instanceof ArtifactpassInstallError) failure = error;
+      else throw error;
+    }
+
+    expect(failure?.receipt).toMatchObject({
+      rollback: "incomplete",
+      rollback_failures: ["host-registration-unverified"],
+    });
+    expect(renderInstallReceipt(failure?.receipt as ArtifactpassInstallReceipt))
+      .toContain("Rollback is incomplete: host-registration-unverified");
   });
 
   it("fails before connection for unsafe roots and emits the same receipt shape", async () => {

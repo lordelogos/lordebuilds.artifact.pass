@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import {
+  createLocalEvalProcessEnvironment,
   localEnvironmentExists,
   startLocalEvalEnvironment,
 } from "../src/local-environment";
@@ -22,9 +23,12 @@ describe("disposable local ArtifactPass environment", () => {
       await expect(access(environment.workspaces.agentA)).resolves.toBeUndefined();
       await expect(access(environment.workspaces.agentB)).resolves.toBeUndefined();
       expect(environment.workspaces.agentA).not.toBe(environment.workspaces.agentB);
+      expect(createLocalEvalProcessEnvironment(environment.homes.agentA).TMPDIR)
+        .toBe(resolve(environment.homes.agentA, "tmp"));
     } finally {
       await environment.stop();
     }
     await expect(localEnvironmentExists(environment)).resolves.toBe(false);
+    await expect(environment.stop()).resolves.toBeUndefined();
   }, 90_000);
 });
