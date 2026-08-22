@@ -1,85 +1,142 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://artifactpass.com/schemas/eval-scenario-version-1.json",
-  "title": "ArtifactPass portable eval scenario version 1",
   "type": "object",
-  "additionalProperties": false,
-  "required": ["version", "id", "title", "description", "fixtures", "prompts", "actions", "budgets", "repetition", "gate_class", "scorer_version"],
   "properties": {
-    "version": { "const": 1 },
+    "version": { "type": "number", "const": 1 },
     "id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
     "title": { "type": "string", "minLength": 1, "maxLength": 160 },
     "description": { "type": "string", "minLength": 1, "maxLength": 1000 },
-    "fixtures": { "type": "array", "maxItems": 20, "items": { "$ref": "#/$defs/fixture" } },
+    "fixtures": {
+      "maxItems": 20,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^evals\\/fixtures\\/(?!.*(?:^|[\\\\/])\\.\\.(?:[\\\\/]|$)).+$"
+          },
+          "mime_type": {
+            "type": "string",
+            "enum": ["text/markdown", "text/html", "application/pdf"]
+          },
+          "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+        },
+        "required": ["id", "path", "mime_type"],
+        "additionalProperties": false
+      }
+    },
     "prompts": {
       "type": "object",
-      "additionalProperties": false,
-      "required": ["agent_a"],
       "properties": {
         "agent_a": { "type": "string", "minLength": 1, "maxLength": 12000 },
         "agent_b": { "type": "string", "minLength": 1, "maxLength": 12000 }
-      }
+      },
+      "required": ["agent_a"],
+      "additionalProperties": false
     },
     "actions": {
       "type": "object",
-      "additionalProperties": false,
-      "required": ["allowed", "required", "forbidden"],
       "properties": {
-        "allowed": { "type": "array", "maxItems": 50, "items": { "$ref": "#/$defs/action" } },
-        "required": { "type": "array", "maxItems": 50, "items": { "$ref": "#/$defs/action" } },
-        "forbidden": { "type": "array", "maxItems": 50, "items": { "$ref": "#/$defs/action" } }
-      }
+        "allowed": {
+          "maxItems": 50,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["skill", "mcp_tool", "filesystem", "network", "process", "user_intervention", "artifact"]
+              },
+              "name": { "type": "string", "minLength": 1, "maxLength": 128 }
+            },
+            "required": ["kind", "name"],
+            "additionalProperties": false
+          }
+        },
+        "required": {
+          "maxItems": 50,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["skill", "mcp_tool", "filesystem", "network", "process", "user_intervention", "artifact"]
+              },
+              "name": { "type": "string", "minLength": 1, "maxLength": 128 }
+            },
+            "required": ["kind", "name"],
+            "additionalProperties": false
+          }
+        },
+        "forbidden": {
+          "maxItems": 50,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["skill", "mcp_tool", "filesystem", "network", "process", "user_intervention", "artifact"]
+              },
+              "name": { "type": "string", "minLength": 1, "maxLength": 128 }
+            },
+            "required": ["kind", "name"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["allowed", "required", "forbidden"],
+      "additionalProperties": false
     },
     "budgets": {
       "type": "object",
-      "additionalProperties": false,
-      "required": ["timeout_ms", "max_steps", "max_tool_calls", "max_artifact_bytes", "max_trials"],
       "properties": {
-        "timeout_ms": { "type": "integer", "minimum": 1, "maximum": 1800000 },
-        "max_steps": { "type": "integer", "minimum": 1, "maximum": 200 },
+        "timeout_ms": { "type": "integer", "exclusiveMinimum": 0, "maximum": 1800000 },
+        "max_steps": { "type": "integer", "exclusiveMinimum": 0, "maximum": 200 },
         "max_tool_calls": { "type": "integer", "minimum": 0, "maximum": 100 },
-        "max_artifact_bytes": { "type": "integer", "minimum": 1, "maximum": 26214400 },
-        "max_trials": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "max_artifact_bytes": { "type": "integer", "exclusiveMinimum": 0, "maximum": 26214400 },
+        "max_trials": { "type": "integer", "exclusiveMinimum": 0, "maximum": 100 },
         "estimated_cost_usd": { "type": "number", "minimum": 0, "maximum": 100 }
-      }
+      },
+      "required": ["timeout_ms", "max_steps", "max_tool_calls", "max_artifact_bytes", "max_trials"],
+      "additionalProperties": false
     },
     "repetition": {
       "type": "object",
-      "additionalProperties": false,
-      "required": ["trials", "max_infrastructure_retries"],
       "properties": {
-        "trials": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "trials": { "type": "integer", "exclusiveMinimum": 0, "maximum": 100 },
         "max_infrastructure_retries": { "type": "integer", "minimum": 0, "maximum": 3 }
-      }
+      },
+      "required": ["trials", "max_infrastructure_retries"],
+      "additionalProperties": false
     },
-    "gate_class": { "enum": ["deterministic", "installation", "behavioral", "safety"] },
+    "gate_class": {
+      "type": "string",
+      "enum": ["deterministic", "installation", "behavioral", "safety"]
+    },
     "scorer_version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" }
   },
-  "$defs": {
-    "fixture": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["id", "path", "mime_type"],
-      "properties": {
-        "id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
-        "path": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 512,
-          "pattern": "^evals/fixtures/(?!.*(?:^|[\\\\/])\\.\\.(?:[\\\\/]|$)).+$"
-        },
-        "mime_type": { "enum": ["text/markdown", "text/html", "application/pdf"] },
-        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
-      }
-    },
-    "action": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["kind", "name"],
-      "properties": {
-        "kind": { "enum": ["skill", "mcp_tool", "filesystem", "network", "process", "user_intervention", "artifact"] },
-        "name": { "type": "string", "minLength": 1, "maxLength": 128 }
-      }
-    }
-  }
+  "required": [
+    "version",
+    "id",
+    "title",
+    "description",
+    "fixtures",
+    "prompts",
+    "actions",
+    "budgets",
+    "repetition",
+    "gate_class",
+    "scorer_version"
+  ],
+  "additionalProperties": false,
+  "$id": "https://artifactpass.com/schemas/eval-scenario-version-1.json",
+  "title": "ArtifactPass portable eval scenario version 1",
+  "$comment": "Semantic validation requires the ArtifactPass runtime-contract keyword; ignoring it is unsupported.",
+  "x-artifactpass-runtime-contract": "artifactpass/eval-scenario@1"
 }

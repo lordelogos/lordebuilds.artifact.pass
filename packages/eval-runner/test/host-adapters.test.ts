@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import { ClaudeEventParser } from "../src/hosts/claude";
 import { CodexEventParser } from "../src/hosts/codex";
+import { normalizedHostEventSchema } from "../src/contracts";
 import {
   HostTraceError,
   parseHostChunks,
@@ -15,6 +16,37 @@ import { versionFor } from "../src/runtime-version";
 
 const fixture = async (name: string): Promise<string> =>
   readFile(fileURLToPath(new URL(`./fixtures/host-streams/${name}`, import.meta.url)), "utf8");
+
+const hostFailure = async (
+  promise: ReturnType<typeof runHostCommand>,
+  code: HostTraceError["code"],
+): Promise<HostTraceError> => {
+  try {
+    await promise;
+  } catch (error) {
+    expect(error).toBeInstanceOf(HostTraceError);
+    expect(error).toMatchObject({ code });
+    return error as HostTraceError;
+  }
+  throw new Error(`Expected host failure ${code}`);
+};
+
+const expectTerminalFailureEvidence = (
+  error: HostTraceError,
+  expectedPartialKinds: readonly string[] = [],
+): void => {
+  expect(error.result?.events.map((event) => event.kind)).toEqual([
+    ...expectedPartialKinds,
+    "infrastructure_error",
+    "terminal",
+    "timing",
+    "process_exit",
+  ]);
+  expect(error.result?.events.find((event) => event.kind === "infrastructure_error"))
+    .toMatchObject({ code: error.code });
+  for (const event of error.result?.events ?? []) normalizedHostEventSchema.parse(event);
+  expect(error.result?.exitCode).not.toBeUndefined();
+};
 
 describe("host adapters", () => {
   it("normalizes a Codex JSONL trace with correlated MCP evidence", async () => {
@@ -80,7 +112,7 @@ describe("host adapters", () => {
   });
 
   it("terminates a timed-out child instead of hanging", async () => {
-    const promise = runHostCommand({
+    const error = await hostFailure(runHostCommand({
       host: "codex",
       command: process.execPath,
       args: ["-e", "setInterval(() => {}, 1000)"],
@@ -88,10 +120,10 @@ describe("host adapters", () => {
       env: { PATH: process.env.PATH ?? "" },
       timeoutMilliseconds: 25,
       parser: new CodexEventParser(),
-    });
-    await expect(promise).rejects.toEqual(expect.objectContaining<Partial<HostTraceError>>({
-      code: "process_timeout",
-    }));
+    }), "process_timeout");
+    expectTerminalFailureEvidence(error);
+    expect(error.result?.events.find((event) => event.kind === "terminal"))
+      .toMatchObject({ status: "cancelled" });
   });
 
   it("terminates a host when its tool-call budget is exceeded", async () => {
@@ -99,7 +131,7 @@ describe("host adapters", () => {
       { type: "thread.started", thread_id: "budget-session" },
       { type: "item.started", item: { type: "mcp_tool_call", id: "call-1", server: "artifactpass", tool: "publish_artifact", arguments: {} } },
     ].map((line) => `${JSON.stringify(line)}\n`).join("");
-    const promise = runHostCommand({
+    const error = await hostFailure(runHostCommand({
       host: "codex",
       command: process.execPath,
       args: ["-e", `process.stdout.write(${JSON.stringify(lines)}); setInterval(() => {}, 1000)`],
@@ -108,10 +140,8 @@ describe("host adapters", () => {
       timeoutMilliseconds: 1_000,
       maxToolCalls: 0,
       parser: new CodexEventParser(),
-    });
-    await expect(promise).rejects.toEqual(expect.objectContaining<Partial<HostTraceError>>({
-      code: "budget_exceeded",
-    }));
+    }), "budget_exceeded");
+    expectTerminalFailureEvidence(error, ["session", "tool_call"]);
   });
 
   it("terminates a host when its step budget is exceeded", async () => {
@@ -119,7 +149,7 @@ describe("host adapters", () => {
       { type: "thread.started", thread_id: "budget-session" },
       { type: "item.completed", item: { type: "agent_message", id: "message-1", text: "done" } },
     ].map((line) => `${JSON.stringify(line)}\n`).join("");
-    const promise = runHostCommand({
+    const error = await hostFailure(runHostCommand({
       host: "codex",
       command: process.execPath,
       args: ["-e", `process.stdout.write(${JSON.stringify(lines)}); setInterval(() => {}, 1000)`],
@@ -128,10 +158,8 @@ describe("host adapters", () => {
       timeoutMilliseconds: 1_000,
       maxSteps: 0,
       parser: new CodexEventParser(),
-    });
-    await expect(promise).rejects.toEqual(expect.objectContaining<Partial<HostTraceError>>({
-      code: "budget_exceeded",
-    }));
+    }), "budget_exceeded");
+    expectTerminalFailureEvidence(error, ["session", "assistant_output"]);
   });
 
   it("terminates a host when reported cost exceeds its remaining budget", async () => {
@@ -139,7 +167,7 @@ describe("host adapters", () => {
       { type: "system", subtype: "init", session_id: "budget-session" },
       { type: "result", subtype: "success", is_error: false, total_cost_usd: 0.51 },
     ].map((line) => `${JSON.stringify(line)}\n`).join("");
-    const promise = runHostCommand({
+    const error = await hostFailure(runHostCommand({
       host: "claude",
       command: process.execPath,
       args: ["-e", `process.stdout.write(${JSON.stringify(lines)}); setInterval(() => {}, 1000)`],
@@ -148,10 +176,73 @@ describe("host adapters", () => {
       timeoutMilliseconds: 1_000,
       maximumCostUsd: 0.5,
       parser: new ClaudeEventParser(),
+    }), "budget_exceeded");
+    expectTerminalFailureEvidence(error, ["session", "usage"]);
+  });
+
+  it("retains normalized evidence for cancellation", async () => {
+    const controller = new AbortController();
+    const promise = runHostCommand({
+      host: "codex",
+      command: process.execPath,
+      args: ["-e", "setInterval(() => {}, 1000)"],
+      cwd: process.cwd(),
+      env: { PATH: process.env.PATH ?? "" },
+      timeoutMilliseconds: 1_000,
+      signal: controller.signal,
+      parser: new CodexEventParser(),
     });
-    await expect(promise).rejects.toEqual(expect.objectContaining<Partial<HostTraceError>>({
-      code: "budget_exceeded",
-    }));
+    controller.abort();
+    const error = await hostFailure(promise, "process_cancelled");
+    expectTerminalFailureEvidence(error);
+  });
+
+  it.each([
+    ["invalid JSON", "{nope}\n", "invalid_json"],
+    ["truncated JSON", "{\"type\":", "truncated_stream"],
+    ["unknown event", "{\"type\":\"new.event\"}\n", "unknown_event"],
+  ] as const)("retains normalized evidence for %s", async (_name, output, code) => {
+    const error = await hostFailure(runHostCommand({
+      host: "codex",
+      command: process.execPath,
+      args: ["-e", `process.stdout.write(${JSON.stringify(output)})`],
+      cwd: process.cwd(),
+      env: { PATH: process.env.PATH ?? "" },
+      timeoutMilliseconds: 1_000,
+      parser: new CodexEventParser(),
+    }), code);
+    expectTerminalFailureEvidence(error);
+  });
+
+  it.each([
+    ["stream", { maxTraceBytes: 8 }, "oversized_stream"],
+    ["line", { maxTraceLineBytes: 8 }, "oversized_line"],
+  ] as const)("retains normalized evidence for an oversized %s", async (_name, limits, code) => {
+    const output = `${JSON.stringify({ type: "thread.started", thread_id: "too-large" })}\n`;
+    const error = await hostFailure(runHostCommand({
+      host: "codex",
+      command: process.execPath,
+      args: ["-e", `process.stdout.write(${JSON.stringify(output)})`],
+      cwd: process.cwd(),
+      env: { PATH: process.env.PATH ?? "" },
+      timeoutMilliseconds: 1_000,
+      ...limits,
+      parser: new CodexEventParser(),
+    }), code);
+    expectTerminalFailureEvidence(error);
+  });
+
+  it("retains normalized evidence when the process cannot start", async () => {
+    const error = await hostFailure(runHostCommand({
+      host: "codex",
+      command: "/artifactpass-eval-command-does-not-exist",
+      args: [],
+      cwd: process.cwd(),
+      env: { PATH: process.env.PATH ?? "" },
+      timeoutMilliseconds: 1_000,
+      parser: new CodexEventParser(),
+    }), "process_error");
+    expectTerminalFailureEvidence(error);
   });
 
   it.runIf(process.platform !== "win32")("force-kills a child that ignores SIGTERM", async () => {
@@ -203,6 +294,26 @@ describe("host adapters", () => {
     });
     expect(result.events.map((event) => event.kind)).toEqual(["session", "timing", "process_exit"]);
     expect(result.exitCode).toBe(0);
+  });
+
+  it.each(["codex", "claude"] as const)("delivers byte-identical prompt input to the %s adapter", async (host) => {
+    const prompt = "Exact scenario prompt\nwith UTF-8: café 🚀\n";
+    const script = host === "codex"
+      ? `let value='';process.stdin.setEncoding('utf8');process.stdin.on('data',c=>value+=c);process.stdin.on('end',()=>process.stdout.write(JSON.stringify({type:'item.completed',item:{type:'agent_message',id:'message',text:value}})+'\\n'))`
+      : `let value='';process.stdin.setEncoding('utf8');process.stdin.on('data',c=>value+=c);process.stdin.on('end',()=>process.stdout.write(JSON.stringify({type:'assistant',message:{content:[{type:'text',text:value}]}})+'\\n'))`;
+    const result = await runHostCommand({
+      host,
+      command: process.execPath,
+      args: ["-e", script],
+      cwd: process.cwd(),
+      env: { PATH: process.env.PATH ?? "" },
+      timeoutMilliseconds: 1_000,
+      parser: host === "codex" ? new CodexEventParser() : new ClaudeEventParser(),
+      input: prompt,
+    });
+    const delivered = result.events.find((event) => event.kind === "assistant_output");
+    expect(delivered).toMatchObject({ text: prompt });
+    expect(delivered).not.toMatchObject({ text: expect.stringContaining("ArtifactPass") });
   });
 
   it("bounds a hung CLI version probe", async () => {

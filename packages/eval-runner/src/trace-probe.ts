@@ -160,10 +160,10 @@ export const runTraceProbe = async (host: HostId): Promise<TraceProbeReport> => 
 
   const root = await mkdtemp(join(tmpdir(), "artifactpass-host-probe-"));
   await chmod(root, 0o700);
+  const evidencePath = join(root, "service-evidence.jsonl");
   try {
     const workspace = join(root, "workspace");
     await mkdir(workspace, { mode: 0o700 });
-    const evidencePath = join(root, "service-evidence.jsonl");
     const currentFile = fileURLToPath(import.meta.url);
     const mcpServerPath = resolve(dirname(currentFile), "probe-mcp-server.mjs");
     await access(mcpServerPath, constants.R_OK);
@@ -196,6 +196,11 @@ export const runTraceProbe = async (host: HostId): Promise<TraceProbeReport> => 
       evidence,
     };
   } catch (error) {
+    const evidence = await reportEvidence(
+      host,
+      error instanceof HostTraceError ? error.result?.events ?? [] : [],
+      evidencePath,
+    );
     return {
       version: 1,
       host,
@@ -204,7 +209,7 @@ export const runTraceProbe = async (host: HostId): Promise<TraceProbeReport> => 
         : "unsupported",
       cliVersion,
       reason: error instanceof Error ? error.message : "Host probe failed",
-      evidence: emptyEvidence(),
+      evidence,
     };
   } finally {
     await rm(root, { recursive: true, force: true, maxRetries: 2 });

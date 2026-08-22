@@ -8,17 +8,21 @@ export const EVAL_REPORT_VERSION = 1 as const;
 const kebabIdSchema = z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u);
 const isoDateTimeSchema = z.iso.datetime({ offset: true });
 const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/u);
-const relativeFixturePathSchema = z.string().min(1).max(512).superRefine((path, context) => {
-  if (
-    path.startsWith("/") ||
-    path.startsWith("\\") ||
-    /^[A-Za-z]:[\\/]/u.test(path) ||
-    path.split(/[\\/]/u).includes("..") ||
-    !path.startsWith("evals/fixtures/")
-  ) {
-    context.addIssue({ code: "custom", message: "Fixture paths must remain under evals/fixtures" });
-  }
-});
+const relativeFixturePathSchema = z.string()
+  .min(1)
+  .max(512)
+  .regex(/^evals\/fixtures\/(?!.*(?:^|[\\/])\.\.(?:[\\/]|$)).+$/u)
+  .superRefine((path, context) => {
+    if (
+      path.startsWith("/") ||
+      path.startsWith("\\") ||
+      /^[A-Za-z]:[\\/]/u.test(path) ||
+      path.split(/[\\/]/u).includes("..") ||
+      !path.startsWith("evals/fixtures/")
+    ) {
+      context.addIssue({ code: "custom", message: "Fixture paths must remain under evals/fixtures" });
+    }
+  });
 
 export const actionKindSchema = z.enum([
   "skill",
@@ -58,7 +62,7 @@ const repetitionSchema = z.object({
 
 const actionKey = (action: z.infer<typeof actionReferenceSchema>): string => `${action.kind}:${action.name}`;
 
-export const evalScenarioSchema = z.object({
+const evalScenarioStructuralSchema = z.object({
   version: z.literal(EVAL_CONTRACT_VERSION),
   id: kebabIdSchema,
   title: z.string().min(1).max(160),
@@ -77,7 +81,9 @@ export const evalScenarioSchema = z.object({
   repetition: repetitionSchema,
   gate_class: z.enum(["deterministic", "installation", "behavioral", "safety"]),
   scorer_version: z.string().regex(/^\d+\.\d+\.\d+$/u),
-}).strict().superRefine((scenario, context) => {
+}).strict();
+
+export const evalScenarioSchema = evalScenarioStructuralSchema.superRefine((scenario, context) => {
   if (scenario.repetition.trials > scenario.budgets.max_trials) {
     context.addIssue({
       code: "custom",
@@ -106,6 +112,19 @@ export const evalScenarioSchema = z.object({
   }
 });
 
+export const EVAL_SCENARIO_RUNTIME_CONTRACT = "artifactpass/eval-scenario@1" as const;
+
+export const evalScenarioJsonSchema = {
+  ...z.toJSONSchema(evalScenarioStructuralSchema),
+  $id: "https://artifactpass.com/schemas/eval-scenario-version-1.json",
+  title: "ArtifactPass portable eval scenario version 1",
+  $comment: "Semantic validation requires the ArtifactPass runtime-contract keyword; ignoring it is unsupported.",
+  "x-artifactpass-runtime-contract": EVAL_SCENARIO_RUNTIME_CONTRACT,
+} as const;
+
+export const validateEvalScenarioRuntimeContract = (contract: string, value: unknown): boolean =>
+  contract === EVAL_SCENARIO_RUNTIME_CONTRACT && evalScenarioSchema.safeParse(value).success;
+
 export type EvalScenario = z.infer<typeof evalScenarioSchema>;
 
 const eventBaseSchema = z.object({
@@ -113,6 +132,21 @@ const eventBaseSchema = z.object({
   host: z.enum(["generic", "codex", "claude"]),
   sequence: z.number().int().nonnegative(),
 });
+
+export const HOST_TRACE_ERROR_CODES = [
+  "invalid_json",
+  "unknown_event",
+  "truncated_stream",
+  "oversized_stream",
+  "oversized_line",
+  "process_error",
+  "process_timeout",
+  "process_cancelled",
+  "budget_exceeded",
+] as const;
+
+export const hostTraceErrorCodeSchema = z.enum(HOST_TRACE_ERROR_CODES);
+export type HostTraceErrorCode = z.infer<typeof hostTraceErrorCodeSchema>;
 
 export const normalizedHostEventSchema = z.discriminatedUnion("kind", [
   eventBaseSchema.extend({ kind: z.literal("session"), sessionId: z.string().min(1) }).strict(),
@@ -155,16 +189,7 @@ export const normalizedHostEventSchema = z.discriminatedUnion("kind", [
   }).strict(),
   eventBaseSchema.extend({
     kind: z.literal("infrastructure_error"),
-    code: z.enum([
-      "invalid_json",
-      "unknown_event",
-      "truncated_stream",
-      "oversized_stream",
-      "oversized_line",
-      "process_error",
-      "process_timeout",
-      "process_cancelled",
-    ]),
+    code: hostTraceErrorCodeSchema,
     message: z.string().min(1),
   }).strict(),
 ]);

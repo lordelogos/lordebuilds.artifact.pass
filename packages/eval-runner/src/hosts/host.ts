@@ -3,6 +3,7 @@ import { StringDecoder } from "node:string_decoder";
 
 import {
   NORMALIZED_HOST_EVENT_VERSION,
+  type HostTraceErrorCode,
   type NormalizedHostEvent,
 } from "../contracts";
 import { countsAsModelStep } from "../budget-enforcement";
@@ -22,24 +23,17 @@ export type AuthorizationState =
   | "expired"
   | "blocked";
 
-export type HostTraceErrorCode =
-  | "invalid_json"
-  | "unknown_event"
-  | "truncated_stream"
-  | "oversized_stream"
-  | "oversized_line"
-  | "process_error"
-  | "process_timeout"
-  | "process_cancelled"
-  | "budget_exceeded";
+export type { HostTraceErrorCode };
 
 export class HostTraceError extends Error {
   readonly code: HostTraceErrorCode;
+  readonly result?: HostCommandResult;
 
-  constructor(code: HostTraceErrorCode, message: string) {
+  constructor(code: HostTraceErrorCode, message: string, result?: HostCommandResult) {
     super(message);
     this.name = "HostTraceError";
     this.code = code;
+    if (result !== undefined) this.result = result;
   }
 }
 
@@ -135,6 +129,8 @@ export interface HostCommand {
   readonly maxSteps?: number;
   readonly maxToolCalls?: number;
   readonly maximumCostUsd?: number;
+  readonly maxTraceBytes?: number;
+  readonly maxTraceLineBytes?: number;
 }
 
 export interface HostCommandResult {
@@ -165,7 +161,10 @@ export const runHostCommand = async (options: HostCommand): Promise<HostCommandR
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
     });
-    const decoder = new BoundedJsonLineDecoder();
+    const decoder = new BoundedJsonLineDecoder({
+      ...(options.maxTraceBytes === undefined ? {} : { maxBytes: options.maxTraceBytes }),
+      ...(options.maxTraceLineBytes === undefined ? {} : { maxLineBytes: options.maxTraceLineBytes }),
+    });
     const stdoutDecoder = new StringDecoder("utf8");
     const events: NormalizedHostEvent[] = [];
     const stderrChunks: Buffer[] = [];
@@ -176,6 +175,58 @@ export const runHostCommand = async (options: HostCommand): Promise<HostCommandR
     let steps = 0;
     let toolCalls = 0;
     let costUsd = 0;
+
+    const result = (
+      exitCode: number | null,
+      exitSignal: NodeJS.Signals | null,
+    ): HostCommandResult => ({
+      events,
+      stderr: Buffer.concat(stderrChunks).toString("utf8"),
+      exitCode,
+      signal: exitSignal,
+    });
+
+    const appendTerminalEvidence = (
+      error: HostTraceError,
+      exitCode: number | null,
+      exitSignal: NodeJS.Signals | null,
+    ): HostTraceError => {
+      let sequence = events.length;
+      events.push({
+        version: NORMALIZED_HOST_EVENT_VERSION,
+        host: options.host,
+        sequence: sequence++,
+        kind: "infrastructure_error",
+        code: error.code,
+        message: error.message,
+      });
+      events.push({
+        version: NORMALIZED_HOST_EVENT_VERSION,
+        host: options.host,
+        sequence: sequence++,
+        kind: "terminal",
+        status: error.code === "process_timeout" || error.code === "process_cancelled"
+          ? "cancelled"
+          : "failed",
+        message: error.message,
+      });
+      events.push({
+        version: NORMALIZED_HOST_EVENT_VERSION,
+        host: options.host,
+        sequence: sequence++,
+        kind: "timing",
+        durationMilliseconds: Date.now() - startedAt,
+      });
+      events.push({
+        version: NORMALIZED_HOST_EVENT_VERSION,
+        host: options.host,
+        sequence,
+        kind: "process_exit",
+        exitCode,
+        signal: exitSignal,
+      });
+      return new HostTraceError(error.code, error.message, result(exitCode, exitSignal));
+    };
 
     const stop = (error: HostTraceError): void => {
       if (failure !== undefined) return;
@@ -238,6 +289,7 @@ export const runHostCommand = async (options: HostCommand): Promise<HostCommandR
       stderrChunks.push(chunk);
     });
     child.once("error", () => stop(new HostTraceError("process_error", "Host process failed to start")));
+    child.stdin.on("error", () => stop(new HostTraceError("process_error", "Host process input failed")));
     child.stdin.end(options.input);
     child.once("close", (exitCode, exitSignal) => {
       if (settled) return;
@@ -246,14 +298,17 @@ export const runHostCommand = async (options: HostCommand): Promise<HostCommandR
       if (forceKillTimer !== undefined) clearTimeout(forceKillTimer);
       options.signal?.removeEventListener("abort", abort);
       if (failure !== undefined) {
-        reject(failure);
+        reject(appendTerminalEvidence(failure, exitCode, exitSignal));
         return;
       }
       try {
         for (const value of decoder.push(stdoutDecoder.end())) capture(options.parser.parse(value));
         for (const value of decoder.finish()) capture(options.parser.parse(value));
       } catch (error) {
-        reject(error);
+        const traceError = error instanceof HostTraceError
+          ? error
+          : new HostTraceError("process_error", "Host trace parser failed");
+        reject(appendTerminalEvidence(traceError, exitCode, exitSignal));
         return;
       }
       const sequence = events.length;
@@ -272,12 +327,7 @@ export const runHostCommand = async (options: HostCommand): Promise<HostCommandR
         exitCode,
         signal: exitSignal,
       });
-      resolve({
-        events,
-        stderr: Buffer.concat(stderrChunks).toString("utf8"),
-        exitCode,
-        signal: exitSignal,
-      });
+      resolve(result(exitCode, exitSignal));
     });
   });
 

@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { evalReportSchema, evalResultSchema, evalScenarioSchema } from "../src/contracts";
+import {
+  evalReportSchema,
+  evalResultSchema,
+  evalScenarioSchema,
+  HOST_TRACE_ERROR_CODES,
+  normalizedHostEventSchema,
+} from "../src/contracts";
 
 const validScenario = () => ({
   version: 1,
@@ -48,6 +54,18 @@ describe("eval contracts", () => {
     const scenario = validScenario();
     scenario.actions.forbidden = [{ kind: "mcp_tool", name: "publish_artifact" }];
     expect(evalScenarioSchema.safeParse(scenario).success).toBe(false);
+  });
+
+  it.each(HOST_TRACE_ERROR_CODES)("represents the %s infrastructure event", (code) => {
+    const parsed = normalizedHostEventSchema.parse({
+      version: 1,
+      host: "codex",
+      sequence: 0,
+      kind: "infrastructure_error",
+      code,
+      message: "bounded host failure",
+    });
+    expect(parsed).toMatchObject({ kind: "infrastructure_error", code });
   });
 
   it.each([

@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { candidateDigest } from "./candidate-digest";
 import { evalScenarioSchema, type EvalReport, type NormalizedHostEvent } from "./contracts";
-import type { HostId } from "./hosts/host";
+import { HostTraceError, type HostCommandResult, type HostId } from "./hosts/host";
 import { installCandidateIntoLocalEval, type EvalInstallResult } from "./install-lifecycle";
 import { startLocalEvalEnvironment, type LocalEvalEnvironment } from "./local-environment";
 import { MODEL_BY_HOST, modelExecutionFailure, runModelHost, runtimeVersionForHost } from "./model-host";
@@ -174,16 +174,22 @@ export const runModelHandoffTrial = async (options: {
     };
     const currentFile = typeof __filename === "string" ? __filename : fileURLToPath(import.meta.url);
     const launcherPath = resolve(dirname(currentFile), "scrubbed-mcp-launcher.mjs");
-    const agentAExecution = await dependencies.runHost({
-      host: options.agentA,
-      agent: "agent-a",
-      environment,
-      mcpConfigPath: receiptMcpConfig(agentAInstall),
-      launcherPath,
-      prompt: `${scenario.prompts.agent_a}\n\nDeclared fixture path: ${sourcePath}\nExpiry: 15 minutes.`,
-      allowedTools: ["publish_artifact"],
-      timeoutMilliseconds: scenario.budgets.timeout_ms,
-    });
+    let agentAExecution: HostCommandResult;
+    try {
+      agentAExecution = await dependencies.runHost({
+        host: options.agentA,
+        agent: "agent-a",
+        environment,
+        mcpConfigPath: receiptMcpConfig(agentAInstall),
+        launcherPath,
+        prompt: `${scenario.prompts.agent_a}\n\nDeclared fixture path: ${sourcePath}\nExpiry: 15 minutes.`,
+        allowedTools: ["publish_artifact"],
+        timeoutMilliseconds: scenario.budgets.timeout_ms,
+      });
+    } catch (error) {
+      if (error instanceof HostTraceError && error.result !== undefined) agentAEvents = error.result.events;
+      throw error;
+    }
     agentAEvents = agentAExecution.events;
     failures.push(...scoreShareBehavior({
       events: agentAEvents,
@@ -196,16 +202,22 @@ export const runModelHandoffTrial = async (options: {
     if (agentAFailure !== undefined) throw new Error(`Agent A: ${agentAFailure}`);
     const shareUrl = shareUrlFromEvents(agentAEvents);
     if (shareUrlMatchesOrigin(shareUrl, environment.baseUrl.origin)) {
-      const agentBExecution = await dependencies.runHost({
-        host: options.agentB,
-        agent: "agent-b",
-        environment,
-        mcpConfigPath: receiptMcpConfig(agentBInstall),
-        launcherPath,
-        prompt: modelHandoffAgentBPrompt(scenario.prompts.agent_b, shareUrl),
-        allowedTools: ["read_artifact"],
-        timeoutMilliseconds: scenario.budgets.timeout_ms,
-      });
+      let agentBExecution: HostCommandResult;
+      try {
+        agentBExecution = await dependencies.runHost({
+          host: options.agentB,
+          agent: "agent-b",
+          environment,
+          mcpConfigPath: receiptMcpConfig(agentBInstall),
+          launcherPath,
+          prompt: modelHandoffAgentBPrompt(scenario.prompts.agent_b, shareUrl),
+          allowedTools: ["read_artifact"],
+          timeoutMilliseconds: scenario.budgets.timeout_ms,
+        });
+      } catch (error) {
+        if (error instanceof HostTraceError && error.result !== undefined) agentBEvents = error.result.events;
+        throw error;
+      }
       agentBEvents = agentBExecution.events;
       failures.push(...scoreReadTraversal({
         events: agentBEvents,
