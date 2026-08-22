@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import {
   access,
@@ -52,6 +52,7 @@ interface CleanupJournal {
   readonly owner_pid: number;
   readonly created_at: number;
   readonly worker_pid?: number;
+  readonly worker_marker?: string;
 }
 
 const base64 = (value: ArrayBuffer): string => Buffer.from(value).toString("base64");
@@ -184,26 +185,54 @@ const runChecked = async (options: {
 
 const stopProcess = async (child: ChildProcess | undefined): Promise<void> => {
   if (child?.pid === undefined || child.exitCode !== null) return;
-  const exited = new Promise<void>((resolveExit) => child.once("exit", () => resolveExit()));
-  try {
-    if (process.platform === "win32") child.kill("SIGTERM");
-    else process.kill(-child.pid, "SIGTERM");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
-  }
-  const graceful = await Promise.race([
-    exited.then(() => true),
-    new Promise<false>((resolveWait) => setTimeout(() => resolveWait(false), 5_000)),
-  ]);
-  if (graceful) return;
-  try {
-    if (process.platform === "win32") child.kill("SIGKILL");
-    else process.kill(-child.pid, "SIGKILL");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
-  }
-  await exited;
+  await stopProcessGroup(child.pid);
 };
+
+const isProcessAlive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+};
+
+const signalProcessGroup = (pid: number, signal: NodeJS.Signals): void => {
+  try {
+    process.kill(process.platform === "win32" ? pid : -pid, signal);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+  }
+};
+
+const waitForProcessExit = async (pid: number, timeoutMilliseconds: number): Promise<boolean> => {
+  const deadline = Date.now() + timeoutMilliseconds;
+  while (Date.now() < deadline) {
+    if (!isProcessAlive(pid)) return true;
+    await new Promise((resolveWait) => setTimeout(resolveWait, 100));
+  }
+  return !isProcessAlive(pid);
+};
+
+const stopProcessGroup = async (pid: number): Promise<void> => {
+  if (!isProcessAlive(pid)) return;
+  signalProcessGroup(pid, "SIGTERM");
+  if (await waitForProcessExit(pid, 5_000)) return;
+  signalProcessGroup(pid, "SIGKILL");
+  if (!await waitForProcessExit(pid, 5_000)) {
+    throw new Error(`ArtifactPass eval process group ${pid} did not terminate`);
+  }
+};
+
+const processCommand = async (pid: number): Promise<string | undefined> => new Promise((resolveCommand) => {
+  if (process.platform === "win32") {
+    resolveCommand(undefined);
+    return;
+  }
+  execFile("ps", ["-p", String(pid), "-o", "command="], { encoding: "utf8" }, (error, stdout) => {
+    resolveCommand(error === null ? stdout.trim() : undefined);
+  });
+});
 
 const waitForHealth = async (baseUrl: URL, child: ChildProcess, processOutput: () => string): Promise<void> => {
   const deadline = Date.now() + 45_000;
@@ -223,15 +252,6 @@ const waitForHealth = async (baseUrl: URL, child: ChildProcess, processOutput: (
   throw new Error(`Local eval Worker did not become healthy: ${processOutput()}`);
 };
 
-const isProcessAlive = (pid: number): boolean => {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
-  }
-};
-
 export const reapOrphanedLocalEvalEnvironments = async (): Promise<readonly string[]> => {
   const removed: string[] = [];
   const entries = await readdir(tmpdir(), { withFileTypes: true });
@@ -243,6 +263,11 @@ export const reapOrphanedLocalEvalEnvironments = async (): Promise<readonly stri
       if (metadata.isSymbolicLink()) continue;
       const journal = JSON.parse(await readFile(join(root, "cleanup-journal.json"), "utf8")) as CleanupJournal;
       if (journal.version !== 1 || isProcessAlive(journal.owner_pid)) continue;
+      if (journal.worker_pid !== undefined && isProcessAlive(journal.worker_pid)) {
+        const command = await processCommand(journal.worker_pid);
+        if (journal.worker_marker === undefined || command?.includes(journal.worker_marker) !== true) continue;
+        await stopProcessGroup(journal.worker_pid);
+      }
       await rm(root, { recursive: true, force: true, maxRetries: 2 });
       removed.push(journal.run_id);
     } catch {
@@ -265,7 +290,6 @@ export const startLocalEvalEnvironment = async (repositoryRoot: string): Promise
       if (!rootRemoved) throw new LocalEvalTeardownError([], false);
       return;
     }
-    stopped = true;
     const errors: unknown[] = [];
     await stopProcess(worker).catch((error: unknown) => errors.push(error));
     await assertPathWithinRoot(root, root).catch((error: unknown) => errors.push(error));
@@ -274,6 +298,7 @@ export const startLocalEvalEnvironment = async (repositoryRoot: string): Promise
         .catch((error: unknown) => errors.push(error));
     }
     const rootRemoved = !await stat(root).then(() => true, () => false);
+    if (errors.length === 0 && rootRemoved) stopped = true;
     if (errors.length > 0 || !rootRemoved) throw new LocalEvalTeardownError(errors, rootRemoved);
   };
   try {
@@ -315,11 +340,13 @@ export const startLocalEvalEnvironment = async (repositoryRoot: string): Promise
       pdfPublicKey,
     }), null, 2)}\n`, { mode: 0o600 });
     const journalPath = join(root, "cleanup-journal.json");
+    const workerMarker = `artifactpass-eval-${runId}`;
     const journal: CleanupJournal = {
       version: 1,
       run_id: runId,
       owner_pid: process.pid,
       created_at: Date.now(),
+      worker_marker: workerMarker,
     };
     await writeFile(journalPath, `${JSON.stringify(journal)}\n`, { mode: 0o600 });
 
@@ -347,7 +374,13 @@ export const startLocalEvalEnvironment = async (repositoryRoot: string): Promise
     });
     const output: Buffer[] = [];
     let outputBytes = 0;
-    worker = spawn(process.execPath, [viteBin, "--config", join(applicationRoot, "vite-demo.config.ts")], {
+    worker = spawn(process.execPath, [
+      viteBin,
+      "--config",
+      join(applicationRoot, "vite-demo.config.ts"),
+      "--mode",
+      workerMarker,
+    ], {
       cwd: applicationRoot,
       env: {
         ...environment,
@@ -385,7 +418,11 @@ export const startLocalEvalEnvironment = async (repositoryRoot: string): Promise
       stop,
     };
   } catch (error) {
-    await stop().catch(() => undefined);
+    try {
+      await stop();
+    } catch (cleanupError) {
+      throw new AggregateError([error, cleanupError], "ArtifactPass local eval startup and cleanup both failed");
+    }
     throw error;
   }
 };

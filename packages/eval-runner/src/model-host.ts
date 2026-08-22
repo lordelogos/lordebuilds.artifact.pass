@@ -1,15 +1,21 @@
 import { cp, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
-import { ClaudeEventParser } from "./hosts/claude";
-import { CodexEventParser } from "./hosts/codex";
-import { pickEnvironment, runHostCommand, type HostCommandResult, type HostId } from "./hosts/host";
+import { CLAUDE_ADAPTER_COMPATIBILITY, ClaudeEventParser } from "./hosts/claude";
+import { CODEX_ADAPTER_COMPATIBILITY, CodexEventParser } from "./hosts/codex";
+import {
+  HostTraceError,
+  pickEnvironment,
+  runHostCommand,
+  type HostCommandResult,
+  type HostId,
+} from "./hosts/host";
 import type { LocalEvalEnvironment } from "./local-environment";
 import { versionFor } from "./runtime-version";
 
 export const MODEL_BY_HOST = {
-  codex: "gpt-5.4",
-  claude: "claude-sonnet-4-6",
+  codex: CODEX_ADAPTER_COMPATIBILITY.model,
+  claude: CLAUDE_ADAPTER_COMPATIBILITY.model,
 } as const;
 
 export const runtimeVersionForHost = async (host: HostId): Promise<string | undefined> => {
@@ -152,6 +158,12 @@ export const runModelHost = async (options: {
   readonly maxToolCalls?: number;
   readonly maximumCostUsd?: number;
 }): Promise<HostCommandResult> => {
+  if (options.host === "codex" && options.maximumCostUsd !== undefined) {
+    throw new HostTraceError(
+      "budget_exceeded",
+      "Codex cannot enforce maximumCostUsd with the current host telemetry",
+    );
+  }
   const configured = await configureModelHost({
     ...options,
     allowedTools: options.allowedTools,

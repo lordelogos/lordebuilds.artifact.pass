@@ -6,7 +6,9 @@ import { describe, expect, it } from "vitest";
 import {
   assertCohortTrialBudget,
   assertFixtureByteBudget,
+  assertHostCostBudgetSupport,
   assertProfileCostBudget,
+  assertSupportedInfrastructureRetryPolicy,
   executionBudgetUsage,
   loadEvalScenario,
 } from "../src/budget-enforcement";
@@ -39,10 +41,29 @@ describe("eval budget enforcement", () => {
   });
 
   it("requires an explicit positive profile cost budget for baseline and release", () => {
-    expect(() => assertProfileCostBudget("smoke", undefined)).not.toThrow();
+    expect(() => assertProfileCostBudget("smoke", undefined)).toThrow(/explicit/u);
+    expect(() => assertProfileCostBudget("smoke", 1)).not.toThrow();
     expect(() => assertProfileCostBudget("baseline", undefined)).toThrow(/explicit/u);
     expect(() => assertProfileCostBudget("release", 0)).toThrow(/positive/u);
     expect(() => assertProfileCostBudget("release", 40)).not.toThrow();
+  });
+
+  it("fails closed when a Codex cohort claims an unenforceable USD ceiling", () => {
+    expect(() => assertHostCostBudgetSupport(["claude"], 1)).not.toThrow();
+    expect(() => assertHostCostBudgetSupport(["codex"], 1)).toThrow(/cannot claim a USD ceiling/u);
+    expect(() => assertHostCostBudgetSupport(["codex", "claude"], undefined)).not.toThrow();
+  });
+
+  it("rejects authored retry behavior until failed attempts can be preserved", async () => {
+    const scenario = await loadEvalScenario(join(
+      repositoryRoot,
+      "evals/scenarios/safety/autonomous-handoff.json",
+    ));
+    expect(() => assertSupportedInfrastructureRetryPolicy(scenario)).not.toThrow();
+    expect(() => assertSupportedInfrastructureRetryPolicy({
+      ...scenario,
+      repetition: { ...scenario.repetition, max_infrastructure_retries: 1 },
+    })).toThrow(/preserves failures without retrying/u);
   });
 
   it("accounts for model steps, tool calls, and reported cost", () => {

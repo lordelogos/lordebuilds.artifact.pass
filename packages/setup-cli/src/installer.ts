@@ -17,7 +17,7 @@ import {
 } from "./portable-integration";
 import { runProcess, type ProcessRunner } from "./process";
 
-export const installReceiptVersion = 1 as const;
+export const installReceiptVersion = 2 as const;
 
 type InstallStage = "preflight" | "bundle" | "connection" | "verified" | "receipt" | "committed";
 
@@ -68,6 +68,75 @@ export interface ArtifactpassInstallReceipt {
   readonly resumed_from?: string;
   readonly receipt_path: string;
 }
+
+const receiptRecord = (value: unknown): Record<string, unknown> | undefined =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+
+const receiptStringArray = (value: unknown, allowed?: ReadonlySet<string>): value is string[] =>
+  Array.isArray(value) && value.every((item) =>
+    typeof item === "string" && item.length > 0 && (allowed === undefined || allowed.has(item)));
+
+const receiptEnum = <T extends string>(value: unknown, allowed: readonly T[]): value is T =>
+  typeof value === "string" && allowed.includes(value as T);
+
+const hasOnlyKeys = (value: Record<string, unknown>, allowed: readonly string[]): boolean =>
+  Object.keys(value).every((key) => allowed.includes(key));
+
+export const parseArtifactpassInstallReceipt = (value: unknown): ArtifactpassInstallReceipt => {
+  const receipt = receiptRecord(value);
+  const portable = receiptRecord(receipt?.portable_bundle);
+  const mcp = receiptRecord(receipt?.mcp);
+  const skills = receiptRecord(receipt?.skills);
+  const migration = receiptRecord(receipt?.migration);
+  const adapters = new Set(["codex", "claude"]);
+  const tools = new Set(["publish_artifact", "read_artifact"]);
+  const skillNames = new Set(["read-shared-artifact", "share-artifact"]);
+  const valid = receipt !== undefined &&
+    hasOnlyKeys(receipt, [
+      "receipt_version", "product", "product_version", "operation_id", "status", "profile", "origin",
+      "workspace_roots", "adapters", "portable_bundle", "mcp", "skills", "credential", "migration",
+      "outcomes", "restart_required", "rollback", "rollback_failures", "failed_stage", "resumed_from",
+      "receipt_path",
+    ]) &&
+    receipt.receipt_version === installReceiptVersion &&
+    receipt.product === "ArtifactPass" &&
+    typeof receipt.product_version === "string" && receipt.product_version.length > 0 &&
+    typeof receipt.operation_id === "string" && receipt.operation_id.length > 0 &&
+    receiptEnum(receipt.status, ["success", "failed"]) &&
+    typeof receipt.profile === "string" && receipt.profile.length > 0 &&
+    typeof receipt.origin === "string" && receipt.origin.length > 0 &&
+    receiptStringArray(receipt.workspace_roots) && receipt.workspace_roots.length > 0 &&
+    receiptStringArray(receipt.adapters, adapters) &&
+    portable !== undefined && hasOnlyKeys(portable, [
+      "sha256", "host_registration", "mcp_config", "skills_directory",
+    ]) &&
+    typeof portable.sha256 === "string" &&
+    receiptEnum(portable.host_registration, ["installed", "manual-required", "not-reached"]) &&
+    (portable.mcp_config === undefined || typeof portable.mcp_config === "string") &&
+    (portable.skills_directory === undefined || typeof portable.skills_directory === "string") &&
+    mcp !== undefined && hasOnlyKeys(mcp, ["negotiated", "tools", "representative_invocation"]) &&
+    typeof mcp.negotiated === "boolean" && receiptStringArray(mcp.tools, tools) &&
+    typeof mcp.representative_invocation === "boolean" &&
+    skills !== undefined && hasOnlyKeys(skills, ["verified", "names"]) &&
+    typeof skills.verified === "boolean" && receiptStringArray(skills.names, skillNames) &&
+    receiptEnum(receipt.credential, ["reused", "created", "rotated", "none", "not-reached"]) &&
+    migration !== undefined && hasOnlyKeys(migration, ["actions", "legacy_preserved"]) &&
+    receiptStringArray(migration.actions) && typeof migration.legacy_preserved === "boolean" &&
+    receiptStringArray(receipt.outcomes) && typeof receipt.restart_required === "boolean" &&
+    receiptEnum(receipt.rollback, ["not-required", "complete", "incomplete"]) &&
+    (receipt.rollback_failures === undefined ||
+      (receiptStringArray(receipt.rollback_failures) && receipt.rollback_failures.length > 0)) &&
+    (receipt.failed_stage === undefined || receiptEnum(receipt.failed_stage, [
+      "preflight", "bundle", "connection", "verified", "receipt", "committed",
+    ])) &&
+    (receipt.resumed_from === undefined ||
+      (typeof receipt.resumed_from === "string" && receipt.resumed_from.length > 0)) &&
+    typeof receipt.receipt_path === "string" && receipt.receipt_path.length > 0;
+  if (!valid) throw new Error(`ArtifactPass install receipt v${installReceiptVersion} is invalid`);
+  return receipt as unknown as ArtifactpassInstallReceipt;
+};
 
 export class ArtifactpassInstallError extends Error {
   public constructor(

@@ -198,7 +198,12 @@ export const runGenericTransportGates = async (options: {
   }));
 
   const humanPdfPath = join(options.environment.workspaces.agentA, "human-upload.pdf");
-  await writeFile(humanPdfPath, textPdf("Human supplied PDF without controlled provenance"));
+  const humanDescription = pdfScenario.fixtures.find((fixture) => fixture.id === "human-description");
+  if (humanDescription === undefined) throw new Error("PDF boundary scenario requires the human-description fixture");
+  await writeFile(
+    humanPdfPath,
+    textPdf(await readFile(join(options.repositoryRoot, humanDescription.path), "utf8")),
+  );
   const humanUrl = await publish(
     options.agentA,
     { path: humanPdfPath, expires_in_seconds: 900 },

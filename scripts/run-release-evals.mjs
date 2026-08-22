@@ -1,7 +1,7 @@
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 
 const argument = (name) => {
   const index = process.argv.indexOf(name);
@@ -18,6 +18,13 @@ if (!Number.isFinite(initialBudget) || initialBudget <= 0) {
 }
 
 const repositoryRoot = resolve(process.cwd());
+const trackedStatus = execFileSync("git", ["status", "--porcelain=v1", "--untracked-files=no"], {
+  cwd: repositoryRoot,
+  encoding: "utf8",
+}).trim();
+if (trackedStatus !== "") {
+  throw new Error("ArtifactPass release evidence requires a clean tracked worktree and index");
+}
 const evalRunnerRoot = resolve(repositoryRoot, "packages/eval-runner/dist");
 const runJson = (entry, args) => {
   const execution = spawnSync(process.execPath, [resolve(evalRunnerRoot, entry), ...args], {
@@ -85,11 +92,16 @@ for (const [index, path] of cohortPaths.entries()) {
   cohortReferences.push(name);
 }
 const manifestPath = resolve(evidenceRoot, "release-evidence.json");
+const sourceCommitSha = execFileSync("git", ["rev-parse", "HEAD"], {
+  cwd: repositoryRoot,
+  encoding: "utf8",
+}).trim();
 await writeFile(manifestPath, `${JSON.stringify({
   version: 1,
   candidate_sha256: deterministic.outcome === "pass"
     ? JSON.parse(await readFile(deterministic.report, "utf8")).candidate.sha256
     : "",
+  source_commit_sha: sourceCommitSha,
   created_at: new Date().toISOString(),
   reports: ["deterministic-report.json"],
   cohorts: cohortReferences,

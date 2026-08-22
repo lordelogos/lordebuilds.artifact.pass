@@ -436,7 +436,7 @@ flowchart LR
   3. An ambiguous path causes a bounded truthful clarification rather than publishing a guessed file.
   4. A multi-cursor artifact is reconstructed fully before the agent claims completion.
   5. A model that says it succeeded without matching MCP evidence fails.
-- **Verification:** `pnpm --dir packages/eval-runner test -- behavior-scorers.test.ts`; opt-in `pnpm eval:smoke --host codex` and `pnpm eval:smoke --host claude`.
+- **Verification:** `pnpm --dir packages/eval-runner test -- behavior-scorers.test.ts`; opt-in `pnpm eval:smoke --host codex --maximum-budget-usd <amount>` and `pnpm eval:smoke --host claude --maximum-budget-usd <amount>`.
 
 ### U6. Add isolated two-agent fidelity and safety scenarios
 
@@ -501,7 +501,7 @@ flowchart LR
 | Containment and tripwires | `pnpm --dir packages/eval-runner test -- containment.test.ts safety-evidence.test.ts` | U3, U6-U8 | Filesystem, network, process, service, auth, and config evidence detects forbidden effects and cleanup escapes. |
 | Behavioral scorer tests | `pnpm --dir packages/eval-runner test -- behavior-scorers.test.ts handoff-runner.test.ts safety-scorers.test.ts` | U5-U6 | Positive, negative, autonomous, isolation, and adversarial outcomes score correctly. |
 | Aggregation and reporting | `pnpm --dir packages/eval-runner test -- aggregation.test.ts reporting.test.ts` | U8 | Cohorts, Wilson intervals, policies, and both report formats match fixtures. |
-| Model smoke | `pnpm eval:smoke --host <host>` | U1, U5-U7 | One credentialed trial proves the current host trace path; no statistical claim. |
+| Model smoke | `pnpm eval:smoke --host <host> --maximum-budget-usd <amount>` | U1, U5-U7 | One credentialed trial proves the current host trace path; no statistical claim. |
 | Baseline | `pnpm eval:baseline --hosts generic,codex,claude --trials 10` | U7-U8 | Selected cohorts complete with fingerprints and confidence intervals. |
 | Release profile | `pnpm eval:release` | U8 and release candidates | All hard gates and versioned blocking cohort policies pass within approved budgets. |
 | Repository gate | `pnpm check` | Every unit | Existing lint, typecheck, unit, plugin, and build gates remain green. |

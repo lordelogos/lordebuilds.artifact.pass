@@ -6,7 +6,11 @@ import { fileURLToPath } from "node:url";
 import { candidateDigest } from "./candidate-digest";
 import { evalScenarioSchema, type EvalReport, type NormalizedHostEvent } from "./contracts";
 import { HostTraceError, type HostCommandResult, type HostId } from "./hosts/host";
-import { installCandidateIntoLocalEval, type EvalInstallResult } from "./install-lifecycle";
+import {
+  installCandidateIntoLocalEval,
+  installReceiptVersion,
+  type EvalInstallResult,
+} from "./install-lifecycle";
 import { startLocalEvalEnvironment, type LocalEvalEnvironment } from "./local-environment";
 import { MODEL_BY_HOST, modelExecutionFailure, runModelHost, runtimeVersionForHost } from "./model-host";
 import { writeEvalReport } from "./reporting";
@@ -148,7 +152,7 @@ export const runModelHandoffTrial = async (options: {
     throw new Error("Both selected model-host CLIs must be installed");
   }
   let environment: LocalEvalEnvironment | undefined;
-  let receiptVersion = 1;
+  let receiptVersion: number = installReceiptVersion;
   let teardownFailed = false;
   let infrastructureFailure = false;
   let failures: ScoreFailure[] = [];

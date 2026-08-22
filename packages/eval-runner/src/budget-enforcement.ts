@@ -6,6 +6,7 @@ import {
   type EvalScenario,
   type NormalizedHostEvent,
 } from "./contracts";
+import type { HostId } from "./hosts/host";
 
 export type CohortProfile = "smoke" | "baseline" | "release";
 
@@ -29,13 +30,32 @@ export const assertProfileCostBudget = (
   profile: CohortProfile,
   maximumBudgetUsd: number | undefined,
 ): void => {
-  if (profile !== "smoke" && maximumBudgetUsd === undefined) {
+  if (maximumBudgetUsd === undefined) {
     throw new Error(`${profile} cohorts require an explicit --maximum-budget-usd`);
   }
   if (
     maximumBudgetUsd !== undefined &&
     (!Number.isFinite(maximumBudgetUsd) || maximumBudgetUsd <= 0)
   ) throw new Error("maximum_budget_usd must be a positive finite number");
+};
+
+export const assertHostCostBudgetSupport = (
+  hosts: readonly HostId[],
+  maximumCostUsd: number | undefined,
+): void => {
+  if (maximumCostUsd !== undefined && hosts.includes("codex")) {
+    throw new Error(
+      "Codex cohorts cannot claim a USD ceiling until the host exposes provider-enforced cost control or trustworthy cost telemetry",
+    );
+  }
+};
+
+export const assertSupportedInfrastructureRetryPolicy = (scenario: EvalScenario): void => {
+  if (scenario.repetition.max_infrastructure_retries !== 0) {
+    throw new Error(
+      `${scenario.id} requests infrastructure retries, but ArtifactPass eval version 1 preserves failures without retrying them`,
+    );
+  }
 };
 
 export const assertFixtureByteBudget = (scenario: EvalScenario, bytes: number): void => {

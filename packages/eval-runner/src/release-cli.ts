@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
 import { join, resolve } from "node:path";
 
 import { aggregateCohort, cohortReportSchema } from "./aggregation";
@@ -29,6 +30,15 @@ const main = async (): Promise<void> => {
     : await loadReleaseEvidenceManifest(resolve(manifestPath));
   if (manifestEvidence !== undefined && manifestEvidence.manifest.candidate_sha256 !== candidateSha256) {
     throw new Error("Release evidence manifest is bound to a different candidate");
+  }
+  if (manifestEvidence !== undefined) {
+    const sourceCommitSha = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: repositoryRoot,
+      encoding: "utf8",
+    }).trim();
+    if (manifestEvidence.manifest.source_commit_sha !== sourceCommitSha) {
+      throw new Error("Release evidence manifest is bound to a different source commit");
+    }
   }
   const cohortPaths = [...values("--cohort"), ...(manifestEvidence?.cohorts ?? [])];
   const reportPaths = [...values("--report"), ...(manifestEvidence?.reports ?? [])];

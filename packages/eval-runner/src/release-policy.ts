@@ -77,6 +77,16 @@ export interface ReleasePolicyDecision {
   readonly failures: readonly string[];
 }
 
+const cohortMatchesRule = (
+  candidate: CohortReport,
+  rule: ReleasePolicy["cohorts"][number],
+): boolean =>
+  candidate.scenario_id === rule.scenario_id &&
+  candidate.scenario_version === rule.scenario_version &&
+  candidate.scenario_sha256 === rule.scenario_sha256 &&
+  candidate.host_pair[0] === rule.host_pair[0] &&
+  candidate.host_pair[1] === rule.host_pair[1];
+
 export const evaluateReleasePolicy = (options: {
   readonly policy: ReleasePolicy;
   readonly candidateSha256: string;
@@ -86,22 +96,37 @@ export const evaluateReleasePolicy = (options: {
   if (options.policy.candidate_sha256 !== options.candidateSha256) {
     failures.push("Release policy candidate digest does not match the evaluated candidate");
   }
+  for (const cohort of options.cohorts) {
+    if (!options.policy.cohorts.some((rule) => cohortMatchesRule(cohort, rule))) {
+      failures.push(
+        `Supplied cohort ${cohort.cohort_run_id} does not match any release policy rule`,
+      );
+    }
+  }
+  const cohortsByRule = new Map(options.policy.cohorts.map((rule) => [
+    rule.id,
+    options.cohorts.filter((candidate) => cohortMatchesRule(candidate, rule)),
+  ]));
+  for (const rule of options.policy.cohorts) {
+    if ((cohortsByRule.get(rule.id)?.length ?? 0) > 1) {
+      failures.push(`${rule.id} has multiple fresh evaluation cohorts`);
+    }
+  }
   for (const rule of options.policy.cohorts) {
     if (!rule.blocking) continue;
     if (rule.evaluation === "behavioral_threshold" && (!rule.calibrated || rule.calibration_run_ids.length === 0)) {
       failures.push(`${rule.id} has no approved calibration cohort`);
       continue;
     }
-    const cohort = options.cohorts.find((candidate) =>
-      candidate.scenario_id === rule.scenario_id &&
-      candidate.scenario_version === rule.scenario_version &&
-      candidate.scenario_sha256 === rule.scenario_sha256 &&
-      candidate.host_pair[0] === rule.host_pair[0] &&
-      candidate.host_pair[1] === rule.host_pair[1]);
-    if (cohort === undefined) {
+    const matchingCohorts = cohortsByRule.get(rule.id) ?? [];
+    if (matchingCohorts.length === 0) {
       failures.push(`${rule.id} has no fresh evaluation cohort`);
       continue;
     }
+    if (matchingCohorts.length !== 1) {
+      continue;
+    }
+    const cohort = matchingCohorts[0]!;
     if (cohort.candidate_sha256 !== options.candidateSha256) {
       failures.push(`${rule.id} evaluated a different candidate digest`);
     }

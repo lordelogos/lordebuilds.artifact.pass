@@ -29,7 +29,7 @@ describe("real candidate installation in a disposable eval home", () => {
       });
       for (const result of [first, repaired]) {
         expect(result.receipt).toMatchObject({
-          receipt_version: 1,
+          receipt_version: 2,
           product: "ArtifactPass",
           status: "success",
           origin: environment.baseUrl.origin,

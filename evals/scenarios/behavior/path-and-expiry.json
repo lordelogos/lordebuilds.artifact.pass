@@ -24,7 +24,7 @@
     "max_trials": 20,
     "estimated_cost_usd": 0.5
   },
-  "repetition": { "trials": 1, "max_infrastructure_retries": 1 },
+  "repetition": { "trials": 1, "max_infrastructure_retries": 0 },
   "gate_class": "behavioral",
   "scorer_version": "1.0.0"
 }

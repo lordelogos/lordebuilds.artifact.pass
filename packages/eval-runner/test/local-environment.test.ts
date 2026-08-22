@@ -1,5 +1,7 @@
-import { access } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { spawn } from "node:child_process";
+import { access, mkdtemp, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
@@ -7,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import {
   createLocalEvalProcessEnvironment,
   localEnvironmentExists,
+  reapOrphanedLocalEvalEnvironments,
   startLocalEvalEnvironment,
 } from "../src/local-environment";
 
@@ -31,4 +34,28 @@ describe("disposable local ArtifactPass environment", () => {
     await expect(localEnvironmentExists(environment)).resolves.toBe(false);
     await expect(environment.stop()).resolves.toBeUndefined();
   }, 90_000);
+
+  it.skipIf(process.platform === "win32")("terminates a verified orphan Worker before deleting its state", async () => {
+    const root = await mkdtemp(join(tmpdir(), "artifactpass-eval-"));
+    const marker = `artifactpass-eval-orphan-${Date.now()}`;
+    const worker = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)", marker], {
+      detached: true,
+      stdio: "ignore",
+    });
+    worker.unref();
+    const workerPid = worker.pid;
+    if (workerPid === undefined) throw new Error("Orphan test Worker did not start");
+    await writeFile(join(root, "cleanup-journal.json"), `${JSON.stringify({
+      version: 1,
+      run_id: marker,
+      owner_pid: 999_999_999,
+      created_at: Date.now(),
+      worker_pid: workerPid,
+      worker_marker: marker,
+    })}\n`);
+
+    await expect(reapOrphanedLocalEvalEnvironments()).resolves.toContain(marker);
+    await expect(stat(root)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(() => process.kill(workerPid, 0)).toThrow();
+  }, 15_000);
 });

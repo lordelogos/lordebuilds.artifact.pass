@@ -9,12 +9,21 @@ import { loadReleaseEvidenceManifest } from "../src/release-evidence";
 const manifest = (reports: readonly string[], cohorts: readonly string[]) => ({
   version: 1,
   candidate_sha256: "a".repeat(64),
+  source_commit_sha: "b".repeat(40),
   created_at: "2026-08-22T00:00:00.000Z",
   reports,
   cohorts,
 });
 
 describe("release evidence bundle", () => {
+  it("requires evidence to name the exact evaluated source commit", async () => {
+    const root = await mkdtemp(join(tmpdir(), "artifactpass-release-evidence-"));
+    const invalid = { ...manifest(["report.json"], ["cohort.json"]) } as Record<string, unknown>;
+    delete invalid.source_commit_sha;
+    await writeFile(join(root, "release-evidence.json"), JSON.stringify(invalid));
+    await expect(loadReleaseEvidenceManifest(join(root, "release-evidence.json"))).rejects.toThrow();
+  });
+
   it("loads only relative evidence contained in the bundle", async () => {
     const root = await mkdtemp(join(tmpdir(), "artifactpass-release-evidence-"));
     await Promise.all([

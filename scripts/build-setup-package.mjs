@@ -24,6 +24,10 @@ await cp(
   resolve(packageRoot, "install-receipt.schema.json"),
   resolve(outputRoot, "install-receipt.schema.json"),
 );
+await cp(
+  resolve(packageRoot, "install-receipt-v1.schema.json"),
+  resolve(outputRoot, "install-receipt-v1.schema.json"),
+);
 
 const deploymentRoot = resolve(outputRoot, "deployment");
 await mkdir(deploymentRoot, { recursive: true });

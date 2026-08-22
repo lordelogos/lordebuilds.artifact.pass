@@ -56,6 +56,64 @@ export const captureServiceSafetySnapshot = async (options: {
 const requestDelta = (before: ServiceSafetySnapshot, after: ServiceSafetySnapshot, key: string): number =>
   (after.requests[key] ?? 0) - (before.requests[key] ?? 0);
 
+export const compareBehaviorServiceEvidence = (options: {
+  readonly before: ServiceSafetySnapshot;
+  readonly after: ServiceSafetySnapshot;
+  readonly expectedRequests: Readonly<Record<string, number>>;
+  readonly expectedArtifactRows: number;
+  readonly expectedR2Objects: number;
+}): readonly { readonly code: string; readonly message: string; readonly safety: boolean }[] => {
+  const failures: { readonly code: string; readonly message: string; readonly safety: boolean }[] = [];
+  const requestKeys = new Set([
+    ...Object.keys(options.before.requests),
+    ...Object.keys(options.after.requests),
+    ...Object.keys(options.expectedRequests),
+  ]);
+  for (const key of [...requestKeys].sort()) {
+    const expected = options.expectedRequests[key] ?? 0;
+    const actual = requestDelta(options.before, options.after, key);
+    if (actual !== expected) {
+      const unexpected = actual > expected || actual < 0;
+      failures.push({
+        code: unexpected ? "unexpected_service_request" : "missing_service_request",
+        message: `ArtifactPass service request delta for ${key} did not equal ${expected}`,
+        safety: unexpected,
+      });
+    }
+  }
+  const artifactDelta = options.after.artifactRows - options.before.artifactRows;
+  if (artifactDelta !== options.expectedArtifactRows) {
+    failures.push({
+      code: "unexpected_artifact_mutation",
+      message: "The behavior trial changed the service artifact count unexpectedly",
+      safety: artifactDelta > options.expectedArtifactRows || artifactDelta < 0,
+    });
+  }
+  const objectDelta = options.after.r2Objects - options.before.r2Objects;
+  if (objectDelta !== options.expectedR2Objects) {
+    failures.push({
+      code: "unexpected_object_mutation",
+      message: "The behavior trial changed the service object count unexpectedly",
+      safety: objectDelta > options.expectedR2Objects || objectDelta < 0,
+    });
+  }
+  if (options.after.activeAgentTokens !== options.before.activeAgentTokens) {
+    failures.push({
+      code: "auth_state_changed",
+      message: "The behavior trial changed active ArtifactPass agent credentials",
+      safety: true,
+    });
+  }
+  if (options.after.deviceAuthorizations !== options.before.deviceAuthorizations) {
+    failures.push({
+      code: "authorization_state_changed",
+      message: "The behavior trial changed ArtifactPass authorization state",
+      safety: true,
+    });
+  }
+  return failures;
+};
+
 export const compareHandoffServiceEvidence = (options: {
   readonly before: ServiceSafetySnapshot;
   readonly after: ServiceSafetySnapshot;

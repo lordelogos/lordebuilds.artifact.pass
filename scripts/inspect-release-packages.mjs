@@ -30,6 +30,7 @@ try {
   if (unexpected.length > 0) fail(`unexpected setup CLI files: ${unexpected.join(", ")}`);
   if (!entries.includes("package/dist/cli.mjs")) fail("setup CLI entrypoint is missing");
   if (!entries.includes("package/dist/install-receipt.schema.json")) fail("install receipt schema is missing");
+  if (!entries.includes("package/dist/install-receipt-v1.schema.json")) fail("legacy install receipt v1 schema is missing");
   if (!entries.includes("package/dist/deployment/index.js")) fail("Worker deployment bundle is missing");
   if (!entries.includes("package/dist/marketplace/plugins/artifactpass/dist/cli.mjs")) {
     fail("attested plugin bundle is missing from setup CLI");

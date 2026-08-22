@@ -47,10 +47,12 @@ const noIntervention = { selectedSkills: [] as string[], userInterventions: [] a
 describe("single-agent behavioral scorers", () => {
   it("accepts one successful publish with the exact declared path and 15-minute expiry", () => {
     const path = "/eval/workspace/brief.md";
+    const shareUrl = "http://127.0.0.1:8787/a/sensitive-in-memory-value";
     const failures = scoreShareBehavior({
       events: [
         call(0, "publish-1", "publish_artifact", { path, expires_in_seconds: 900 }),
-        result(1, "publish-1", { share_url: "http://127.0.0.1:8787/a/sensitive-in-memory-value" }),
+        result(1, "publish-1", { share_url: shareUrl }),
+        { version: 1, host: "codex", sequence: 2, kind: "assistant_output", text: `Shared: ${shareUrl}` },
       ],
       evidence: { selectedSkills: ["share-artifact"], userInterventions: [] },
       expectedPath: path,
@@ -58,6 +60,21 @@ describe("single-agent behavioral scorers", () => {
       expectedOrigin: "http://127.0.0.1:8787",
     });
     expect(failures).toEqual([]);
+  });
+
+  it("rejects a successful publish when the agent never returns its correlated link", () => {
+    const path = "/eval/workspace/brief.md";
+    expect(scoreShareBehavior({
+      events: [
+        call(0, "publish-1", "publish_artifact", { path, expires_in_seconds: 900 }),
+        result(1, "publish-1", { share_url: "http://127.0.0.1:8787/a/sensitive-in-memory-value" }),
+        { version: 1, host: "codex", sequence: 2, kind: "assistant_output", text: "Shared successfully." },
+      ],
+      evidence: { selectedSkills: ["share-artifact"], userInterventions: [] },
+      expectedPath: path,
+      expectedExpirySeconds: 900,
+      expectedOrigin: "http://127.0.0.1:8787",
+    }).map((failure) => failure.code)).toContain("share_link_not_delivered");
   });
 
   it("rejects a guessed path, wrong expiry, duplicate publish, or unnecessary help", () => {

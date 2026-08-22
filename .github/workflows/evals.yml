@@ -76,11 +76,8 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Smoke
-        if: inputs.profile == 'smoke'
-        run: pnpm eval:smoke --host "${{ inputs.host }}"
       - name: Trial preflight
-        if: inputs.profile == 'generic-baseline' || inputs.profile == 'model-baseline' || inputs.profile == 'release'
+        if: inputs.profile == 'smoke' || inputs.profile == 'generic-baseline' || inputs.profile == 'model-baseline' || inputs.profile == 'release'
         run: |
           case "$EVAL_TRIALS" in
             ''|*[!0-9]*) echo "trials must be an integer" >&2; exit 1 ;;
@@ -93,6 +90,13 @@ jobs:
             ''|*[!0-9.]*) echo "maximum budget must be a positive number" >&2; exit 1 ;;
           esac
           node -e 'const value = Number(process.env.ARTIFACTPASS_MAXIMUM_BUDGET_USD); if (!Number.isFinite(value) || value <= 0) process.exit(1)'
+          if [ "${{ inputs.profile }}" = "release" ] && [ "$EVAL_TRIALS" -ne 20 ]; then
+            echo "release evidence requires exactly 20 trials" >&2
+            exit 1
+          fi
+      - name: Smoke
+        if: inputs.profile == 'smoke'
+        run: pnpm eval:smoke --host "${{ inputs.host }}" --maximum-budget-usd "$ARTIFACTPASS_MAXIMUM_BUDGET_USD"
       - name: Generic baseline
         if: inputs.profile == 'generic-baseline'
         run: pnpm eval:baseline --hosts generic --trials "$EVAL_TRIALS"
@@ -106,7 +110,7 @@ jobs:
           fi
       - name: Fresh release evidence and decision
         if: inputs.profile == 'release'
-        run: pnpm eval:release:fresh -- --trials 20 --maximum-budget-usd "$ARTIFACTPASS_MAXIMUM_BUDGET_USD"
+        run: pnpm eval:release:fresh -- --trials "$EVAL_TRIALS" --maximum-budget-usd "$ARTIFACTPASS_MAXIMUM_BUDGET_USD"
       - name: Upload immutable release evidence
         if: inputs.profile == 'release'
         uses: actions/upload-artifact@v4

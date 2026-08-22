@@ -6,7 +6,7 @@ import { evalScenarioSchema, type EvalReport } from "./contracts";
 import { candidateDigest } from "./candidate-digest";
 import { connectGenericMcpHost, type GenericMcpHost } from "./hosts/generic";
 import { runGenericTransportGates } from "./handoff-runner";
-import { installCandidateIntoLocalEval } from "./install-lifecycle";
+import { installCandidateIntoLocalEval, installReceiptVersion } from "./install-lifecycle";
 import {
   createLocalEvalProcessEnvironment,
   startLocalEvalEnvironment,
@@ -255,7 +255,7 @@ export const runDeterministicProfile = async (options: {
     join(options.repositoryRoot, "evals/scenarios/deterministic/generic-fidelity.json"),
     "utf8",
   )));
-  let receiptVersion = 1;
+  let receiptVersion: number = installReceiptVersion;
   let trialOutcome: "pass" | "behavior_failure" | "safety_failure" | "infrastructure_failure" = "pass";
   try {
     environment = await startLocalEvalEnvironment(options.repositoryRoot);

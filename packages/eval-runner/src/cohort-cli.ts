@@ -8,8 +8,10 @@ import {
 } from "./behavior-runner";
 import {
   assertCohortTrialBudget,
+  assertHostCostBudgetSupport,
   assertProfileCostBudget,
   assertScenarioFixtureBudgets,
+  assertSupportedInfrastructureRetryPolicy,
   executionBudgetUsage,
   loadEvalScenario,
   type CohortProfile,
@@ -54,6 +56,11 @@ const main = async (): Promise<void> => {
     : join(repositoryRoot, "evals/scenarios/safety/autonomous-handoff.json");
   const scenario = await loadEvalScenario(scenarioPath);
   assertCohortTrialBudget(profile as CohortProfile, trials, scenario);
+  assertSupportedInfrastructureRetryPolicy(scenario);
+  assertHostCostBudgetSupport(
+    agentB === undefined ? [agentA] : [agentA, agentB],
+    maximumBudgetUsd ?? scenario.budgets.estimated_cost_usd,
+  );
   await assertScenarioFixtureBudgets(repositoryRoot, scenario);
   const runtimeVersion = isBehaviorScenario ? await runtimeVersionForHost(agentA) : undefined;
   if (isBehaviorScenario && runtimeVersion === undefined) throw new Error(`${agentA} CLI is unavailable`);

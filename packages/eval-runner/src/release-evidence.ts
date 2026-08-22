@@ -6,6 +6,7 @@ import { z } from "zod";
 export const releaseEvidenceManifestSchema = z.object({
   version: z.literal(1),
   candidate_sha256: z.string().regex(/^[a-f0-9]{64}$/u),
+  source_commit_sha: z.string().regex(/^[a-f0-9]{40}$/u),
   created_at: z.iso.datetime({ offset: true }),
   reports: z.array(z.string().min(1)).min(1),
   cohorts: z.array(z.string().min(1)).min(1),

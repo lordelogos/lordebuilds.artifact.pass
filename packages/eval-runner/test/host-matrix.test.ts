@@ -113,7 +113,7 @@ describe("representative host matrix", () => {
     expect(matrixReleaseEligible(dispatches, await loadConfiguration())).toBe(true);
   });
 
-  it("uses the generic driver's exact MCP surface as host-enforced containment", async () => {
+  it("does not mistake the generic driver's exact MCP surface for OS containment", async () => {
     const scenario = await loadScenario();
     const dispatches = buildMatrixPreflight({
       configuration: await loadConfiguration(),
@@ -122,7 +122,13 @@ describe("representative host matrix", () => {
       environment: {},
     });
     expect(dispatches.find((dispatch) => dispatch.pair.join("->") === "generic->generic")?.status)
-      .toBe("ready");
+      .toBe("identity_blocked");
+    expect(dispatches.find((dispatch) => dispatch.pair.join("->") === "generic->generic")?.posture.agentA)
+      .toMatchObject({
+        filesystemContainment: "unproven",
+        networkContainment: "unproven",
+        principalIsolation: "unproven",
+      });
     expect(dispatches.find((dispatch) => dispatch.pair.join("->") === "codex->claude")?.status)
       .toBe("authentication_blocked");
     expect(matrixReleaseEligible(dispatches, await loadConfiguration())).toBe(false);

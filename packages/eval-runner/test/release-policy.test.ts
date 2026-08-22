@@ -101,6 +101,51 @@ describe("release policy", () => {
     expect(decision).toEqual({ eligible: true, failures: [] });
   });
 
+  it.each(["passing-first", "failing-first"] as const)(
+    "rejects duplicate fresh cohorts with opposite outcomes in %s order",
+    (order) => {
+      const passing = cohort(Array.from({ length: 20 }, () => randomUUID()));
+      const failing = cohort(Array.from({ length: 20 }, () => randomUUID()), {
+        behavioral_trials: 20,
+        successes: 19,
+        observed_success_rate: 0.95,
+        wilson_95: wilsonInterval(19, 20),
+        outcomes: {
+          pass: 19,
+          behavior_failure: 1,
+          safety_failure: 0,
+          infrastructure_failure: 0,
+          timeout: 0,
+          incomplete: 0,
+          skipped: 0,
+          teardown_failure: 0,
+        },
+      });
+      const cohorts = order === "passing-first" ? [passing, failing] : [failing, passing];
+
+      expect(evaluateReleasePolicy({ policy, candidateSha256: candidate, cohorts })).toEqual({
+        eligible: false,
+        failures: ["cross-vendor has multiple fresh evaluation cohorts"],
+      });
+    },
+  );
+
+  it("rejects supplied cohorts that are not declared by the release policy", () => {
+    const extra = cohort(Array.from({ length: 20 }, () => randomUUID()), {
+      scenario_sha256: "c".repeat(64),
+    });
+    const decision = evaluateReleasePolicy({
+      policy,
+      candidateSha256: candidate,
+      cohorts: [cohort(Array.from({ length: 20 }, () => randomUUID())), extra],
+    });
+
+    expect(decision.eligible).toBe(false);
+    expect(decision.failures).toContain(
+      `Supplied cohort ${extra.cohort_run_id} does not match any release policy rule`,
+    );
+  });
+
   it("requires every hard-gate trial to pass without calibration", () => {
     const hardPolicy = releasePolicySchema.parse({
       ...policy,
@@ -185,7 +230,10 @@ describe("release policy", () => {
         scenario_sha256: "c".repeat(64),
       })],
     });
-    expect(decision.failures).toEqual(["cross-vendor has no fresh evaluation cohort"]);
+    expect(decision.failures).toEqual([
+      expect.stringMatching(/^Supplied cohort .+ does not match any release policy rule$/u),
+      "cross-vendor has no fresh evaluation cohort",
+    ]);
   });
 
   it.each([

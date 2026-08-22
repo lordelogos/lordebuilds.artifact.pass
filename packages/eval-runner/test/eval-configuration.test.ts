@@ -1,5 +1,7 @@
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
+import { execFileSync, spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -39,10 +41,16 @@ describe("eval release configuration", () => {
 
   it("keeps pull-request evaluation deterministic and production fail-closed", async () => {
     const workflow = await readFile(join(repositoryRoot, ".github/workflows/evals.yml"), "utf8");
+    const releaseWorkflow = await readFile(join(repositoryRoot, ".github/workflows/release.yml"), "utf8");
     expect(workflow).toContain("pnpm eval:deterministic");
     expect(workflow).toContain("github.event_name != 'workflow_dispatch'");
     expect(workflow).toContain("environment: artifactpass-production-evals");
     expect(workflow).toContain("Production mutation remains fail-closed");
+    expect(workflow).toContain("--trials \"$EVAL_TRIALS\"");
+    expect(workflow).toContain("eval:smoke --host \"${{ inputs.host }}\" --maximum-budget-usd");
+    expect(releaseWorkflow).toContain("Verify evidence run provenance");
+    expect(releaseWorkflow).toContain("'.head_sha'");
+    expect(releaseWorkflow).toContain('"$(git rev-parse HEAD)"');
     const packageJson = JSON.parse(await readFile(join(repositoryRoot, "package.json"), "utf8")) as {
       readonly scripts: Readonly<Record<string, string>>;
     };
@@ -61,5 +69,30 @@ describe("eval release configuration", () => {
       "Production",
       "cleanup",
     ]) expect(guide).toContain(phrase);
+  });
+
+  it("refuses release evidence when tracked source differs from HEAD", async () => {
+    const root = await mkdtemp(join(tmpdir(), "artifactpass-dirty-release-"));
+    const tracked = join(root, "tracked.txt");
+    execFileSync("git", ["init", "--quiet"], { cwd: root });
+    await writeFile(tracked, "committed\n");
+    execFileSync("git", ["add", "tracked.txt"], { cwd: root });
+    execFileSync("git", [
+      "-c", "user.name=ArtifactPass Eval",
+      "-c", "user.email=eval@artifactpass.test",
+      "commit", "--quiet", "-m", "fixture",
+    ], { cwd: root });
+    await writeFile(tracked, "dirty\n");
+
+    const execution = spawnSync(process.execPath, [
+      join(repositoryRoot, "scripts/run-release-evals.mjs"),
+      "--trials", "20",
+      "--maximum-budget-usd", "1",
+    ], { cwd: root, encoding: "utf8" });
+
+    expect(execution.status).not.toBe(0);
+    expect(execution.stderr).toContain(
+      "ArtifactPass release evidence requires a clean tracked worktree and index",
+    );
   });
 });

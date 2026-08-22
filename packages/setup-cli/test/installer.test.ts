@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   ArtifactpassInstallError,
+  parseArtifactpassInstallReceipt,
   renderInstallReceipt,
   runArtifactpassInstall,
   type ArtifactpassInstallReceipt,
@@ -74,7 +75,7 @@ describe("one-command ArtifactPass installer", () => {
     });
 
     expect(receipt).toMatchObject({
-      receipt_version: 1,
+      receipt_version: 2,
       product: "ArtifactPass",
       operation_id: "install-operation",
       status: "success",
@@ -101,6 +102,13 @@ describe("one-command ArtifactPass installer", () => {
       rollback: "not-required",
     });
     expect(receipt.portable_bundle).not.toHaveProperty("mcp_config");
+    expect(parseArtifactpassInstallReceipt(receipt)).toEqual(receipt);
+    expect(() => parseArtifactpassInstallReceipt({ ...receipt, receipt_version: 1 })).toThrow(
+      "ArtifactPass install receipt v2 is invalid",
+    );
+    expect(() => parseArtifactpassInstallReceipt({ ...receipt, unexpected: true })).toThrow(
+      "ArtifactPass install receipt v2 is invalid",
+    );
     expect(renderInstallReceipt(receipt)).toContain("Start a new agent session");
     const persisted = await readFile(receipt.receipt_path, "utf8");
     expect(JSON.parse(persisted)).toEqual(receipt);
@@ -280,7 +288,7 @@ describe("one-command ArtifactPass installer", () => {
     }
 
     expect(failure?.receipt).toMatchObject({
-      receipt_version: 1,
+      receipt_version: 2,
       status: "failed",
       failed_stage: "preflight",
       rollback: "complete",

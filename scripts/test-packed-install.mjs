@@ -95,7 +95,7 @@ try {
   const second = await runInstall();
   for (const receipt of [first, second]) {
     if (
-      receipt.receipt_version !== 1 ||
+      receipt.receipt_version !== 2 ||
       receipt.product !== "ArtifactPass" ||
       receipt.status !== "success" ||
       receipt.profile !== "local" ||

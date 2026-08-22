@@ -3,7 +3,13 @@ import { createHash } from "node:crypto";
 import { access, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import type { ArtifactpassInstallReceipt } from "../../setup-cli/src/installer";
+import {
+  installReceiptVersion,
+  parseArtifactpassInstallReceipt,
+  type ArtifactpassInstallReceipt,
+} from "../../setup-cli/src/installer";
+
+export { installReceiptVersion };
 
 import { connectGenericMcpHost } from "./hosts/generic";
 import {
@@ -254,7 +260,7 @@ export const preparePackedCandidateForLocalEval = (options: {
 
 const parseReceipt = (stdout: string): ArtifactpassInstallReceipt | undefined => {
   try {
-    return JSON.parse(stdout) as ArtifactpassInstallReceipt;
+    return parseArtifactpassInstallReceipt(JSON.parse(stdout) as unknown);
   } catch {
     return undefined;
   }
@@ -331,6 +337,7 @@ export const installCandidateIntoLocalEval = async (options: {
   const portableRoot = join(home, ".artifactpass", "portable-integration");
   const portableBundleCount = await readdir(portableRoot, { withFileTypes: true })
     .then((entries) => entries.filter((entry) => entry.isDirectory()).length);
+  const profileCount = Object.keys(config.profiles ?? {}).length;
   const mcpConfiguration = JSON.parse(await readFile(mcpConfigPath, "utf8")) as {
     readonly mcpServers?: Readonly<Record<string, unknown>>;
   };
@@ -348,12 +355,14 @@ export const installCandidateIntoLocalEval = async (options: {
   } finally {
     await restartedHost.close();
   }
-  if (registrationCount !== 1 || !hostRestartVerified) {
-    throw new Error("Packed ArtifactPass install did not survive a clean host restart with one registration");
+  if (profileCount !== 1 || portableBundleCount !== 1 || registrationCount !== 1 || !hostRestartVerified) {
+    throw new Error(
+      "Packed ArtifactPass install did not produce exactly one profile, bundle, registration, and verified host restart",
+    );
   }
   return {
     receipt,
-    profileCount: Object.keys(config.profiles ?? {}).length,
+    profileCount,
     portableBundleCount,
     registrationCount,
     hostRestartVerified,

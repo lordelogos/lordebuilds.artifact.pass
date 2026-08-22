@@ -19,8 +19,8 @@ Use `pnpm eval:matrix` to see which representative host pairs are currently elig
 Model smoke is explicit and never part of `pnpm check`:
 
 ```sh
-OPENAI_API_KEY=... pnpm eval:smoke --host codex
-ANTHROPIC_API_KEY=... pnpm eval:smoke --host claude
+OPENAI_API_KEY=... pnpm eval:smoke --host codex --maximum-budget-usd 4
+ANTHROPIC_API_KEY=... pnpm eval:smoke --host claude --maximum-budget-usd 4
 ```
 
 By default, smoke runs all four single-agent scenarios: share, read, no-share, and ambiguous path. Add `--scenario <id>` to isolate one. Each run uses a disposable provider home, the packed plugin, a pinned adapter model, and scenario time, step, tool-call, artifact-byte, and cost limits. Codex does not expose a trustworthy hard monetary switch or explicit Skill activation event, so those claims remain blocked rather than inferred. Normal credential homes are never copied. Provider keys are stripped before the MCP bridge is launched.
@@ -30,7 +30,7 @@ By default, smoke runs all four single-agent scenarios: share, read, no-share, a
 Run an ordered pair explicitly:
 
 ```sh
-OPENAI_API_KEY=... ANTHROPIC_API_KEY=... pnpm eval:cohort --agent-a codex --agent-b claude --scenario autonomous-handoff --profile smoke --trials 1
+OPENAI_API_KEY=... ANTHROPIC_API_KEY=... pnpm eval:cohort --agent-a codex --agent-b claude --scenario autonomous-handoff --profile smoke --trials 1 --maximum-budget-usd 4
 ANTHROPIC_API_KEY=... pnpm eval:cohort --agent-a claude --scenario share-markdown --profile baseline --trials 10 --maximum-budget-usd 10
 ```
 
@@ -66,7 +66,7 @@ A real release check accepts fresh cohort files with repeated `--cohort <path>`,
 
 After thresholds and host posture qualify, the protected manual workflow runs `pnpm eval:release:fresh -- --trials 20 --maximum-budget-usd <total>`. It creates every blocking cohort under one decreasing profile budget, evaluates the fresh evidence, and uploads a self-contained evidence bundle. Calibration and release cohorts must be separate runs.
 
-Local files are operator diagnostics, not a production authorization boundary. The protected release workflow requires an existing `v*` tag plus the successful eval workflow run ID, downloads that run's immutable `artifactpass-release-evidence` artifact, re-evaluates its contained manifest against the tagged candidate, and blocks build, attestation, and upload unless eligible. A tag push alone performs no release.
+Local files are operator diagnostics, not a production authorization boundary. The protected release workflow requires an existing `v*` tag plus the successful eval workflow run ID, verifies that the successful manually dispatched eval ran on `main` at the tag's exact commit, downloads that run's immutable `artifactpass-release-evidence` artifact, and re-evaluates its contained manifest against both the tagged source commit and candidate digest. Build, attestation, and upload remain blocked unless all checks pass. A tag push alone performs no release.
 
 Release activation remains fail-closed until all of these conditions are met:
 

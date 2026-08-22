@@ -18,9 +18,10 @@ vi.mock("../src/handoff-runner", () => ({
 }));
 
 vi.mock("../src/install-lifecycle", () => ({
+  installReceiptVersion: 2,
   installCandidateIntoLocalEval: async () => ({
     receipt: {
-      receipt_version: 1,
+      receipt_version: 2,
       portable_bundle: { mcp_config: "/tmp/mock-mcp-config.json" },
     },
     profileCount: 1,

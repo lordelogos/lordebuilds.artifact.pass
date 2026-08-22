@@ -39,6 +39,15 @@ jobs:
           path: release-evidence
           github-token: ${{ github.token }}
           run-id: ${{ inputs.evidence_run_id }}
+      - name: Verify evidence run provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVIDENCE_RUN_ID: ${{ inputs.evidence_run_id }}
+        run: |
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${EVIDENCE_RUN_ID}" --jq '.conclusion')" = "success"
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${EVIDENCE_RUN_ID}" --jq '.event')" = "workflow_dispatch"
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${EVIDENCE_RUN_ID}" --jq '.head_branch')" = "main"
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${EVIDENCE_RUN_ID}" --jq '.head_sha')" = "$(git rev-parse HEAD)"
       - uses: pnpm/action-setup@v6
         with:
           version: 10.11.0

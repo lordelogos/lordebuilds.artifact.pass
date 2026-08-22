@@ -32,7 +32,7 @@ const successfulInstall = (root: string, agent: "agent-a" | "agent-b"): EvalInst
   hostRestartVerified: true,
   candidateArchiveSha256: "b".repeat(64),
   receipt: {
-    receipt_version: 1,
+    receipt_version: 2,
     product: "ArtifactPass",
     product_version: "test",
     operation_id: `${agent}-operation`,
@@ -85,7 +85,8 @@ const successfulAgentAEvents = (root: string): readonly NormalizedHostEvent[] =>
     kind: "tool_result", callId: "publish", isError: false,
     result: { content: [{ type: "text", text: JSON.stringify({ share_url: "http://127.0.0.1:8787/a/token" }) }] },
   }),
-  event("codex", 3, { kind: "terminal", status: "succeeded" }),
+  event("codex", 3, { kind: "assistant_output", text: "Shared: http://127.0.0.1:8787/a/token" }),
+  event("codex", 4, { kind: "terminal", status: "succeeded" }),
 ];
 
 const successfulAgentBEvents = (fixture: Buffer): readonly NormalizedHostEvent[] => [
