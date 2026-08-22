@@ -100,6 +100,7 @@ const successfulAgentBEvents = (fixture: Buffer): readonly NormalizedHostEvent[]
         data: fixture.toString("base64"),
         sha256: createHash("sha256").update(fixture).digest("hex"),
         next_cursor: null,
+        manifest: { mime_type: "text/markdown" },
       },
     },
   }),

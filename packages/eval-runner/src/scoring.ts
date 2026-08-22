@@ -72,6 +72,24 @@ export interface IndependentBehaviorEvidence {
   readonly userInterventions: readonly { readonly reason: string }[];
 }
 
+export const behaviorEvidenceFromEvents = (
+  events: readonly NormalizedHostEvent[],
+): IndependentBehaviorEvidence => {
+  const selectedSkills = events
+    .filter((event) => event.kind === "skill_selection")
+    .map((event) => event.kind === "skill_selection" ? event.skillName : "");
+  const userInterventions = events
+    .filter((event) => event.kind === "assistant_output")
+    .flatMap((event) => {
+      if (event.kind !== "assistant_output") return [];
+      const text = event.text;
+      const asksForPath = /(?:which|what|specify|provide|need).{0,80}(?:file|path)|(?:file|path).{0,80}(?:which|what|specify|provide|need)/iu.test(text);
+      if (asksForPath) return [{ reason: "ambiguous-path" }];
+      return /\?/u.test(text) ? [{ reason: "unnecessary" }] : [];
+    });
+  return { selectedSkills, userInterventions };
+};
+
 const toolEvidence = (events: readonly NormalizedHostEvent[]) => {
   const calls = events.filter((event): event is Extract<NormalizedHostEvent, { readonly kind: "tool_call" }> =>
     event.kind === "tool_call");
