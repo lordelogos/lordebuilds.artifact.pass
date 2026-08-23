@@ -225,6 +225,16 @@ export const readCompatibleLocalBridgeSettingsSync = (
 ): CompatibleLocalBridgeSettings => {
   const artifactpassPath = defaultLocalConfigPath(environment, platform);
   const legacyPath = legacyLocalConfigPath(environment, platform);
+  if (
+    environment.ARTIFACTPASS_CONFIG_PATH === undefined &&
+    environment.ARTIFACT_SHARE_CONFIG_PATH !== undefined
+  ) {
+    return {
+      path: legacyPath,
+      source: "legacy",
+      settings: readLocalBridgeSettingsSync(legacyPath),
+    };
+  }
   const artifactpassExists = existsSync(artifactpassPath);
   const shouldReadLegacy = environment.ARTIFACTPASS_CONFIG_PATH === undefined ||
     environment.ARTIFACT_SHARE_CONFIG_PATH !== undefined;

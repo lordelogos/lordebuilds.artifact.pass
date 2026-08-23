@@ -109,6 +109,33 @@ describe("local bridge config", () => {
     await expect(stat(`${path}.local.publication-state.sqlite3`)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("honors an explicit legacy config path when a default ArtifactPass config exists", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifact-share-explicit-legacy-config-test-"));
+    const artifactpassPath = resolve(root, "artifactpass", "config.json");
+    const legacyPath = resolve(root, "explicit-legacy.json");
+    await writeLocalBridgeSettings(artifactpassPath, {
+      version: 1,
+      base_url: "https://staging.artifactpass.com/",
+      workspace_roots: [root],
+      pdf_key_id: "artifactpass-staging",
+    });
+    await writeLocalBridgeSettings(legacyPath, {
+      version: 1,
+      base_url: "http://127.0.0.1:8787/",
+      workspace_roots: [root],
+      open_development: true,
+    });
+
+    const configuration = configurationFromEnvironment({
+      XDG_CONFIG_HOME: root,
+      ARTIFACT_SHARE_CONFIG_PATH: legacyPath,
+    });
+
+    expect(configuration.baseUrl.origin).toBe("http://127.0.0.1:8787");
+    expect(configuration.profileName).toBe("local");
+    expect(configuration.publicationStatePath).toBe(`${legacyPath}.publication-state`);
+  });
+
   it("uses ARTIFACT_SHARE_PROFILE without rewriting the active profile", async () => {
     const root = await mkdtemp(resolve(tmpdir(), "artifact-share-profile-config-test-"));
     const path = resolve(root, "config.json");
