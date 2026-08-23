@@ -377,6 +377,30 @@ describe("Cloudflare deployment", () => {
     ]);
   });
 
+  it("retries a bounded transient DNS failure before verifying the deployed routes", async () => {
+    const client = fakeClient({ existing: true });
+    const runner = vi.fn(async () => ({ stdout: "", stderr: "" }));
+    const sleep = vi.fn(async () => undefined);
+    const fetch = vi.fn()
+      .mockRejectedValueOnce(new TypeError("fetch failed"))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        service: "lordebuilds.artifacts.share",
+        status: "ok",
+      })))
+      .mockResolvedValueOnce(new Response(null, { status: 302 }));
+
+    await expect(deployArtifactShare(input, {
+      client: client.client,
+      deploymentRoot: await deploymentRoot(),
+      runner,
+      fetch,
+      sleep,
+    })).resolves.toMatchObject({ changed: ["Worker deployment"] });
+
+    expect(sleep).toHaveBeenCalledTimes(1);
+    expect(fetch).toHaveBeenCalledTimes(3);
+  });
+
   it("surfaces migration failure and never writes a provisioning token into command arguments", async () => {
     const client = fakeClient({ existing: true });
     const seen: readonly string[][] = [];

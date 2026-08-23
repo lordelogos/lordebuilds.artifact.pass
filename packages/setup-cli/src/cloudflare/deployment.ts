@@ -230,7 +230,30 @@ export interface DeployDependencies {
   readonly runner?: ProcessRunner;
   readonly deploymentRoot: string;
   readonly fetch?: typeof globalThis.fetch;
+  readonly sleep?: (milliseconds: number) => Promise<void>;
 }
+
+const readinessRetryDelays = [1_000, 2_000, 4_000, 8_000, 15_000] as const;
+
+const fetchAfterDnsPropagation = async (
+  fetchImplementation: typeof globalThis.fetch,
+  request: string,
+  init: RequestInit,
+  sleep: (milliseconds: number) => Promise<void>,
+): Promise<Response> => {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= readinessRetryDelays.length; attempt += 1) {
+    try {
+      return await fetchImplementation(request, init);
+    } catch (error) {
+      lastError = error;
+      const delay = readinessRetryDelays[attempt];
+      if (delay === undefined) break;
+      await sleep(delay);
+    }
+  }
+  throw lastError;
+};
 
 export const deployArtifactShare = async (
   input: DeployInput,
@@ -433,7 +456,14 @@ export const deployArtifactShare = async (
   }
 
   const fetchImplementation = dependencies.fetch ?? globalThis.fetch;
-  const response = await fetchImplementation(`${baseUrl}/health`, { redirect: "error" });
+  const sleep = dependencies.sleep ?? (async (milliseconds: number) =>
+    await new Promise<void>((resolveSleep) => setTimeout(resolveSleep, milliseconds)));
+  const response = await fetchAfterDnsPropagation(
+    fetchImplementation,
+    `${baseUrl}/health`,
+    { redirect: "error" },
+    sleep,
+  );
   const health = await response.clone().json().catch(() => null) as {
     readonly service?: string;
     readonly status?: string;
