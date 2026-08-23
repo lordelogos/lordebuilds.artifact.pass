@@ -218,7 +218,12 @@ const preparePackedCandidate = async (options: {
   }, null, 2)}\n`, { mode: 0o600 });
   const installed = await runCommand({
     command: "pnpm",
-    args: ["add", archivePath, "--ignore-scripts", "--offline", "--store-dir", storePath],
+    // This is candidate preparation, before either agent process starts. A fresh
+    // runner may have package contents from the workspace lockfile without the
+    // registry metadata pnpm needs to resolve dependencies declared by a tarball.
+    // Prefer the shared store, but allow pnpm to retrieve missing metadata just as
+    // a real clean installation would. Agent execution remains loopback-only.
+    args: ["add", archivePath, "--ignore-scripts", "--prefer-offline", "--store-dir", storePath],
     cwd: installRoot,
     env: environment,
     timeoutMilliseconds: 120_000,
