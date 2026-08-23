@@ -91379,6 +91379,13 @@ var readLocalBridgeSettingsSync = (path) => parseSettings(readFileSync(path, "ut
 var readCompatibleLocalBridgeSettingsSync = (environment = process.env, platform = process.platform) => {
   const artifactpassPath = defaultLocalConfigPath(environment, platform);
   const legacyPath = legacyLocalConfigPath(environment, platform);
+  if (environment.ARTIFACTPASS_CONFIG_PATH === void 0 && environment.ARTIFACT_SHARE_CONFIG_PATH !== void 0) {
+    return {
+      path: legacyPath,
+      source: "legacy",
+      settings: readLocalBridgeSettingsSync(legacyPath)
+    };
+  }
   const artifactpassExists = existsSync(artifactpassPath);
   const shouldReadLegacy = environment.ARTIFACTPASS_CONFIG_PATH === void 0 || environment.ARTIFACT_SHARE_CONFIG_PATH !== void 0;
   const legacyExists = shouldReadLegacy && artifactpassPath !== legacyPath && existsSync(legacyPath);
