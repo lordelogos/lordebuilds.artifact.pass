@@ -78,7 +78,7 @@ const help = `ArtifactPass setup
 Commands:
   artifactpass [--json]
   install [--base-url <url>] [--profile <name>] [--workspace-root <path>] [--open-development] [--no-host-install] [--json]
-  deploy --account-id <id> --zone-id <id> --hostname <host> --workers-subdomain <name> --pdf-key-id <id> --pdf-public-key <base64> (--allow-email <email> | --allow-domain <domain>) (--dry-run | --write-approval-manifest <path> | --approve-manifest <path>)
+  deploy --account-id <id> --zone-id <id> --hostname <host> [--service-name <name>] --workers-subdomain <name> --pdf-key-id <id> --pdf-public-key <base64> (--allow-email <email> | --allow-domain <domain>) (--dry-run | --write-approval-manifest <path> | --approve-manifest <path>)
   connect <base-url> [--profile <name>] [--workspace-root <path>] [--host codex|claude|both] [--no-host-install] [--marketplace <source>] [--open-development]
   profile list
   profile use <name>
@@ -146,6 +146,7 @@ const main = async (): Promise<void> => {
       ...values(args, "--allow-email").map((identityValue) => ({ kind: "email" as const, value: identityValue })),
       ...values(args, "--allow-domain").map((identityValue) => ({ kind: "domain" as const, value: identityValue })),
     ];
+    const serviceName = optionalValue(args, "--service-name");
     const result = await runDeployCommand({
       accountId: value(args, "--account-id"),
       zoneId: value(args, "--zone-id"),
@@ -155,6 +156,7 @@ const main = async (): Promise<void> => {
       workersSubdomain: value(args, "--workers-subdomain"),
       identities,
       dryRun,
+      ...(serviceName === undefined ? {} : { serviceName }),
       ...(writeApprovalManifest === undefined ? {} : { writeApprovalManifest: resolve(writeApprovalManifest) }),
       ...(approveManifest === undefined ? {} : { approveManifest: resolve(approveManifest) }),
     }, {

@@ -193,6 +193,41 @@ describe("Cloudflare deployment", () => {
     });
   });
 
+  it("binds an approval manifest to an explicitly isolated staging service", async () => {
+    const root = await deploymentRoot();
+    const manifestPath = resolve(root, "staging-approval.json");
+    const client = fakeClient();
+    const runner = vi.fn();
+    const result = await deployArtifactShare({
+      ...input,
+      hostname: "staging.example.com",
+      serviceName: "artifactpass-staging",
+      writeApprovalManifest: manifestPath,
+    }, {
+      client: client.client,
+      deploymentRoot: root,
+      runner,
+    });
+
+    expect(result.changed).toEqual([]);
+    expect(runner).not.toHaveBeenCalled();
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    expect(manifest).toMatchObject({
+      binding: {
+        input: {
+          hostname: "staging.example.com",
+          serviceName: "artifactpass-staging",
+        },
+        remote: {
+          database: null,
+          bucket: null,
+          worker: null,
+          application: null,
+        },
+      },
+    });
+  });
+
   it("aborts before mutation when an approved bundle changes", async () => {
     const root = await deploymentRoot();
     const manifestPath = resolve(root, "approval.json");
@@ -258,6 +293,7 @@ describe("Cloudflare deployment", () => {
   it("rejects missing identity, invalid IDs, and a hostname outside the zone", async () => {
     expect(() => deploymentPlan({ ...input, identities: [] })).toThrow("allowed identity");
     expect(() => deploymentPlan({ ...input, accountId: "wrong" })).toThrow("32 lowercase");
+    expect(() => deploymentPlan({ ...input, serviceName: "Invalid Service" })).toThrow("service name");
     const client = fakeClient();
     await expect(deployArtifactShare({ ...input, hostname: "artifacts.foreign.com" }, {
       client: client.client,

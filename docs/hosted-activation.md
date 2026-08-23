@@ -87,6 +87,8 @@ Run from the repository root.
 
    Use `--allow-domain <domain>` instead, or repeat either flag, when appropriate. Expected: seven planned actions, an empty changed-resource list, and no credentials or Cloudflare API calls.
 
+   For an isolated staging deployment, use `--hostname staging.artifactpass.com --service-name artifactpass-staging --pdf-key-id artifactpass-staging` in every preview, manifest, and approval command. The explicit service name keeps its Worker, D1 database, R2 bucket, and Access application separate from the compatibility-named production resources.
+
 4. Create an authenticated read-only, state-bound approval manifest. This performs API reads only:
 
    ```sh

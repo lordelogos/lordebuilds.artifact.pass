@@ -67,17 +67,21 @@ interface ApprovalManifest {
 
 const identifier = /^[a-f0-9]{32}$/u;
 const hostnamePattern = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/u;
+const serviceNamePattern = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u;
 
 export const deploymentPlan = (input: DeployInput): readonly string[] => {
   if (!identifier.test(input.accountId) || !identifier.test(input.zoneId)) {
     throw new Error("Cloudflare account and zone IDs must be 32 lowercase hexadecimal characters");
   }
   if (!hostnamePattern.test(input.hostname)) throw new Error("Choose a valid lowercase hostname");
+  if (input.serviceName !== undefined && !serviceNamePattern.test(input.serviceName)) {
+    throw new Error("Choose a valid lowercase Cloudflare service name");
+  }
   if (!/^[A-Za-z0-9._-]{1,64}$/u.test(input.pdfKeyId)) throw new Error("Choose a valid PDF signing key ID");
   if (!/^[A-Za-z0-9+/]{43}=$/u.test(input.pdfPublicKey)) {
     throw new Error("PDF public key must be one base64-encoded Ed25519 raw key");
   }
-  if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u.test(input.workersSubdomain)) {
+  if (!serviceNamePattern.test(input.workersSubdomain)) {
     throw new Error("Choose a valid Workers account subdomain");
   }
   if (input.identities.length === 0) throw new Error("At least one allowed identity is required");
