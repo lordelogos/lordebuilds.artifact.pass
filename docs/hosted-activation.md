@@ -141,7 +141,7 @@ After the live deploy succeeds:
 1. `curl --fail --silent https://<hostname>/health` returns service `lordebuilds.artifacts.share` with status `ok`.
 2. An anonymous request to `/upload` redirects to Access or returns 401/403.
 3. An anonymous `POST /api/artifacts` returns 404; there is no list endpoint.
-4. Cloudflare shows one Worker, D1 database, private R2 bucket, Access application/policy, Custom Domain, all six D1 migrations, and the R2 lifecycle under the canonical name.
+4. Cloudflare shows one Worker, D1 database, private R2 bucket, and Access application/policy under the requested service name, plus the requested Custom Domain, all six D1 migrations, and the R2 lifecycle. Production uses the canonical compatibility name; staging uses `artifactpass-staging`.
 5. Rerun the identical deployment command. It reuses resources and creates no duplicates.
 6. Connect one clean compatible agent using the shared MCP and Agent Skills package, then test Markdown, self-contained HTML, and PDF publish/read handoffs. Codex and Claude Code are representative examples, not separate implementations.
 7. Run the live browser gate from [operations](operations.md), then verify expiry denial and scheduled cleanup on the disposable deployment.

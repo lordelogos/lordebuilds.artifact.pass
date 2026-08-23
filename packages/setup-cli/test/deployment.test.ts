@@ -45,9 +45,13 @@ const fakeClient = (options: {
   existing?: boolean;
   forbidden?: boolean;
   failR2?: boolean;
+  hostname?: string;
   policyDecision?: string;
   remoteState?: { workerVersion: string; schemaVersion: string; lifecycleVersion: string };
+  serviceName?: string;
 } = {}) => {
+  const hostname = options.hostname ?? "artifacts.example.com";
+  const serviceName = options.serviceName ?? "lordebuilds-artifacts-share";
   const requests: { path: string; init: RequestInit }[] = [];
   const request = vi.fn(async (path: string, init: RequestInit = {}) => {
     requests.push({ path, init });
@@ -62,14 +66,14 @@ const fakeClient = (options: {
     }
     if (path.endsWith("/workers/subdomain")) return { subdomain: "artifact-share-test" };
     if (path.endsWith("/workers/scripts")) return options.existing ? [{
-      id: "lordebuilds-artifacts-share",
+      id: serviceName,
       modified_on: options.remoteState?.workerVersion ?? "worker-v1",
     }] : [];
     if (path === `/zones/${zoneId}`) return { name: "example.com", status: "active" };
-    if (path.includes("/d1/database?")) return options.existing ? [{ uuid: "db-id", name: "lordebuilds-artifacts-share" }] : [];
-    if (path.endsWith("/d1/database")) return { uuid: "db-id", name: "lordebuilds-artifacts-share" };
+    if (path.includes("/d1/database?")) return options.existing ? [{ uuid: "db-id", name: serviceName }] : [];
+    if (path.endsWith("/d1/database")) return { uuid: "db-id", name: serviceName };
     if (path.endsWith("/r2/buckets") && init.method !== "POST") {
-      return { buckets: options.existing ? [{ name: "lordebuilds-artifacts-share" }] : [] };
+      return { buckets: options.existing ? [{ name: serviceName }] : [] };
     }
     if (path.endsWith("/r2/buckets") && init.method === "POST" && options.failR2 === true) {
       throw new Error("R2 provisioning failed");
@@ -77,23 +81,23 @@ const fakeClient = (options: {
     if (path.includes("/d1/database/db-id/query")) return [{
       results: [{ name: "artifacts", type: "table", sql: options.remoteState?.schemaVersion ?? "schema-v1" }],
     }];
-    if (path.endsWith("/r2/buckets/lordebuilds-artifacts-share/lifecycle")) return {
+    if (path.endsWith(`/r2/buckets/${serviceName}/lifecycle`)) return {
       rules: [{ id: options.remoteState?.lifecycleVersion ?? "lifecycle-v1" }],
     };
     if (path.endsWith("/access/organizations")) return { auth_domain: "team.cloudflareaccess.com" };
     if (path.endsWith("/access/apps") && init.method !== "POST") {
       return options.existing ? [{
         id: "app-id",
-        name: "lordebuilds-artifacts-share",
+        name: serviceName,
         aud: "audience",
         destinations: [
-          { type: "public", uri: "artifacts.example.com/upload*" },
-          { type: "public", uri: "artifacts.example.com/connect/approve*" },
+          { type: "public", uri: `${hostname}/upload*` },
+          { type: "public", uri: `${hostname}/connect/approve*` },
         ],
       }] : [];
     }
     if (path.endsWith("/access/apps") && init.method === "POST") {
-      return { id: "app-id", name: "lordebuilds-artifacts-share", aud: "audience" };
+      return { id: "app-id", name: serviceName, aud: "audience" };
     }
     if (path.endsWith("/policies")) {
       return options.existing ? [{
@@ -104,7 +108,7 @@ const fakeClient = (options: {
       }] : [];
     }
     if (path.endsWith("/workers/domains")) {
-      return options.collision ? [{ hostname: "artifacts.example.com", service: "other" }] : [];
+      return options.collision ? [{ hostname, service: "other" }] : [];
     }
     return {};
   });
@@ -294,6 +298,8 @@ describe("Cloudflare deployment", () => {
     expect(() => deploymentPlan({ ...input, identities: [] })).toThrow("allowed identity");
     expect(() => deploymentPlan({ ...input, accountId: "wrong" })).toThrow("32 lowercase");
     expect(() => deploymentPlan({ ...input, serviceName: "Invalid Service" })).toThrow("service name");
+    expect(() => deploymentPlan({ ...input, serviceName: "a" })).toThrow("service name");
+    expect(() => deploymentPlan({ ...input, serviceName: "ab" })).toThrow("service name");
     const client = fakeClient();
     await expect(deployArtifactShare({ ...input, hostname: "artifacts.foreign.com" }, {
       client: client.client,
@@ -377,10 +383,60 @@ describe("Cloudflare deployment", () => {
     ]);
   });
 
+  it("provisions every staging resource under the explicit service name", async () => {
+    const serviceName = "artifactpass-staging";
+    const hostname = "staging.example.com";
+    const client = fakeClient({ hostname, serviceName });
+    let configuration: Record<string, unknown> | undefined;
+    const commands: string[][] = [];
+    const runner = vi.fn(async (_command: string, args: readonly string[]) => {
+      commands.push([...args]);
+      if (args[0] === "deploy") {
+        const configurationPath = args[args.indexOf("--config") + 1];
+        if (configurationPath !== undefined) {
+          configuration = JSON.parse(await readFile(configurationPath, "utf8")) as Record<string, unknown>;
+        }
+      }
+      return { stdout: "", stderr: "" };
+    });
+
+    await deployArtifactShare({ ...input, hostname, serviceName }, {
+      client: client.client,
+      deploymentRoot: await deploymentRoot(),
+      runner,
+      fetch: vi.fn(async (request) => String(request).endsWith("/health")
+        ? new Response(JSON.stringify({ service: "lordebuilds.artifacts.share", status: "ok" }))
+        : new Response(null, { status: 302 })),
+    });
+
+    const createDatabase = client.requests.find(({ path, init }) =>
+      path.endsWith("/d1/database") && init.method === "POST"
+    );
+    const createBucket = client.requests.find(({ path, init }) =>
+      path.endsWith("/r2/buckets") && init.method === "POST"
+    );
+    const createApplication = client.requests.find(({ path, init }) =>
+      path.endsWith("/access/apps") && init.method === "POST"
+    );
+    expect(JSON.parse(String(createDatabase?.init.body))).toEqual({ name: serviceName });
+    expect(JSON.parse(String(createBucket?.init.body))).toEqual({ name: serviceName });
+    expect(JSON.parse(String(createApplication?.init.body))).toMatchObject({ name: serviceName });
+    expect(commands).toEqual(expect.arrayContaining([
+      expect.arrayContaining(["d1", "migrations", "apply", serviceName]),
+      expect.arrayContaining(["r2", "bucket", "lifecycle", "set", serviceName]),
+    ]));
+    expect(configuration).toMatchObject({
+      name: serviceName,
+      d1_databases: [{ database_name: serviceName }],
+      r2_buckets: [{ bucket_name: serviceName }],
+      routes: [{ pattern: hostname, custom_domain: true }],
+    });
+  });
+
   it("retries a bounded transient DNS failure before verifying the deployed routes", async () => {
     const client = fakeClient({ existing: true });
     const runner = vi.fn(async () => ({ stdout: "", stderr: "" }));
-    const sleep = vi.fn(async () => undefined);
+    const sleep = vi.fn(async (_milliseconds: number) => undefined);
     const fetch = vi.fn()
       .mockRejectedValueOnce(new TypeError("fetch failed"))
       .mockResolvedValueOnce(new Response(JSON.stringify({
@@ -399,6 +455,67 @@ describe("Cloudflare deployment", () => {
 
     expect(sleep).toHaveBeenCalledTimes(1);
     expect(fetch).toHaveBeenCalledTimes(3);
+  });
+
+  it("retries transient HTTP readiness responses for health and Access", async () => {
+    const client = fakeClient({ existing: true });
+    const sleep = vi.fn(async (_milliseconds: number) => undefined);
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 503 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        service: "lordebuilds.artifacts.share",
+        status: "ok",
+      })))
+      .mockResolvedValueOnce(new Response(null, { status: 503 }))
+      .mockResolvedValueOnce(new Response(null, { status: 302 }));
+
+    await expect(deployArtifactShare(input, {
+      client: client.client,
+      deploymentRoot: await deploymentRoot(),
+      runner: vi.fn(async () => ({ stdout: "", stderr: "" })),
+      fetch,
+      sleep,
+    })).resolves.toMatchObject({ changed: ["Worker deployment"] });
+
+    expect(sleep).toHaveBeenCalledTimes(2);
+    expect(fetch).toHaveBeenCalledTimes(4);
+  });
+
+  it("bounds every readiness attempt and fails after exhausting retries", async () => {
+    const client = fakeClient({ existing: true });
+    const sleep = vi.fn(async (_milliseconds: number) => undefined);
+    const fetch = vi.fn(async (_request: string | URL | Request, init?: RequestInit) =>
+      await new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal;
+        if (signal === undefined || signal === null) {
+          reject(new Error("missing readiness timeout"));
+          return;
+        }
+        if (signal.aborted) {
+          reject(signal.reason);
+          return;
+        }
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      })
+    );
+
+    await expect(deployArtifactShare(input, {
+      client: client.client,
+      deploymentRoot: await deploymentRoot(),
+      runner: vi.fn(async () => ({ stdout: "", stderr: "" })),
+      fetch,
+      sleep,
+      readinessTimeoutMilliseconds: 1,
+    })).rejects.toThrow();
+
+    expect(fetch).toHaveBeenCalledTimes(6);
+    expect(sleep.mock.calls.map(([milliseconds]) => milliseconds)).toEqual([
+      1_000,
+      2_000,
+      4_000,
+      8_000,
+      15_000,
+    ]);
   });
 
   it("surfaces migration failure and never writes a provisioning token into command arguments", async () => {

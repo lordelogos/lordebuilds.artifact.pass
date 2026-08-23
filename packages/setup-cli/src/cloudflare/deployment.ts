@@ -67,7 +67,8 @@ interface ApprovalManifest {
 
 const identifier = /^[a-f0-9]{32}$/u;
 const hostnamePattern = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/u;
-const serviceNamePattern = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u;
+const workersSubdomainPattern = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u;
+const serviceNamePattern = /^(?=.{3,63}$)[a-z0-9](?:[a-z0-9-]*[a-z0-9])$/u;
 
 export const deploymentPlan = (input: DeployInput): readonly string[] => {
   if (!identifier.test(input.accountId) || !identifier.test(input.zoneId)) {
@@ -81,7 +82,7 @@ export const deploymentPlan = (input: DeployInput): readonly string[] => {
   if (!/^[A-Za-z0-9+/]{43}=$/u.test(input.pdfPublicKey)) {
     throw new Error("PDF public key must be one base64-encoded Ed25519 raw key");
   }
-  if (!serviceNamePattern.test(input.workersSubdomain)) {
+  if (!workersSubdomainPattern.test(input.workersSubdomain)) {
     throw new Error("Choose a valid Workers account subdomain");
   }
   if (input.identities.length === 0) throw new Error("At least one allowed identity is required");
@@ -231,26 +232,33 @@ export interface DeployDependencies {
   readonly deploymentRoot: string;
   readonly fetch?: typeof globalThis.fetch;
   readonly sleep?: (milliseconds: number) => Promise<void>;
+  readonly readinessTimeoutMilliseconds?: number;
 }
 
 const readinessRetryDelays = [1_000, 2_000, 4_000, 8_000, 15_000] as const;
 
-const fetchAfterDnsPropagation = async (
+const fetchAfterDeploymentPropagation = async (
   fetchImplementation: typeof globalThis.fetch,
   request: string,
   init: RequestInit,
   sleep: (milliseconds: number) => Promise<void>,
+  timeoutMilliseconds: number,
 ): Promise<Response> => {
   let lastError: unknown;
   for (let attempt = 0; attempt <= readinessRetryDelays.length; attempt += 1) {
     try {
-      return await fetchImplementation(request, init);
+      const response = await fetchImplementation(request, {
+        ...init,
+        signal: AbortSignal.timeout(timeoutMilliseconds),
+      });
+      if (response.status !== 404 && response.status !== 429 && response.status < 500) return response;
+      lastError = new Error(`Deployment route is not ready (${response.status})`);
     } catch (error) {
       lastError = error;
-      const delay = readinessRetryDelays[attempt];
-      if (delay === undefined) break;
-      await sleep(delay);
     }
+    const delay = readinessRetryDelays[attempt];
+    if (delay === undefined) break;
+    await sleep(delay);
   }
   throw lastError;
 };
@@ -458,11 +466,13 @@ export const deployArtifactShare = async (
   const fetchImplementation = dependencies.fetch ?? globalThis.fetch;
   const sleep = dependencies.sleep ?? (async (milliseconds: number) =>
     await new Promise<void>((resolveSleep) => setTimeout(resolveSleep, milliseconds)));
-  const response = await fetchAfterDnsPropagation(
+  const readinessTimeoutMilliseconds = dependencies.readinessTimeoutMilliseconds ?? 10_000;
+  const response = await fetchAfterDeploymentPropagation(
     fetchImplementation,
     `${baseUrl}/health`,
     { redirect: "error" },
     sleep,
+    readinessTimeoutMilliseconds,
   );
   const health = await response.clone().json().catch(() => null) as {
     readonly service?: string;
@@ -471,7 +481,13 @@ export const deployArtifactShare = async (
   if (!response.ok || health?.service !== "lordebuilds.artifacts.share" || health.status !== "ok") {
     throw new Error(`Deployment health check failed (${response.status})`);
   }
-  const protectedUpload = await fetchImplementation(`${baseUrl}/upload`, { redirect: "manual" });
+  const protectedUpload = await fetchAfterDeploymentPropagation(
+    fetchImplementation,
+    `${baseUrl}/upload`,
+    { redirect: "manual" },
+    sleep,
+    readinessTimeoutMilliseconds,
+  );
   if (![302, 303, 307, 401, 403].includes(protectedUpload.status)) {
     throw new Error(`Cloudflare Access did not protect the upload route (${protectedUpload.status})`);
   }
