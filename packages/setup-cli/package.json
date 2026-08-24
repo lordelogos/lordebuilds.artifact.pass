@@ -2,6 +2,10 @@
   "name": "artifactpass",
   "version": "0.1.0-rc.3",
   "description": "Install and connect ArtifactPass for compatible AI agent systems.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lordelogos/lordebuilds.artifact.pass.git"
+  },
   "type": "module",
   "bin": {
     "artifactpass": "dist/cli.mjs"
