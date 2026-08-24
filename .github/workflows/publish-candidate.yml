@@ -1,0 +1,52 @@
+name: Publish npm release candidate
+
+on:
+  push:
+    tags:
+      - "v*-rc.*"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Verify immutable candidate tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          package_version="$(node -p "require('./packages/setup-cli/package.json').version")"
+          root_version="$(node -p "require('./package.json').version")"
+          plugin_version="$(node -p "require('./plugins/artifactpass/plugin-metadata.json').version")"
+          test "$RELEASE_TAG" = "v$package_version"
+          test "$package_version" = "$root_version"
+          test "$package_version" = "$plugin_version"
+          case "$package_version" in
+            *-rc.*) ;;
+            *) echo "candidate publishing only accepts release-candidate versions" >&2; exit 1 ;;
+          esac
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.11.0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm release:check
+      - run: pnpm test:packed-install
+      - name: Build immutable registry tarball
+        run: |
+          mkdir -p "$RUNNER_TEMP/artifactpass-release"
+          pnpm --dir packages/setup-cli pack --pack-destination "$RUNNER_TEMP/artifactpass-release"
+          test "$(find "$RUNNER_TEMP/artifactpass-release" -maxdepth 1 -name '*.tgz' | wc -l | tr -d ' ')" = "1"
+      - name: Publish candidate through npm trusted publishing
+        run: |
+          package_archive="$(find "$RUNNER_TEMP/artifactpass-release" -maxdepth 1 -name '*.tgz' -print -quit)"
+          npm publish "$package_archive" --tag rc --access public
