@@ -342,6 +342,7 @@ export const runArtifactpassInstall = async (
       profileName,
       workspaceRoots: [workspaceRoot],
       marketplaceSource: input.marketplaceSource,
+      hostBridgePath: resolve(portable.rootDirectory, "plugin/dist/cli.mjs"),
       openDevelopment: input.openDevelopment === true,
       installKnownHostAdapters: input.installKnownHostAdapters !== false,
       ...(input.configPath === undefined ? {} : { configPath }),

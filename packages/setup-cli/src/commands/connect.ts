@@ -83,6 +83,7 @@ export interface ConnectInput {
   readonly hosts?: readonly AgentHost[];
   readonly installKnownHostAdapters?: boolean;
   readonly marketplaceSource: string;
+  readonly hostBridgePath?: string;
   readonly configPath?: string;
 }
 
@@ -185,7 +186,16 @@ export const connectHost = async (
     : undefined;
   const installAndVerify = async (): Promise<() => Promise<void>> => {
     const hostInstallation = installKnownHostAdapters && hosts.length > 0
-      ? await installPluginForHosts(hosts, input.marketplaceSource, runner)
+      ? await installPluginForHosts(hosts, input.marketplaceSource, {
+          configPath,
+          profileName,
+          bridgePath: resolve(
+            input.hostBridgePath ?? resolve(
+              input.marketplaceSource,
+              "plugins/artifactpass/dist/cli.mjs",
+            ),
+          ),
+        }, runner)
       : undefined;
     try {
       await dependencies.verifyConnection?.({
