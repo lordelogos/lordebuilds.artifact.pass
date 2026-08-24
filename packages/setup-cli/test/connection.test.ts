@@ -10,6 +10,12 @@ import { completeDeviceFlow } from "../src/device-flow";
 import { detectHosts, installPluginForHosts } from "../src/hosts";
 import type { ProcessRunner } from "../src/process";
 
+const hostBinding = {
+  configPath: "/private/config/artifactpass/config.json",
+  profileName: "staging-eval",
+  bridgePath: "/private/config/artifactpass/portable-integration/digest/plugin/dist/cli.mjs",
+} as const;
+
 const runnerFor = (available: readonly string[]): ProcessRunner => vi.fn(async (command, args) => {
   if (args[0] === "--version") {
     if (!available.includes(command)) throw new Error("missing");
@@ -129,12 +135,24 @@ describe("host connection", () => {
 
   it("installs the same marketplace plugin in both hosts", async () => {
     const runner = runnerFor(["codex", "claude"]);
-    await installPluginForHosts(["codex", "claude"], "/trusted/repository", runner);
+    await installPluginForHosts(["codex", "claude"], "/trusted/repository", hostBinding, runner);
     expect(runner).toHaveBeenCalledWith("codex", [
       "plugin", "add", "artifactpass@artifactpass", "--json",
     ]);
     expect(runner).toHaveBeenCalledWith("claude", [
       "plugin", "install", "artifactpass@artifactpass", "--scope", "user",
+    ]);
+    expect(runner).toHaveBeenCalledWith("codex", [
+      "mcp", "add", "artifactpass",
+      "--env", `ARTIFACTPASS_CONFIG_PATH=${hostBinding.configPath}`,
+      "--env", `ARTIFACTPASS_PROFILE=${hostBinding.profileName}`,
+      "--", process.execPath, hostBinding.bridgePath,
+    ]);
+    expect(runner).toHaveBeenCalledWith("claude", [
+      "mcp", "add", "--scope", "user", "artifactpass",
+      "-e", `ARTIFACTPASS_CONFIG_PATH=${hostBinding.configPath}`,
+      "-e", `ARTIFACTPASS_PROFILE=${hostBinding.profileName}`,
+      "--", process.execPath, hostBinding.bridgePath,
     ]);
   });
 
@@ -245,7 +263,7 @@ describe("host connection", () => {
       }
       return { stdout: "{}", stderr: "" };
     });
-    await installPluginForHosts(["codex", "claude"], "/trusted/repository", runner);
+    await installPluginForHosts(["codex", "claude"], "/trusted/repository", hostBinding, runner);
     expect(runner).toHaveBeenCalledWith("codex", [
       "plugin", "remove", "artifactpass@artifactpass",
     ]);
@@ -262,7 +280,7 @@ describe("host connection", () => {
 
   it("rejects malformed host CLI output before changing plugin state", async () => {
     const runner: ProcessRunner = vi.fn(async () => ({ stdout: "{}", stderr: "" }));
-    await expect(installPluginForHosts(["codex"], "/trusted/repository", runner))
+    await expect(installPluginForHosts(["codex"], "/trusted/repository", hostBinding, runner))
       .rejects.toThrow("unexpected marketplace list");
     expect(runner).toHaveBeenCalledTimes(1);
   });
@@ -294,10 +312,11 @@ describe("host connection", () => {
       return { stdout: "{}", stderr: "" };
     });
 
-    await expect(installPluginForHosts(["codex", "claude"], "/trusted/repository", runner))
+    await expect(installPluginForHosts(["codex", "claude"], "/trusted/repository", hostBinding, runner))
       .rejects.toThrow("injected Claude install failure");
 
     expect(codexInstallAttempts).toBe(2);
+    expect(runner).toHaveBeenCalledWith("codex", ["mcp", "remove", "artifactpass"]);
     expect(runner).toHaveBeenCalledWith("claude", [
       "plugin", "install", "artifactpass@artifactpass", "--scope", "local",
     ]);

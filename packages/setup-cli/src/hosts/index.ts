@@ -12,6 +12,12 @@ export interface HostInstallation {
   rollback(): Promise<void>;
 }
 
+export interface HostBridgeBinding {
+  readonly configPath: string;
+  readonly profileName: string;
+  readonly bridgePath: string;
+}
+
 const canRun = async (runner: ProcessRunner, command: string): Promise<boolean> => {
   try {
     await runner(command, ["--version"]);
@@ -70,6 +76,7 @@ const claudePluginEntries = (
 export const installPluginForHosts = async (
   hosts: readonly AgentHost[],
   marketplaceSource: string,
+  binding: HostBridgeBinding,
   runner: ProcessRunner = runProcess,
 ): Promise<HostInstallation> => {
   const rollbackActions: Array<() => Promise<void>> = [];
@@ -108,6 +115,15 @@ export const installPluginForHosts = async (
       if (hadPlugin) await runner("codex", ["plugin", "add", artifactpassPluginId, "--json"]);
     });
     await runner("codex", ["plugin", "add", artifactpassPluginId, "--json"]);
+    await runner("codex", [
+      "mcp", "add", "artifactpass",
+      "--env", `ARTIFACTPASS_CONFIG_PATH=${binding.configPath}`,
+      "--env", `ARTIFACTPASS_PROFILE=${binding.profileName}`,
+      "--", process.execPath, binding.bridgePath,
+    ]);
+    rollbackActions.push(async () => {
+      await runner("codex", ["mcp", "remove", "artifactpass"]);
+    });
     }
 
     if (hosts.includes("claude")) {
@@ -143,6 +159,15 @@ export const installPluginForHosts = async (
     await runner("claude", [
       "plugin", "install", artifactpassPluginId, "--scope", "user",
     ]);
+    await runner("claude", [
+      "mcp", "add", "--scope", "user", "artifactpass",
+      "-e", `ARTIFACTPASS_CONFIG_PATH=${binding.configPath}`,
+      "-e", `ARTIFACTPASS_PROFILE=${binding.profileName}`,
+      "--", process.execPath, binding.bridgePath,
+    ]);
+    rollbackActions.push(async () => {
+      await runner("claude", ["mcp", "remove", "artifactpass", "--scope", "user"]);
+    });
     }
     return { hosts, rollback };
   } catch (error) {

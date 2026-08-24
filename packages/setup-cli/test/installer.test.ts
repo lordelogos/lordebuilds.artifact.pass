@@ -102,6 +102,12 @@ describe("one-command ArtifactPass installer", () => {
       rollback: "not-required",
     });
     expect(receipt.portable_bundle).not.toHaveProperty("mcp_config");
+    expect(connect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        hostBridgePath: resolve(portable.rootDirectory, "plugin/dist/cli.mjs"),
+      }),
+      expect.anything(),
+    );
     expect(parseArtifactpassInstallReceipt(receipt)).toEqual(receipt);
     expect(() => parseArtifactpassInstallReceipt({ ...receipt, receipt_version: 1 })).toThrow(
       "ArtifactPass install receipt v2 is invalid",

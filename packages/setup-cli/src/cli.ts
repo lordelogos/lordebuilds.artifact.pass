@@ -178,11 +178,9 @@ const main = async (): Promise<void> => {
     }
     const hosts = host === "both" ? undefined : [host as AgentHost];
     const marketplaceSource = optionalValue(args, "--marketplace") ?? defaultMarketplace;
-    const portableIntegration = installKnownHostAdapters
-      ? undefined
-      : await installPortableIntegration({
-          sourceRoot: resolve(marketplaceSource, "plugins/artifactpass"),
-        });
+    const portableIntegration = await installPortableIntegration({
+      sourceRoot: resolve(marketplaceSource, "plugins/artifactpass"),
+    });
     const profileName = optionalValue(args, "--profile");
     const result = await connectHost({
       ...(profileName === undefined ? {} : { profileName }),
@@ -193,6 +191,9 @@ const main = async (): Promise<void> => {
       ...(hosts === undefined ? {} : { hosts }),
       installKnownHostAdapters,
       marketplaceSource,
+      ...(installKnownHostAdapters
+        ? { hostBridgePath: resolve(portableIntegration.rootDirectory, "plugin/dist/cli.mjs") }
+        : {}),
       openDevelopment: booleanFlag(args, "--open-development"),
     }, {
       deviceFlowDependencies: {
