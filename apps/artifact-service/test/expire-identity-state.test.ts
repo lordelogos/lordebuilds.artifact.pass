@@ -11,7 +11,7 @@ describe("expired identity cleanup", () => {
     await env.ARTIFACT_DB.exec(ARTIFACT_SCHEMA_SQL);
   });
 
-  it("removes expired device, token, and rate-limit state in bounded batches", async () => {
+  it("removes expired device, token, OAuth, session, and rate-limit state in bounded batches", async () => {
     await env.ARTIFACT_DB.batch([
       env.ARTIFACT_DB.prepare(
         `INSERT INTO device_authorizations
@@ -27,12 +27,23 @@ describe("expired identity cleanup", () => {
         `INSERT INTO request_rate_limits (bucket_key, window_start, request_count, expires_at)
          VALUES ('bucket', 1, 1, 2)`,
       ),
+      env.ARTIFACT_DB.prepare(
+        `INSERT INTO oauth_transactions (state_hash, provider, return_to, created_at, expires_at)
+         VALUES ('state-hash', 'google', '/upload', 1, 2)`,
+      ),
+      env.ARTIFACT_DB.prepare(
+        `INSERT INTO web_sessions
+          (token_hash, identity_subject, identity_email, created_at, expires_at, revoked_at)
+         VALUES ('session-hash', 'google:user', 'person@example.test', 1, 999999, 2)`,
+      ),
     ]);
 
     await expect(expireIdentityState(env.ARTIFACT_DB, 3, 10)).resolves.toEqual({
       deviceAuthorizations: 1,
       agentTokens: 1,
       rateLimits: 1,
+      oauthTransactions: 1,
+      webSessions: 1,
     });
   });
 });

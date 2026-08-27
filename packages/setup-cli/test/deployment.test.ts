@@ -188,7 +188,7 @@ describe("Cloudflare deployment", () => {
     expect(runner).not.toHaveBeenCalled();
     const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
     expect(manifest).toMatchObject({
-      version: 1,
+      version: 2,
       binding: {
         input: { hostname: "artifacts.example.com", pdfKeyId: "test-key" },
         bundleSha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
@@ -292,6 +292,243 @@ describe("Cloudflare deployment", () => {
       path.endsWith("/policies/policy-id") && init.method === "PUT"
     );
     expect(JSON.parse(String(update?.init.body))).toMatchObject({ decision: "allow" });
+  });
+
+  it("deploys public OAuth before removing the matching legacy Access gate", async () => {
+    const client = fakeClient({ existing: true });
+    const runnerCalls: Array<{
+      readonly args: readonly string[];
+      readonly input?: string;
+    }> = [];
+    let deploymentConfiguration = "";
+    const runner = vi.fn(async (_command: string, args: readonly string[], options = {}) => {
+      runnerCalls.push({ args, ...(options.input === undefined ? {} : { input: options.input }) });
+      if (args[0] === "deploy") {
+        const configurationPath = args[args.indexOf("--config") + 1];
+        deploymentConfiguration = await readFile(configurationPath ?? "", "utf8");
+      }
+      return { stdout: "", stderr: "" };
+    });
+    const fetch = vi.fn(async (request: string | URL | Request) => {
+      const url = new URL(String(request));
+      if (url.pathname === "/health") {
+        return Response.json({
+          service: "lordebuilds.artifacts.share",
+          status: "ok",
+          human_auth_mode: "artifactpass",
+          authentication_configured: true,
+        });
+      }
+      if (url.pathname === "/auth/sign-in") {
+        return new Response("Continue with Google and Continue with GitHub");
+      }
+      if (url.pathname === "/auth/login/google") {
+        return new Response(null, { status: 302, headers: { location: "https://accounts.google.com/o/oauth2/v2/auth" } });
+      }
+      if (url.pathname === "/auth/login/github") {
+        return new Response(null, { status: 302, headers: { location: "https://github.com/login/oauth/authorize" } });
+      }
+      if (url.pathname === "/upload") {
+        return new Response(null, {
+          status: 302,
+          headers: { location: "https://artifacts.example.com/auth/sign-in?return_to=%2Fupload" },
+        });
+      }
+      throw new Error(`Unexpected public deployment request: ${url}`);
+    });
+    const result = await deployArtifactShare({
+      ...input,
+      identities: [],
+      publicAuth: {
+        googleClientId: "google-client-id",
+        googleClientSecret: "google-client-secret",
+        githubClientId: "github-client-id",
+        githubClientSecret: "github-client-secret",
+      },
+    }, {
+      client: client.client,
+      deploymentRoot: await deploymentRoot(),
+      runner,
+      fetch,
+    });
+
+    expect(result.changed).toEqual(["Worker deployment", "Access application removal"]);
+    expect(runnerCalls.map(({ args }) => args[0])).toEqual([
+      "d1", "r2", "secret", "deploy",
+    ]);
+    expect(JSON.parse(runnerCalls[2]?.input ?? "{}")).toEqual({
+      GOOGLE_OAUTH_CLIENT_SECRET: "google-client-secret",
+      GITHUB_OAUTH_CLIENT_SECRET: "github-client-secret",
+    });
+    expect(deploymentConfiguration).toContain('"HUMAN_AUTH_MODE":"artifactpass"');
+    expect(deploymentConfiguration).not.toContain("google-client-secret");
+    expect(deploymentConfiguration).not.toContain("github-client-secret");
+    expect(client.requests).toContainEqual(expect.objectContaining({
+      path: `/accounts/${accountId}/access/apps/app-id`,
+      init: expect.objectContaining({ method: "DELETE" }),
+    }));
+  });
+
+  it("restores the legacy Access gate when post-removal upload verification fails", async () => {
+    const client = fakeClient({ existing: true });
+    let uploadRequests = 0;
+    const deployedConfigurations: string[] = [];
+    const runner = vi.fn(async (_command: string, args: readonly string[]) => {
+      if (args[0] === "deploy") {
+        const configurationPath = args[args.indexOf("--config") + 1];
+        deployedConfigurations.push(await readFile(configurationPath ?? "", "utf8"));
+      }
+      return { stdout: "", stderr: "" };
+    });
+    const fetch = vi.fn(async (request: string | URL | Request) => {
+      const url = new URL(String(request));
+      if (url.pathname === "/health") {
+        return Response.json({
+          service: "lordebuilds.artifacts.share",
+          status: "ok",
+          human_auth_mode: "artifactpass",
+          authentication_configured: true,
+        });
+      }
+      if (url.pathname === "/auth/sign-in") return new Response("Continue with Google");
+      if (url.pathname === "/auth/login/google") {
+        return new Response(null, { status: 302, headers: { location: "https://accounts.google.com/o/oauth2/v2/auth" } });
+      }
+      if (url.pathname === "/auth/login/github") {
+        return new Response(null, { status: 302, headers: { location: "https://github.com/login/oauth/authorize" } });
+      }
+      if (url.pathname === "/upload") {
+        uploadRequests += 1;
+        return uploadRequests === 1
+          ? new Response("unprotected")
+          : new Response(null, { status: 302 });
+      }
+      throw new Error(`Unexpected public deployment request: ${url}`);
+    });
+
+    await expect(deployArtifactShare({
+      ...input,
+      identities: [],
+      publicAuth: {
+        googleClientId: "google-client-id",
+        googleClientSecret: "google-client-secret",
+        githubClientId: "github-client-id",
+        githubClientSecret: "github-client-secret",
+      },
+    }, {
+      client: client.client,
+      deploymentRoot: await deploymentRoot(),
+      runner,
+      fetch,
+      sleep: vi.fn(async (_milliseconds: number) => undefined),
+    })).rejects.toThrow("did not protect the upload route");
+
+    expect(client.requests).toContainEqual(expect.objectContaining({
+      path: `/accounts/${accountId}/access/apps/app-id`,
+      init: expect.objectContaining({ method: "DELETE" }),
+    }));
+    expect(client.requests).toContainEqual(expect.objectContaining({
+      path: `/accounts/${accountId}/access/apps`,
+      init: expect.objectContaining({ method: "POST" }),
+    }));
+    expect(client.requests).toContainEqual(expect.objectContaining({
+      path: `/accounts/${accountId}/access/apps/app-id/policies`,
+      init: expect.objectContaining({ method: "POST" }),
+    }));
+    expect(deployedConfigurations).toHaveLength(2);
+    expect(deployedConfigurations[0]).toContain('"HUMAN_AUTH_MODE":"artifactpass"');
+    expect(deployedConfigurations[1]).toContain('"HUMAN_AUTH_MODE":"cloudflare-access"');
+    expect(deployedConfigurations[1]).toContain('"ACCESS_AUD":"audience"');
+  });
+
+  it("restores the legacy Access gate for a cross-origin upload redirect", async () => {
+    const client = fakeClient({ existing: true });
+    let uploadRequests = 0;
+    const fetch = vi.fn(async (request: string | URL | Request) => {
+      const url = new URL(String(request));
+      if (url.pathname === "/health") {
+        return Response.json({
+          service: "lordebuilds.artifacts.share",
+          status: "ok",
+          human_auth_mode: "artifactpass",
+          authentication_configured: true,
+        });
+      }
+      if (url.pathname === "/auth/sign-in") return new Response("Continue with Google");
+      if (url.pathname === "/auth/login/google") {
+        return new Response(null, { status: 302, headers: { location: "https://accounts.google.com/o/oauth2/v2/auth" } });
+      }
+      if (url.pathname === "/auth/login/github") {
+        return new Response(null, { status: 302, headers: { location: "https://github.com/login/oauth/authorize" } });
+      }
+      if (url.pathname === "/upload") {
+        uploadRequests += 1;
+        if (uploadRequests > 1) return new Response(null, { status: 302 });
+        return new Response(null, {
+          status: 302,
+          headers: { location: "https://attacker.example/auth/sign-in?return_to=%2Fupload" },
+        });
+      }
+      throw new Error(`Unexpected public deployment request: ${url}`);
+    });
+
+    await expect(deployArtifactShare({
+      ...input,
+      identities: [],
+      publicAuth: {
+        googleClientId: "google-client-id",
+        googleClientSecret: "google-client-secret",
+        githubClientId: "github-client-id",
+        githubClientSecret: "github-client-secret",
+      },
+    }, {
+      client: client.client,
+      deploymentRoot: await deploymentRoot(),
+      runner: vi.fn().mockResolvedValue({ stdout: "", stderr: "" }),
+      fetch,
+      sleep: vi.fn(async (_milliseconds: number) => undefined),
+    })).rejects.toThrow("did not protect the upload route");
+
+    expect(client.requests).toContainEqual(expect.objectContaining({
+      path: `/accounts/${accountId}/access/apps`,
+      init: expect.objectContaining({ method: "POST" }),
+    }));
+  });
+
+  it("binds public OAuth secrets by hash without writing them to the approval manifest", async () => {
+    const root = await deploymentRoot();
+    const manifestPath = resolve(root, "public-approval.json");
+    await deployArtifactShare({
+      ...input,
+      identities: [],
+      publicAuth: {
+        googleClientId: "google-client-id",
+        googleClientSecret: "google-client-secret",
+        githubClientId: "github-client-id",
+        githubClientSecret: "github-client-secret",
+      },
+      writeApprovalManifest: manifestPath,
+    }, {
+      client: fakeClient({ existing: true }).client,
+      deploymentRoot: root,
+    });
+
+    const manifestSource = await readFile(manifestPath, "utf8");
+    const manifest = JSON.parse(manifestSource);
+    expect(manifest).toMatchObject({
+      version: 2,
+      binding: {
+        input: {
+          authMode: "artifactpass",
+          googleClientId: "google-client-id",
+          googleClientSecretSha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
+          githubClientId: "github-client-id",
+          githubClientSecretSha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
+        },
+      },
+    });
+    expect(manifestSource).not.toContain("google-client-secret");
+    expect(manifestSource).not.toContain("github-client-secret");
   });
 
   it("rejects missing identity, invalid IDs, and a hostname outside the zone", async () => {
@@ -479,6 +716,63 @@ describe("Cloudflare deployment", () => {
 
     expect(sleep).toHaveBeenCalledTimes(2);
     expect(fetch).toHaveBeenCalledTimes(4);
+  });
+
+  it("waits for the new public-auth Worker health body after deployment propagation", async () => {
+    const client = fakeClient({ existing: true });
+    const sleep = vi.fn(async (_milliseconds: number) => undefined);
+    const staleHealth = {
+      service: "lordebuilds.artifacts.share",
+      status: "ok",
+      human_auth_mode: "cloudflare-access",
+      authentication_configured: true,
+    };
+    const readyHealth = {
+      service: "lordebuilds.artifacts.share",
+      status: "ok",
+      human_auth_mode: "artifactpass",
+      authentication_configured: true,
+    };
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(Response.json(staleHealth))
+      .mockResolvedValueOnce(Response.json(readyHealth))
+      .mockResolvedValueOnce(new Response("Continue with Google"))
+      .mockResolvedValueOnce(new Response(null, {
+        status: 302,
+        headers: { location: "https://accounts.google.com/o/oauth2/v2/auth" },
+      }))
+      .mockResolvedValueOnce(new Response(null, {
+        status: 302,
+        headers: { location: "https://github.com/login/oauth/authorize" },
+      }))
+      .mockResolvedValueOnce(new Response(null, {
+        status: 302,
+        headers: { location: "https://team.cloudflareaccess.com/cdn-cgi/access/login/artifacts.example.com" },
+      }))
+      .mockResolvedValueOnce(new Response(null, {
+        status: 302,
+        headers: { location: "/auth/sign-in?return_to=%2Fupload" },
+      }));
+
+    await expect(deployArtifactShare({
+      ...input,
+      identities: [],
+      publicAuth: {
+        googleClientId: "google-client-id",
+        googleClientSecret: "google-client-secret",
+        githubClientId: "github-client-id",
+        githubClientSecret: "github-client-secret",
+      },
+    }, {
+      client: client.client,
+      deploymentRoot: await deploymentRoot(),
+      runner: vi.fn(async () => ({ stdout: "", stderr: "" })),
+      fetch,
+      sleep,
+    })).resolves.toMatchObject({ changed: ["Worker deployment", "Access application removal"] });
+
+    expect(sleep).toHaveBeenCalledTimes(2);
+    expect(fetch).toHaveBeenCalledTimes(7);
   });
 
   it("bounds every readiness attempt and fails after exhausting retries", async () => {

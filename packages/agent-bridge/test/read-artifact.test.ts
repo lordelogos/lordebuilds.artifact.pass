@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
 
+import { PROTOCOL_MAX_SOURCE_CHUNK_BYTES } from "artifact-protocol";
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 
+import { readArtifactInputSchema } from "../src/tool-contract";
 import { readArtifact } from "../src/tools/read-artifact";
 
 const artifactId = "018f1f52-cbf1-7a5e-b66e-9ac829614b53";
@@ -48,6 +51,17 @@ const pdfManifest = (extraction: Record<string, unknown>) => ({
 });
 
 describe("read_artifact", () => {
+  it("advertises and rejects source chunks above the protocol limit", () => {
+    const maximumBytes = PROTOCOL_MAX_SOURCE_CHUNK_BYTES;
+    const schema = z.toJSONSchema(readArtifactInputSchema);
+
+    expect(schema.properties?.max_bytes).toMatchObject({ maximum: maximumBytes });
+    expect(readArtifactInputSchema.safeParse({
+      share_url: shareUrl,
+      max_bytes: maximumBytes + 1,
+    }).success).toBe(false);
+  });
+
   it("reads from the configured HTTP origin in open development mode", async () => {
     const localShareUrl = `http://192.168.1.20:8787/a/${token}`;
     const source = new TextEncoder().encode("# Local network artifact");

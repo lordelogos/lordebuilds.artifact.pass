@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
+import { bindAgentCredential } from "agent-bridge";
 
 import { connectHost } from "../src/commands/connect";
 import { disconnectHost, selectDisconnectProfile } from "../src/commands/disconnect";
@@ -117,6 +118,7 @@ describe("host connection", () => {
         },
         production: {
           base_url: "https://artifactpass.com/",
+          credential_binding: "origin",
           credential_namespace: "artifactpass",
           workspace_roots: [root],
           pdf_key_id: "artifactpass-primary",
@@ -124,7 +126,10 @@ describe("host connection", () => {
       },
     });
     expect(localStore.get).not.toHaveBeenCalled();
-    expect(productionStore.set).toHaveBeenCalledWith(`as_${"p".repeat(43)}`);
+    expect(productionStore.set).toHaveBeenCalledWith(bindAgentCredential(
+      "https://artifactpass.com",
+      `as_${"p".repeat(43)}`,
+    ));
   });
 
   it("detects Claude-only, Codex-only, and both-host machines", async () => {
@@ -450,7 +455,7 @@ describe("host connection", () => {
       },
     });
     expect(result.hosts).toEqual(["claude"]);
-    expect(store.set).toHaveBeenCalledWith(token);
+    expect(store.set).toHaveBeenCalledWith(bindAgentCredential("https://artifacts.example.test", token));
     const persisted = await readFile(configPath, "utf8");
     expect(persisted).toContain("https://artifacts.example.test/");
     expect(persisted).toContain('"pdf_key_id": "artifactpass-primary"');
@@ -510,8 +515,60 @@ describe("host connection", () => {
       expiresIn: 3600,
     });
     expect(deviceFlow).not.toHaveBeenCalled();
-    expect(store.set).not.toHaveBeenCalled();
+    expect(store.set).toHaveBeenCalledWith(bindAgentCredential("https://artifactpass.com", token));
     expect(store.delete).not.toHaveBeenCalled();
+  });
+
+  it("never sends an existing token to a newly selected deployment", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifactpass-retarget-connection-test-"));
+    const configPath = resolve(root, "config.json");
+    await writeFile(configPath, JSON.stringify({
+      version: 2,
+      active_profile: "production",
+      profiles: {
+        production: {
+          base_url: "https://artifactpass.com/",
+          workspace_roots: [root],
+          credential_namespace: "artifactpass",
+        },
+      },
+    }));
+    const previousToken = `as_${"o".repeat(43)}`;
+    const nextToken = `as_${"n".repeat(43)}`;
+    const store = {
+      get: vi.fn().mockResolvedValue(previousToken),
+      set: vi.fn(),
+      delete: vi.fn(),
+    };
+    const fetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : input.toString());
+      if (url.pathname === "/health") {
+        return new Response(JSON.stringify({ service: "lordebuilds.artifacts.share", status: "ok" }));
+      }
+      if (url.origin === "https://artifactpass.com" && init?.method === "DELETE") {
+        return new Response(null, { status: 204 });
+      }
+      throw new Error(`Unexpected request: ${url.toString()}`);
+    });
+
+    await connectHost({
+      baseUrl: "https://artifacts.company.example",
+      workspaceRoots: [root],
+      marketplaceSource: "/trusted/repository",
+      configPath,
+      installKnownHostAdapters: false,
+    }, {
+      credentialStore: store,
+      deviceFlow: vi.fn(async () => ({ accessToken: nextToken, expiresIn: 3600 })),
+      deviceFlowDependencies: { openBrowser: async () => undefined, fetch },
+    });
+
+    expect(fetch.mock.calls.some(([input, init]) => {
+      const url = new URL(input instanceof Request ? input.url : input.toString());
+      return url.origin === "https://artifacts.company.example" &&
+        new Headers(init?.headers).get("authorization") === `Bearer ${previousToken}`;
+    })).toBe(false);
+    expect(store.set).toHaveBeenCalledWith(bindAgentCredential("https://artifacts.company.example", nextToken));
   });
 
   it("connects an open development origin without resolving or storing a token", async () => {
@@ -710,7 +767,7 @@ describe("host connection", () => {
       deviceFlowDependencies: { openBrowser: async () => undefined, fetch },
     })).resolves.toMatchObject({ expiresIn: 3600 });
 
-    expect(store.set).toHaveBeenCalledWith(nextToken);
+    expect(store.set).toHaveBeenCalledWith(bindAgentCredential("https://artifacts.example.test", nextToken));
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(JSON.parse(await readFile(configPath, "utf8"))).not.toHaveProperty("open_development");
   });
@@ -813,7 +870,7 @@ describe("host connection", () => {
       deviceFlowDependencies: { openBrowser: async () => undefined, fetch },
     })).rejects.toThrow("MCP smoke failed");
 
-    expect(store.set).toHaveBeenCalledWith(token);
+    expect(store.set).toHaveBeenCalledWith(bindAgentCredential("https://artifactpass.com", token));
     expect(store.delete).toHaveBeenCalledOnce();
     await expect(readFile(configPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
     expect(runner).toHaveBeenCalledWith("codex", [

@@ -1,8 +1,8 @@
 # Agent setup
 
-An administrator deploys one service. Each developer connects an AI agent through the Access-protected device flow. ArtifactPass's baseline integration is one MCP server plus Agent Skills; ecosystem plugins only register those same files.
+Public ArtifactPass is already deployed at `artifactpass.com`. Its baseline integration is one MCP server plus Agent Skills; ecosystem plugins only register those same files.
 
-## Install and connect
+## Install
 
 From the workspace the agent may share, run:
 
@@ -10,7 +10,17 @@ From the workspace the agent may share, run:
 pnpm dlx artifactpass
 ```
 
-This is the default production path for `https://artifactpass.com`. It installs or repairs the portable bundle, registers every detected supported host, reuses a valid scoped credential, opens browser approval only when required, negotiates both MCP tools, verifies both skills, and writes a private install receipt.
+This installs or repairs the portable bundle, registers every detected supported host, negotiates both MCP tools, verifies both skills, and writes a private install receipt. It does not open a browser or authenticate.
+
+## Connect
+
+When the workspace needs permission to publish, run:
+
+```sh
+pnpm dlx artifactpass connect
+```
+
+ArtifactPass opens the public approval page. Sign in with Google or GitHub, confirm the displayed code, and approve it. The terminal never asks for a Google, GitHub, or Cloudflare password and never receives the provider credential.
 
 For a custom deployment or explicit workspace set, use:
 
@@ -21,9 +31,9 @@ pnpm dlx artifactpass connect https://artifacts.example.com \
   --workspace-root /absolute/path/to/workspace-b
 ```
 
-When a known installer is available, use `--host codex` or `--host claude` to install one adapter only; the default detects both. These are convenience adapters, not separate implementations. During browser approval, confirm the deployment hostname and Access identity. The terminal never asks you to paste a token.
+When a known installer is available, use `--host codex` or `--host claude` to install one adapter only; the default detects both. These are convenience adapters, not separate implementations. During browser approval, confirm the deployment hostname and the code from your terminal. The terminal never asks you to paste a token.
 
-Connection installs or refreshes `artifactpass@artifactpass`, saves the scoped token in macOS Keychain or Linux Secret Service, and writes a mode-0600 config file at `${XDG_CONFIG_HOME:-~/.config}/artifactpass/config.json`. Tokens and publication journals are isolated by profile. A migrated v1 profile keeps its legacy config, credential, and journal state available until restart persistence is proven, so in-flight retries and an older bridge process remain safe. Set `ARTIFACTPASS_CONFIG_PATH` to choose another non-secret config path. Legacy `ARTIFACT_SHARE_*` variables remain read-compatible during migration; new state is written only under ArtifactPass names.
+Connection saves the scoped token in macOS Keychain or Linux Secret Service and writes a mode-0600 config file at `${XDG_CONFIG_HOME:-~/.config}/artifactpass/config.json`. Tokens and publication journals are isolated by profile. A migrated v1 profile keeps its legacy config, credential, and journal state available until restart persistence is proven, so in-flight retries and an older bridge process remain safe. Set `ARTIFACTPASS_CONFIG_PATH` to choose another non-secret config path. Legacy `ARTIFACT_SHARE_*` variables remain read-compatible during migration; new state is written only under ArtifactPass names.
 
 Local and production connections coexist:
 
@@ -31,7 +41,7 @@ Local and production connections coexist:
 pnpm dlx artifactpass connect http://127.0.0.1:8787 \
   --profile local --open-development \
   --workspace-root /absolute/path/to/workspace
-pnpm dlx artifactpass connect https://artifactpass.com \
+pnpm dlx artifactpass connect \
   --profile production \
   --workspace-root /absolute/path/to/workspace
 pnpm dlx artifactpass profile list

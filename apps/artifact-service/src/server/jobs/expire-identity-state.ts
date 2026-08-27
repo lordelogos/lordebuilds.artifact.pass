@@ -2,11 +2,13 @@ export interface ExpireIdentityStateResult {
   readonly deviceAuthorizations: number;
   readonly agentTokens: number;
   readonly rateLimits: number;
+  readonly oauthTransactions: number;
+  readonly webSessions: number;
 }
 
 const deleteBatch = async (
   database: D1Database,
-  table: "device_authorizations" | "agent_tokens" | "request_rate_limits",
+  table: "device_authorizations" | "agent_tokens" | "request_rate_limits" | "oauth_transactions" | "web_sessions",
   predicate: string,
   now: number,
   limit: number,
@@ -32,4 +34,12 @@ export const expireIdentityState = async (
     limit,
   ),
   rateLimits: await deleteBatch(database, "request_rate_limits", "expires_at <= ?", now, limit),
+  oauthTransactions: await deleteBatch(database, "oauth_transactions", "expires_at <= ?", now, limit),
+  webSessions: await deleteBatch(
+    database,
+    "web_sessions",
+    "expires_at <= ? OR revoked_at IS NOT NULL",
+    now,
+    limit,
+  ),
 });

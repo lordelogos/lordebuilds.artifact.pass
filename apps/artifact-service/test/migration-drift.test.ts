@@ -10,6 +10,7 @@ import migration3 from "../migrations/0003-request-rate-limits.sql?raw";
 import migration4 from "../migrations/0004-device-token-replay.sql?raw";
 import migration5 from "../migrations/0005-publication-idempotency.sql?raw";
 import migration6 from "../migrations/0006-pdf-provenance.sql?raw";
+import migration7 from "../migrations/0007-public-auth.sql?raw";
 
 const migrations = [migration1, migration2, migration3, migration4, migration5] as const;
 
@@ -26,7 +27,7 @@ describe("deployment migrations", () => {
       "byte_size, sha256, share_token_hash, created_at, expires_at, extraction_status) " +
       "VALUES (?, 'active', ?, ?, ?, 'application/pdf', 1, ?, ?, 1, 2, 'best_effort')",
     ).bind("legacy-pdf", "objects/legacy", "derived/legacy", "legacy.pdf", "a".repeat(64), "b".repeat(64)).run();
-    for (const statement of migration6.split(";").map((candidate) => candidate.trim()).filter(Boolean)) {
+    for (const statement of `${migration6}\n${migration7}`.split(";").map((candidate) => candidate.trim()).filter(Boolean)) {
       await env.ARTIFACT_DB.prepare(statement).run();
     }
 
@@ -38,6 +39,8 @@ describe("deployment migrations", () => {
       "artifacts",
       "device_authorizations",
       "request_rate_limits",
+      "oauth_transactions",
+      "web_sessions",
     ]));
 
     const deviceColumns = await env.ARTIFACT_DB.prepare(
@@ -75,6 +78,10 @@ describe("deployment migrations", () => {
     expect(publicationIndex?.sql).toContain(
       "WHERE publisher_id IS NOT NULL AND publication_attempt IS NOT NULL",
     );
+    const revokedSessionIndex = await env.ARTIFACT_DB.prepare(
+      "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?",
+    ).bind("web_sessions_revoked_at_idx").first<{ readonly sql: string }>();
+    expect(revokedSessionIndex?.sql).toContain("WHERE revoked_at IS NOT NULL");
     expect(
       getTableConfig(artifacts).indexes.find(
         (candidate) => candidate.config.name === "artifacts_publisher_attempt_unique",

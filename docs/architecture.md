@@ -1,9 +1,9 @@
 # Architecture
 
-ArtifactPass is a customer-owned Cloudflare Worker plus a local agent bridge. There is no hosted control plane. The same Worker application runs locally through Wrangler and in production on Cloudflare.
+ArtifactPass v1 is a public Cloudflare Worker at `artifactpass.com` plus a local agent bridge. The same Worker application runs locally through Wrangler and in production on Cloudflare. Organization-owned deployments are planned separately and do not change the portable MCP or Agent Skills contract.
 
 ```text
-authorized human ──Access──> /upload, /connect/approve
+authorized human ──Google/GitHub session──> /upload, /connect/approve
                                 │
 local AI agent ────agent token─┤ Worker ──> D1 metadata
                                 │        └─> private R2 exact bytes
@@ -14,7 +14,7 @@ person or agent ─share token──> /a/<opaque-token>/*
 
 | Component | Responsibility |
 | --- | --- |
-| `apps/artifact-service` | Worker routes, React upload/viewer assets, D1 metadata, R2 objects, Access and agent authorization, expiry cleanup |
+| `apps/artifact-service` | Worker routes, React upload/viewer assets, D1 metadata, R2 objects, human sessions and agent authorization, expiry cleanup |
 | `packages/artifact-protocol` | Versioned manifests, limits, errors, source chunk contract |
 | `packages/representation-pipeline` | Browser and Node PDF extraction with truthful quality metadata |
 | `packages/agent-bridge` | MCP tools, named local/production profiles, approved-root file reads, exact upload/read, per-profile keychain credential resolution, redacted logging |
@@ -30,7 +30,7 @@ An uploader sends multipart source bytes and an expiry choice. D1 records hashes
 | Environment | Runtime | D1 | R2 | Authentication |
 | --- | --- | --- | --- | --- |
 | `local` | Wrangler/workerd at `127.0.0.1:8787` | Local SQLite-compatible D1 state under `apps/artifact-service/.wrangler/demo-state` | Local R2 object state under `apps/artifact-service/.wrangler/demo-state` | Explicit open-development mode; no production token |
-| `production` | Cloudflare Worker Custom Domain at `artifactpass.com` | Managed Cloudflare D1 database `lordebuilds-artifacts-share` | Private managed Cloudflare R2 bucket `lordebuilds-artifacts-share` | Cloudflare Access for people; scoped per-profile agent token for MCP |
+| `production` | Cloudflare Worker Custom Domain at `artifactpass.com` | Managed Cloudflare D1 database `lordebuilds-artifacts-share` | Private managed Cloudflare R2 bucket `lordebuilds-artifacts-share` | ArtifactPass Google/GitHub session for people; scoped per-profile agent token for MCP |
 
 Local storage never reads or writes production D1 or R2. Deployment sends the built Worker to Cloudflare and binds the managed production D1/R2 resources; it does not replace the local environment.
 
@@ -44,4 +44,6 @@ At `expires_at`, every public representation returns the same not-found response
 
 ## Ownership boundary
 
-The deploying organization owns the hostname, Worker, D1 database, R2 bucket, Access policy, logs, and Cloudflare bill. The local machine owns its agent integration, non-secret workspace allowlist, and scoped agent token. The open-source project does not receive artifact content or credentials.
+Lorde Builds owns the public hostname, Worker, D1 database, private R2 bucket, OAuth applications, logs, and Cloudflare bill. The local machine owns its agent integration, non-secret workspace allowlist, and scoped agent token. Google and GitHub authenticate the human in the browser; the local CLI receives only an ArtifactPass agent token after approval.
+
+The planned organization-owned mode moves the deployment resources and identity configuration to the customer while retaining the same MCP tools, skills, share-link protocol, and browser flow. That admin experience is outside public v1.

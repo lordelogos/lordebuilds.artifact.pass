@@ -48,6 +48,7 @@ export interface BridgeConfiguration {
   readonly headless: boolean;
   readonly environmentStore: CredentialStore;
   readonly osStore?: CredentialStore;
+  readonly requireOriginBoundCredential?: boolean;
   readonly fetch?: typeof globalThis.fetch;
   readonly logger?: RedactingLogger;
   readonly publicationJournal?: PublicationJournal;
@@ -118,6 +119,8 @@ export const createBridgeServer = (configuration: BridgeConfiguration): McpServe
           headless: configuration.headless,
           environmentStore: configuration.environmentStore,
           ...(configuration.osStore === undefined ? {} : { osStore: configuration.osStore }),
+          expectedOrigin: configuration.baseUrl,
+          requireOriginBinding: configuration.requireOriginBoundCredential === true,
         });
       const pdfProvenance = canonicalSourcePath === undefined
         ? undefined
@@ -204,8 +207,25 @@ export const configurationFromEnvironment = (
     "ARTIFACTPASS_OPEN_DEVELOPMENT",
     "ARTIFACT_SHARE_OPEN_DEVELOPMENT",
   );
+  const mayUseUnconfiguredPublicPlugin =
+    environment.ARTIFACTPASS_CONFIG_PATH === undefined &&
+    environment.ARTIFACT_SHARE_CONFIG_PATH === undefined;
   const localState = baseUrlEnvironment === undefined || rootsEnvironment === undefined
-    ? readCompatibleLocalBridgeSettingsSync(environment)
+    ? (() => {
+        try {
+          return readCompatibleLocalBridgeSettingsSync(environment);
+        } catch (error) {
+          if (
+            mayUseUnconfiguredPublicPlugin &&
+            error instanceof Error &&
+            "code" in error &&
+            error.code === "ENOENT"
+          ) {
+            return undefined;
+          }
+          throw error;
+        }
+      })()
     : undefined;
   const localConfigPath = localState?.path ?? (
     environment.ARTIFACTPASS_CONFIG_PATH === undefined &&
@@ -223,11 +243,10 @@ export const configurationFromEnvironment = (
       openDevelopmentEnvironment === "1" ? "environment" : "production"
     ),
   );
-  const baseUrlValue = baseUrlEnvironment ?? localSettings?.base_url;
-  if (baseUrlValue === undefined) throw new Error("ARTIFACTPASS_BASE_URL is required");
+  const baseUrlValue = baseUrlEnvironment ?? localSettings?.base_url ?? "https://artifactpass.com";
   const rootsValue = rootsEnvironment;
   const workspaceRoots = rootsValue === undefined
-    ? [...(localSettings?.workspace_roots ?? [])]
+    ? [...(localSettings?.workspace_roots ?? [resolve(process.cwd())])]
     : rootsValue.split(delimiter).filter((root) => root.length > 0);
   if (workspaceRoots.length === 0) throw new Error("ARTIFACTPASS_WORKSPACE_ROOTS must not be empty");
   const environmentStore = new CompatibleEnvironmentCredentialStore(
@@ -273,6 +292,9 @@ export const configurationFromEnvironment = (
     headless,
     environmentStore,
     publicationStatePath,
+    ...(localSettings?.credential_binding === "origin"
+      ? { requireOriginBoundCredential: true }
+      : {}),
     ...(pdfProvenanceKeyId === undefined || pdfProvenancePrivateKey === undefined
       ? localSettings?.pdf_key_id === undefined
         ? {}

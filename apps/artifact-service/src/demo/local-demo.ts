@@ -91,6 +91,7 @@ export const createLocalDemoHandler = async (): Promise<LocalDemoHandler> => {
       const url = new URL(request.url);
       const demoBindings = {
         ...bindings,
+        HUMAN_AUTH_MODE: "cloudflare-access",
         ACCESS_TEAM_DOMAIN: issuer,
         ACCESS_AUD: audience,
       };

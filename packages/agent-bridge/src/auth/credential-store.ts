@@ -14,6 +14,47 @@ export const agentCredentialAccountForProfile = (profileName: string): string =>
     ? "agent-token"
     : `agent-token:${profileName}`;
 
+const agentTokenPattern = /^as_[A-Za-z0-9_-]{43}$/u;
+
+export const bindAgentCredential = (originValue: URL | string, token: string): string => {
+  if (!agentTokenPattern.test(token)) throw new Error("ArtifactPass agent credential is malformed");
+  return JSON.stringify({ version: 1, origin: new URL(originValue).origin, token });
+};
+
+export const resolveAgentCredential = (
+  storedValue: string,
+  expectedOriginValue: URL | string,
+  requireOriginBinding = false,
+): string => {
+  if (agentTokenPattern.test(storedValue)) {
+    if (requireOriginBinding) {
+      throw new Error("ArtifactPass credential predates origin binding; reconnect this profile before publishing");
+    }
+    return storedValue;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(storedValue);
+  } catch {
+    throw new Error("ArtifactPass agent credential is malformed");
+  }
+  if (
+    parsed === null ||
+    typeof parsed !== "object" ||
+    (parsed as { version?: unknown }).version !== 1 ||
+    typeof (parsed as { origin?: unknown }).origin !== "string" ||
+    typeof (parsed as { token?: unknown }).token !== "string" ||
+    !agentTokenPattern.test((parsed as { token: string }).token)
+  ) {
+    throw new Error("ArtifactPass agent credential is malformed");
+  }
+  const expectedOrigin = new URL(expectedOriginValue).origin;
+  if (new URL((parsed as { origin: string }).origin).origin !== expectedOrigin) {
+    throw new Error("ArtifactPass credential belongs to a different deployment; reconnect this profile");
+  }
+  return (parsed as { token: string }).token;
+};
+
 export interface CommandResult {
   readonly stdout: string;
 }
@@ -218,6 +259,8 @@ export interface CredentialResolutionOptions {
   readonly headless: boolean;
   readonly environmentStore: CredentialStore;
   readonly osStore?: CredentialStore;
+  readonly expectedOrigin?: URL;
+  readonly requireOriginBinding?: boolean;
 }
 
 export const resolveCredential = async (
@@ -232,6 +275,10 @@ export const resolveCredential = async (
     throw new Error("Interactive mode requires a supported OS credential store");
   }
   const value = await options.osStore.get();
-  if (value === null) throw new Error("No interactive credential is stored; connect this host first");
-  return value;
+  if (value === null) {
+    throw new Error("ArtifactPass is installed but not connected. Run `pnpm dlx artifactpass connect` in this workspace, then restart the agent session");
+  }
+  return options.expectedOrigin === undefined
+    ? value
+    : resolveAgentCredential(value, options.expectedOrigin, options.requireOriginBinding === true);
 };

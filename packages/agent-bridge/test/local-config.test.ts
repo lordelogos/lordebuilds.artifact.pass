@@ -416,4 +416,14 @@ describe("local bridge config", () => {
       ARTIFACT_SHARE_BASE_URL: "https://other.example",
     })).toThrow("ARTIFACTPASS_BASE_URL conflicts");
   });
+
+  it("starts an unconfigured marketplace plugin against public ArtifactPass without authenticating", async () => {
+    const configurationHome = await mkdtemp(resolve(tmpdir(), "artifactpass-unconfigured-plugin-"));
+    const configuration = configurationFromEnvironment({ XDG_CONFIG_HOME: configurationHome });
+
+    expect(configuration.baseUrl.origin).toBe("https://artifactpass.com");
+    expect(configuration.workspaceRoots).toEqual([resolve(process.cwd())]);
+    expect(configuration.openDevelopment).toBe(false);
+    expect(configuration.headless).toBe(false);
+  });
 });

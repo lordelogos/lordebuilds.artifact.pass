@@ -4,10 +4,11 @@ ArtifactPass protects upload authority and artifact confidentiality differently.
 
 ## Trust boundaries
 
-- `/upload*` and `/connect/approve*` require the deployment's path-scoped Cloudflare Access application.
-- `/api/artifacts` accepts either an Access identity from the same origin or a scoped, revocable agent token.
+- `/upload*` and `/connect/approve*` require an ArtifactPass browser session created after Google or GitHub sign-in. Human uploads also require a matching same-origin request.
+- `/api/artifacts` accepts a scoped, revocable agent token. The browser upload route accepts the signed-in human session.
 - `/a/<token>*` is intentionally public. Its high-entropy token is the only read credential and expires with the artifact.
 - D1 and R2 are private Worker bindings. Only token hashes are stored in D1.
+- Browser session tokens and OAuth state are stored only as hashes in D1 and expire automatically. A short-lived HttpOnly cookie binds each OAuth callback to the browser that started it. Google and GitHub access tokens are used only to fetch the verified identity during callback and are not stored.
 - Agent tokens live in separate per-profile accounts in macOS Keychain or Linux Secret Service. The local JSON file contains only profile names, origins, absolute approved workspace roots, and non-secret PDF key IDs.
 
 Treat every share URL like a temporary secret. Do not post it in public logs, issues, analytics, or durable chat transcripts.
@@ -20,7 +21,7 @@ The agent bridge resolves real paths and only opens regular files inside explici
 
 ## Tokens and logging
 
-Share tokens and agent tokens are generated from cryptographically secure random bytes. Agent tokens are hashed at rest, scoped to artifact creation, expire, and can be revoked. Share tokens are accepted only in the requested share URL and are redacted from bridge and setup errors. Cloudflare OAuth or API tokens are read for deployment only and are never written to generated configuration.
+Share tokens, browser session tokens, OAuth state, device codes, and agent tokens are generated from cryptographically secure random bytes. Agent tokens are hashed at rest, scoped to artifact creation, expire, and can be revoked. Share tokens are accepted only in the requested share URL and are redacted from bridge and setup errors. Cloudflare deployment credentials and Google/GitHub client secrets are read only by the release operator, passed to Cloudflare as Worker secrets, and never written to generated configuration.
 
 Production logs must exclude authorization headers, URL paths containing share tokens, form bodies, artifact bytes, extracted text, and credential-store output. Run `pnpm security:secrets` before every release.
 
@@ -34,6 +35,6 @@ Authorization checks use `now < expires_at`; at the exact cutoff every represent
 - Revoking an agent token stops future uploads but cannot retract already shared bytes before their selected expiry.
 - Human and unknown PDFs are intentionally human-only in this release; there is no click-through agent trust override.
 - macOS and Linux credential stores are supported in v1. Windows connection is not yet supported.
-- Cloudflare account administrators remain able to access the deployment's resources.
+- Lorde Builds Cloudflare administrators remain able to access the public deployment's infrastructure. Organization-owned deployment isolation is not claimed in public v1.
 
 Report vulnerabilities as described in [SECURITY.md](../SECURITY.md).

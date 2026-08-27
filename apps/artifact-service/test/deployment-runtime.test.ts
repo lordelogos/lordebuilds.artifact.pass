@@ -23,12 +23,14 @@ describe("deployment runtime", () => {
     await expect(response.json()).resolves.toEqual({
       service: "lordebuilds.artifacts.share",
       status: "ok",
+      human_auth_mode: "artifactpass",
+      authentication_configured: false,
     });
   });
 
   it("binds frontend assets in both production and local demo Workers", () => {
     const productionConfig = JSON.parse(productionConfigSource) as {
-      assets?: { binding?: string };
+      assets?: { binding?: string; run_worker_first?: readonly string[] };
       main?: string;
     };
     const demoConfig = JSON.parse(demoConfigSource) as {
@@ -38,7 +40,10 @@ describe("deployment runtime", () => {
 
     expect(productionConfig).toMatchObject({
       main: "src/server/index.ts",
-      assets: { binding: "ASSETS" },
+      assets: {
+        binding: "ASSETS",
+        run_worker_first: expect.arrayContaining(["/", "/privacy", "/terms"]),
+      },
     });
     expect(demoConfig).toMatchObject({
       main: "src/demo/index.ts",

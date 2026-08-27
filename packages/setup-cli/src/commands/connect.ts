@@ -6,11 +6,13 @@ import {
   LEGACY_ARTIFACT_SHARE_CREDENTIAL_SERVICE,
   OsCredentialStore,
   agentCredentialAccountForProfile,
+  bindAgentCredential,
   assertDeploymentOrigin,
   defaultLocalConfigPath,
   legacyLocalConfigPath,
   fetchWithoutRedirects,
   readLocalBridgeSettings,
+  resolveAgentCredential,
   upsertLocalBridgeProfile,
   validateProfileName,
   writeLocalBridgeSettings,
@@ -250,19 +252,33 @@ export const connectHost = async (
       ...(migration === undefined ? {} : { migration }),
     };
   }
-  const previousToken = await store.get();
-  if (previousToken !== null && previousProfile === undefined) {
+  const previousStoredCredential = await store.get();
+  if (previousStoredCredential !== null && previousProfile === undefined) {
     throw new Error(`The existing ArtifactPass ${profileName} credential has no matching profile; disconnect it first`);
   }
+  const previousToken = previousStoredCredential === null || previousProfile === undefined
+    ? null
+    : resolveAgentCredential(
+        previousStoredCredential,
+        previousProfile.base_url,
+        previousProfile.credential_binding === "origin",
+      );
   if (
     previousToken !== null &&
     previousProfile !== undefined &&
-    previousProfile.open_development !== true
+    previousProfile.open_development !== true &&
+    new URL(previousProfile.base_url).origin === origin.origin
   ) {
     const inspection = await inspectToken(origin, previousToken, fetchImplementation);
     if (inspection !== null) {
       if (previousSettings === null) throw new Error("ArtifactPass profile state disappeared");
+      const boundCredential = bindAgentCredential(origin, previousToken);
+      let migratedCredential = false;
       try {
+        if (boundCredential !== previousStoredCredential) {
+          await store.set(boundCredential);
+          migratedCredential = true;
+        }
         await (dependencies.writeSettings ?? writeLocalBridgeSettings)(configPath, upsertLocalBridgeProfile(
           previousSettings,
           profileName,
@@ -274,6 +290,7 @@ export const connectHost = async (
               ? {}
               : { publication_state_path: previousProfile.publication_state_path }),
             credential_namespace: "artifactpass",
+            credential_binding: "origin",
             ...(healthBody.pdf_provenance_key_id === undefined
               ? previousProfile.pdf_key_id === undefined ? {} : { pdf_key_id: previousProfile.pdf_key_id }
               : { pdf_key_id: healthBody.pdf_provenance_key_id }),
@@ -281,6 +298,7 @@ export const connectHost = async (
         ));
         await installAndVerify();
       } catch (error) {
+        if (migratedCredential) await store.set(previousStoredCredential as string);
         await (dependencies.writeSettings ?? writeLocalBridgeSettings)(configPath, previousSettings)
           .catch((rollbackError: unknown) => {
             throw new AggregateError([error, rollbackError], "ArtifactPass connection verification failed and config rollback was incomplete");
@@ -316,13 +334,14 @@ export const connectHost = async (
           ? {}
           : { publication_state_path: previousProfile.publication_state_path }),
         credential_namespace: "artifactpass",
+        credential_binding: "origin",
         ...(healthBody.pdf_provenance_key_id === undefined
           ? {}
           : { pdf_key_id: healthBody.pdf_provenance_key_id }),
       },
     ));
     wroteConfig = true;
-    await store.set(token.accessToken);
+    await store.set(bindAgentCredential(origin, token.accessToken));
     rollbackHostInstallation = await installAndVerify();
     if (
       previousToken !== null &&
@@ -343,10 +362,10 @@ export const connectHost = async (
     await revokeToken(origin, token.accessToken, fetchImplementation).catch((cleanupError: unknown) => {
       cleanupErrors.push(cleanupError);
     });
-    if (previousToken === null) {
+    if (previousStoredCredential === null) {
       await store.delete().catch((cleanupError: unknown) => cleanupErrors.push(cleanupError));
     } else {
-      await store.set(previousToken).catch((cleanupError: unknown) => cleanupErrors.push(cleanupError));
+      await store.set(previousStoredCredential).catch((cleanupError: unknown) => cleanupErrors.push(cleanupError));
     }
     if (wroteConfig) {
       const restoreConfig = previousSettings === null
@@ -364,7 +383,7 @@ export const connectHost = async (
     profileName,
     expiresIn: token.expiresIn,
     configPath,
-    credentialAction: previousToken === null ? "created" : "rotated",
+    credentialAction: previousStoredCredential === null ? "created" : "rotated",
     ...(portableIntegration === undefined ? {} : { portableIntegration }),
     ...(migration === undefined ? {} : { migration }),
   };

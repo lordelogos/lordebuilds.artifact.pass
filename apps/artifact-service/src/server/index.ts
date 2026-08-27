@@ -12,23 +12,33 @@ import { AgentTokenRepository } from "./auth/agent-token";
 import { expireArtifacts } from "./jobs/expire-artifacts";
 import { expireIdentityState } from "./jobs/expire-identity-state";
 import {
-  requireAccess,
+  requireHuman,
   requireAgent,
   type ArtifactHonoEnvironment,
 } from "./middleware/authorize";
 import { createArtifactsRouter } from "./routes/artifacts";
 import { createConnectRouter } from "./routes/connect";
+import { createAuthRouter } from "./routes/auth";
 import { PUBLIC_RESPONSE_HEADERS, createSharesRouter } from "./routes/shares";
 import { D1ArtifactRepository } from "./storage/artifact-repository";
 import { ArtifactApplicationService } from "./storage/artifact-service";
 import { ArtifactError } from "./storage/artifact-error";
 import { R2ArtifactObjectStore } from "./storage/r2-object-store";
 import { artifactPolicyFromBindings } from "./storage/validation";
+import {
+  publicPageHeaders,
+  renderPublicPage,
+  type PublicPage,
+} from "../web/routes/public-pages";
 
 export interface ArtifactApplicationOptions {
   readonly now?: () => number;
   readonly accessJwks?: JWTVerifyGetKey;
   readonly allowUnauthenticatedUploads?: boolean;
+  readonly oauthFetch?: typeof globalThis.fetch;
+  readonly publicUploadWindowMilliseconds?: number;
+  readonly publicUploadMaximumRequests?: number;
+  readonly publicUploadMaximumBytes?: number;
 }
 
 const createService = (
@@ -43,6 +53,13 @@ const createService = (
     ...(options.now === undefined ? {} : { now: options.now }),
   });
 
+const createNonce = (): string => {
+  const bytes = crypto.getRandomValues(new Uint8Array(18));
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+};
+
 export const createArtifactApplication = (options: ArtifactApplicationOptions = {}) => {
   const app = new Hono<ArtifactHonoEnvironment>();
   const authorizationOptions = {
@@ -52,18 +69,60 @@ export const createArtifactApplication = (options: ArtifactApplicationOptions = 
       ? {}
       : { allowUnauthenticatedUploads: options.allowUnauthenticatedUploads }),
   };
+  const publicUploadOptions = {
+    ...(options.now === undefined ? {} : { now: options.now }),
+    disabled: options.allowUnauthenticatedUploads === true,
+    ...(options.publicUploadWindowMilliseconds === undefined
+      ? {}
+      : { windowMilliseconds: options.publicUploadWindowMilliseconds }),
+    ...(options.publicUploadMaximumRequests === undefined
+      ? {}
+      : { maximumRequests: options.publicUploadMaximumRequests }),
+    ...(options.publicUploadMaximumBytes === undefined
+      ? {}
+      : { maximumBytes: options.publicUploadMaximumBytes }),
+  };
+
+  const servePublicPage = (page: PublicPage) => {
+    const nonce = createNonce();
+    return new Response(renderPublicPage(page, nonce), {
+      status: 200,
+      headers: {
+        ...publicPageHeaders(nonce),
+        "Content-Type": "text/html; charset=UTF-8",
+      },
+    });
+  };
+
+  app.get("/", () => servePublicPage("home"));
+  app.get("/privacy", () => servePublicPage("privacy"));
+  app.get("/terms", () => servePublicPage("terms"));
 
   app.get("/health", (context) =>
     context.json({
       service: "lordebuilds.artifacts.share",
       status: "ok",
+      human_auth_mode: context.env.HUMAN_AUTH_MODE ?? "cloudflare-access",
+      authentication_configured: context.env.HUMAN_AUTH_MODE === "artifactpass"
+        ? [
+            context.env.GOOGLE_OAUTH_CLIENT_ID,
+            context.env.GOOGLE_OAUTH_CLIENT_SECRET,
+            context.env.GITHUB_OAUTH_CLIENT_ID,
+            context.env.GITHUB_OAUTH_CLIENT_SECRET,
+          ].every((value) => typeof value === "string" && value.length > 0)
+        : context.env.ACCESS_TEAM_DOMAIN !== undefined && context.env.ACCESS_AUD !== undefined,
       ...(context.env.PDF_PROVENANCE_KEY_ID === undefined
         ? {}
         : { pdf_provenance_key_id: context.env.PDF_PROVENANCE_KEY_ID }),
     }),
   );
 
-  app.get("/upload/policy", requireAccess(authorizationOptions), (context) => {
+  app.route("/auth", createAuthRouter({
+    ...(options.now === undefined ? {} : { now: options.now }),
+    ...(options.oauthFetch === undefined ? {} : { oauthFetch: options.oauthFetch }),
+  }));
+
+  app.get("/upload/policy", requireHuman(authorizationOptions), (context) => {
     const policy = artifactPolicyFromBindings(context.env);
     return context.json(protocolLimitsSchema.parse({
       protocol_version: PROTOCOL_VERSION,
@@ -77,7 +136,7 @@ export const createArtifactApplication = (options: ArtifactApplicationOptions = 
     }), 200, { "Cache-Control": "private, no-store, max-age=0" });
   });
 
-  app.get("/upload", requireAccess(authorizationOptions), (context) => {
+  app.get("/upload", requireHuman(authorizationOptions, { redirectToSignIn: true }), (context) => {
     if (context.env.ASSETS === undefined) {
       throw new ArtifactError("not_found", "Route is unavailable", 404);
     }
@@ -87,12 +146,20 @@ export const createArtifactApplication = (options: ArtifactApplicationOptions = 
 
   app.route(
     "/api/artifacts",
-    createArtifactsRouter((bindings) => createService(bindings, options), authorizationOptions),
+    createArtifactsRouter(
+      (bindings) => createService(bindings, options),
+      authorizationOptions,
+      publicUploadOptions,
+    ),
   );
-  app.use("/upload/artifacts", requireAccess(authorizationOptions));
+  app.use("/upload/artifacts", requireHuman(authorizationOptions));
   app.route(
     "/upload/artifacts",
-    createArtifactsRouter((bindings) => createService(bindings, options), authorizationOptions),
+    createArtifactsRouter(
+      (bindings) => createService(bindings, options),
+      authorizationOptions,
+      publicUploadOptions,
+    ),
   );
   app.get("/api/connection", requireAgent(authorizationOptions), (context) => {
     const principal = context.get("agentPrincipal");

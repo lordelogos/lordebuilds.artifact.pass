@@ -8,8 +8,9 @@ import {
   DEVICE_POLL_INTERVAL_SECONDS,
   createOpaqueToken,
 } from "../auth/agent-token";
+import { consumeRequestRateLimit } from "../auth/rate-limit";
 import {
-  requireAccess,
+  requireHuman,
   type ArtifactHonoEnvironment,
   type AuthorizationOptions,
 } from "../middleware/authorize";
@@ -36,37 +37,6 @@ const RESPONSE_HEADERS = {
 } as const;
 const DEVICE_RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
 const DEVICE_RATE_LIMIT_REQUESTS = 10;
-
-const consumeDeviceRateLimit = async (
-  database: D1Database,
-  source: string,
-  timestamp: number,
-): Promise<void> => {
-  const bucketKey = await sha256(`device:${source}`);
-  const row = await database.prepare(
-    `INSERT INTO request_rate_limits (bucket_key, window_start, request_count, expires_at)
-     VALUES (?, ?, 1, ?)
-     ON CONFLICT(bucket_key) DO UPDATE SET
-       window_start = CASE
-         WHEN request_rate_limits.expires_at <= excluded.window_start THEN excluded.window_start
-         ELSE request_rate_limits.window_start
-       END,
-       request_count = CASE
-         WHEN request_rate_limits.expires_at <= excluded.window_start THEN 1
-         ELSE request_rate_limits.request_count + 1
-       END,
-       expires_at = CASE
-         WHEN request_rate_limits.expires_at <= excluded.window_start THEN excluded.expires_at
-         ELSE request_rate_limits.expires_at
-       END
-     RETURNING request_count`,
-  )
-    .bind(bucketKey, timestamp, timestamp + DEVICE_RATE_LIMIT_WINDOW_MS)
-    .first<{ readonly request_count: number }>();
-  if (row === null || row.request_count > DEVICE_RATE_LIMIT_REQUESTS) {
-    throw new ArtifactError("forbidden", "Too many device authorization requests", 429);
-  }
-};
 
 const parseJson = async (request: Request): Promise<Record<string, unknown>> => {
   const value = await request.json().catch(() => null);
@@ -175,11 +145,15 @@ export const createConnectRouter = (options: AuthorizationOptions = {}) => {
       throw new ArtifactError("malformed_upload", "code_challenge_method must be S256", 400);
     }
     const createdAt = now();
-    await consumeDeviceRateLimit(
-      context.env.ARTIFACT_DB,
-      context.req.header("cf-connecting-ip") ?? "unknown",
-      createdAt,
-    );
+    await consumeRequestRateLimit({
+      database: context.env.ARTIFACT_DB,
+      namespace: "device",
+      source: context.req.header("cf-connecting-ip") ?? "unknown",
+      timestamp: createdAt,
+      windowMilliseconds: DEVICE_RATE_LIMIT_WINDOW_MS,
+      maximumRequests: DEVICE_RATE_LIMIT_REQUESTS,
+      errorMessage: "Too many device authorization requests",
+    });
     const deviceCode = createOpaqueToken();
     const userCode = createUserCode();
     const expiresAt = createdAt + DEVICE_CODE_LIFETIME_MS;
@@ -213,7 +187,7 @@ export const createConnectRouter = (options: AuthorizationOptions = {}) => {
     );
   });
 
-  router.get("/approve", requireAccess(options), async (context) => {
+  router.get("/approve", requireHuman(options, { redirectToSignIn: true }), async (context) => {
     const userCode = context.req.query("user_code");
     if (userCode === undefined) throw new ArtifactError("not_found", "Authorization is unavailable", 404);
     const authorization = await findDeviceByUserCode(context.env.ARTIFACT_DB, userCode);
@@ -238,12 +212,12 @@ export const createConnectRouter = (options: AuthorizationOptions = {}) => {
     );
   });
 
-  router.post("/approve", requireAccess(options), async (context) => {
+  router.post("/approve", requireHuman(options), async (context) => {
     requireSameOrigin(context.req.raw);
     const formSubmission = context.req.header("content-type")?.startsWith("application/x-www-form-urlencoded") === true;
     const body = await parseApprovalBody(context.req.raw);
     const userCode = requiredString(body.user_code, "user_code", /^[A-Za-z0-9_-]{12,32}$/u);
-    const identity = context.get("accessIdentity");
+    const identity = context.get("humanIdentity");
     const result = await context.env.ARTIFACT_DB.prepare(
       `UPDATE device_authorizations
        SET status = 'approved', identity_subject = ?, identity_email = ?, approved_at = ?

@@ -2,48 +2,39 @@
 
 Share a local Markdown, HTML, or PDF artifact once, then hand the same temporary HTTPS URL to a person or any compatible AI agent.
 
-ArtifactPass is self-hosted in your Cloudflare account. The exact source stays in private R2 storage, metadata stays in D1, and your upload and device-approval pages sit behind Cloudflare Access. A share URL is a bearer capability: anyone holding it can read that artifact until its exact expiry time.
+Public ArtifactPass runs at `artifactpass.com`. Sign in with Google or GitHub, connect an agent workspace, and create short-lived links without owning a Cloudflare account. Exact source stays in private R2 storage and metadata stays in D1. A share URL is a bearer capability: anyone holding it can read that artifact until its exact expiry time.
 
 ## What v1 does
 
 - Uploads one `.md`, `.markdown`, `.html`, `.htm`, or `.pdf` file up to 25 MiB.
-- Offers expiry presets from 15 minutes through 24 hours.
+- Offers public expiry presets of 15, 30, or 60 minutes.
 - Preserves exact source bytes and SHA-256 metadata.
 - Renders sanitized Markdown, sandboxes sanitized HTML without permissions, and previews PDFs.
 - Gives agents deterministic 64 KiB source chunks so large files can be reconstructed exactly.
 - Keeps human and externally sourced PDFs human-only for agents. Controlled PDFs expose only the signed canonical source used to render them.
 - Ships one MCP server and one Agent Skills bundle for every compatible agent system. Ecosystem plugins only register that shared package.
 
-There is no account system, dashboard, history, billing, entitlement layer, or multi-tenant control plane.
+There is no dashboard, history, billing, entitlement layer, or artifact listing. Identity exists only to authorize browser uploads and workspace connections.
 
-## Deploy
+## Install, then connect
 
-Prerequisites are Node.js 24+, pnpm, an active Cloudflare zone, and a Zero Trust organization. Build the setup CLI, inspect the mutation-free plan, then run the same command without `--dry-run`:
-
-```sh
-pnpm install --frozen-lockfile
-pnpm --dir packages/setup-cli build
-node packages/setup-cli/dist/cli.mjs deploy \
-  --account-id 0123456789abcdef0123456789abcdef \
-  --zone-id fedcba9876543210fedcba9876543210 \
-  --hostname artifacts.example.com \
-  --allow-domain example.com \
-  --dry-run
-```
-
-The deployer creates or reuses one Worker custom domain, one D1 database, one private R2 bucket, and one path-scoped Access application. It refuses conflicting resources and is safe to rerun. See [deployment](docs/deployment.md) for OAuth, permissions, and the manual fallback.
-
-## Connect an agent system
-
-For the hosted service at `artifactpass.com`, open a terminal in the workspace the agent may share and run:
+Install from the workspace the agent may share:
 
 ```sh
 pnpm dlx artifactpass
 ```
 
-The command validates the workspace, detects known ecosystem installers, installs the same portable package, opens a browser for Access approval when needed, stores the scoped agent token in the operating-system credential store, negotiates both MCP tools, verifies both skills, and writes a private machine-readable receipt. Restart the agent session, then ask it to share or read an artifact.
+This installs the ArtifactPass plugin, MCP server, and both Agent Skills. It does not open a browser or create a connection.
 
-For a custom deployment, use the explicit connection command:
+Connect only when you want that workspace to publish:
+
+```sh
+pnpm dlx artifactpass connect
+```
+
+The browser opens `artifactpass.com`. Sign in with Google or GitHub and approve the agent code you just requested. The CLI stores only the resulting scoped agent token in the operating-system credential store. Restart the agent session, then ask it to share or read an artifact.
+
+An explicit deployment URL remains available for development and future organization-owned deployments:
 
 ```sh
 pnpm dlx artifactpass connect https://artifacts.example.com \
@@ -60,7 +51,7 @@ pnpm dlx artifactpass connect https://artifacts.example.com \
   --workspace-root /absolute/path/to/approved/workspace
 ```
 
-The command prints the MCP configuration and Agent Skills directory to register. This path uses the same bridge and skills as every ecosystem plugin; there is no separate implementation.
+The command prints the MCP configuration and Agent Skills directory to register. This path uses the same bridge and skills as every ecosystem plugin; there is no separate implementation. Organization-owned deployment setup is a later phase and is not part of the public v1 release.
 
 See [agent setup](docs/agent-setup.md) for portable setup, optional ecosystem installers, and revocation.
 
@@ -78,7 +69,7 @@ prints a second URL for other devices on the same network. Demo artifacts stay
 under the ignored `apps/artifact-service/.wrangler/demo-state` directory. Upload and agent routes are
 open in this separate development Worker so the complete share/read behavior can
 be tested before authentication is configured; the production Worker and its
-Cloudflare Access boundary are unchanged.
+ArtifactPass authentication boundary are unchanged.
 
 Build the setup CLI, then connect the installed plugin to the open demo without
 device authorization or a token:
@@ -151,7 +142,7 @@ regenerates the canonical plugin after bridge or skill edits. `pnpm check` then
 verifies those generated bytes without repairing them, lints, typechecks, runs
 the Worker and package tests, and builds production assets. `pnpm release:check`
 adds secret scanning, production dependency vulnerability and license audits,
-and clean-package inspection. Live Access tests require an explicitly configured
+and clean-package inspection. Live authentication tests require an explicitly configured
 disposable deployment; see [operations](docs/operations.md).
 
 ## Documentation
