@@ -1,11 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
 
 const previewUrl = process.env.ARTIFACT_SHARE_PREVIEW_URL ?? "http://127.0.0.1:4173";
+const uploadUrl = new URL("/upload", previewUrl).href;
 
 const shareToken = "S".repeat(43);
 
 const mockUploadService = async (page: Page, onUpload?: (body: string) => void) => {
-  await page.addInitScript(() => window.history.replaceState({}, "", "/upload"));
   await page.route("**/upload/policy", (route) => route.fulfill({
     contentType: "application/json",
     body: JSON.stringify({
@@ -71,7 +71,7 @@ const createTextPdf = (text: string | null): Buffer => {
 test.describe("local upload page preview", () => {
   test("renders the desktop and mobile upload surface", async ({ page }) => {
     await mockUploadService(page);
-    await page.goto(previewUrl);
+    await page.goto(uploadUrl);
     await expect(page.getByRole("heading", { name: /Share the work/ })).toBeVisible();
     await expect(page.getByText("Drop one artifact here")).toBeVisible();
     await page.screenshot({ path: "test-results/u4-upload-desktop.png", fullPage: true });
@@ -85,7 +85,7 @@ test.describe("local upload page preview", () => {
     await mockUploadService(page, (body) => {
       multipartBody = body;
     });
-    await page.goto(previewUrl);
+    await page.goto(uploadUrl);
     await page.locator('input[type="file"]').setInputFiles({
       name: "browser-report.pdf",
       mimeType: "application/pdf",
@@ -104,7 +104,7 @@ test.describe("local upload page preview", () => {
     await mockUploadService(page, (body) => {
       multipartBody = body;
     });
-    await page.goto(previewUrl);
+    await page.goto(uploadUrl);
     await page.locator('input[type="file"]').setInputFiles({
       name: "image-only-report.pdf",
       mimeType: "application/pdf",
