@@ -12,6 +12,7 @@ import {
 import { runDeployCommand } from "./commands/deploy";
 import { connectHost } from "./commands/connect";
 import { disconnectHost, selectDisconnectProfile } from "./commands/disconnect";
+import { parseConnectArguments, resolveConnectDeploymentUrl } from "./cli-arguments";
 import type { IdentityRule } from "./cloudflare/deployment";
 import { runDoctor } from "./doctor";
 import type { AgentHost } from "./hosts";
@@ -60,12 +61,6 @@ const positionalValues = (args: readonly string[]): string[] =>
   args.filter((item, index) => index === 0 || !args[index - 1]?.startsWith("--"))
     .filter((item) => !item.startsWith("--"));
 
-const positional = (args: readonly string[], position: number): string => {
-  const result = positionalValues(args)[position];
-  if (result === undefined) throw new Error("A deployment URL is required");
-  return result;
-};
-
 const optionalPositional = (args: readonly string[], position: number): string | undefined =>
   positionalValues(args)[position];
 
@@ -78,14 +73,21 @@ const help = `ArtifactPass setup
 Commands:
   artifactpass [--json]
   install [--base-url <url>] [--profile <name>] [--workspace-root <path>] [--open-development] [--no-host-install] [--json]
+  deploy-public --account-id <id> --zone-id <id> --hostname <host> [--service-name <name>] --workers-subdomain <name> --pdf-key-id <id> --pdf-public-key <base64> --google-client-id <id> --github-client-id <id> (--dry-run | --write-approval-manifest <path> | --approve-manifest <path>)
   deploy --account-id <id> --zone-id <id> --hostname <host> [--service-name <name>] --workers-subdomain <name> --pdf-key-id <id> --pdf-public-key <base64> (--allow-email <email> | --allow-domain <domain>) (--dry-run | --write-approval-manifest <path> | --approve-manifest <path>)
-  connect <base-url> [--profile <name>] [--workspace-root <path>] [--host codex|claude|both] [--no-host-install] [--marketplace <source>] [--open-development]
+  connect [base-url] [--profile <name>] [--workspace-root <path>] [--host codex|claude|both] [--no-host-install] [--marketplace <source>] [--open-development]
   profile list
   profile use <name>
   disconnect [--profile <name>]
   doctor
 
 Cloudflare credentials come from CLOUDFLARE_API_TOKEN or Wrangler OAuth and are never persisted by ArtifactPass.`;
+
+const requiredEnvironment = (name: string): string => {
+  const result = process.env[name];
+  if (result === undefined || result.length === 0) throw new Error(`${name} is required`);
+  return result;
+};
 
 let jsonOutputRequested = false;
 
@@ -111,6 +113,7 @@ const main = async (): Promise<void> => {
       ...(profileName === undefined ? {} : { profileName }),
       ...(workspaceRoot === undefined ? {} : { workspaceRoot }),
       openDevelopment,
+      connectAfterInstall: false,
       installKnownHostAdapters: !booleanFlag(installArgs, "--no-host-install"),
     }, {
       connectDependencies: {
@@ -133,6 +136,41 @@ const main = async (): Promise<void> => {
     const result = await runDoctor(deploymentRoot);
     print(result);
     if (!result.node || !result.wrangler || !result.deploymentAssets) process.exitCode = 1;
+    return;
+  }
+  if (command === "deploy-public") {
+    const dryRun = booleanFlag(args, "--dry-run");
+    const writeApprovalManifest = optionalValue(args, "--write-approval-manifest");
+    const approveManifest = optionalValue(args, "--approve-manifest");
+    if ([dryRun, writeApprovalManifest !== undefined, approveManifest !== undefined].filter(Boolean).length !== 1) {
+      throw new Error("Choose exactly one of --dry-run, --write-approval-manifest, or --approve-manifest");
+    }
+    const serviceName = optionalValue(args, "--service-name");
+    const result = await runDeployCommand({
+      accountId: value(args, "--account-id"),
+      zoneId: value(args, "--zone-id"),
+      hostname: value(args, "--hostname"),
+      pdfKeyId: value(args, "--pdf-key-id"),
+      pdfPublicKey: value(args, "--pdf-public-key"),
+      workersSubdomain: value(args, "--workers-subdomain"),
+      identities: [],
+      dryRun,
+      publicAuth: {
+        googleClientId: value(args, "--google-client-id"),
+        googleClientSecret: requiredEnvironment("ARTIFACTPASS_GOOGLE_OAUTH_CLIENT_SECRET"),
+        githubClientId: value(args, "--github-client-id"),
+        githubClientSecret: requiredEnvironment("ARTIFACTPASS_GITHUB_OAUTH_CLIENT_SECRET"),
+      },
+      ...(serviceName === undefined ? {} : { serviceName }),
+      ...(writeApprovalManifest === undefined ? {} : { writeApprovalManifest: resolve(writeApprovalManifest) }),
+      ...(approveManifest === undefined ? {} : { approveManifest: resolve(approveManifest) }),
+    }, {
+      deploymentRoot,
+      ...(process.env.CLOUDFLARE_API_TOKEN === undefined
+        ? {}
+        : { token: process.env.CLOUDFLARE_API_TOKEN }),
+    });
+    print(result);
     return;
   }
   if (command === "deploy") {
@@ -169,6 +207,12 @@ const main = async (): Promise<void> => {
     return;
   }
   if (command === "connect") {
+    const connectArguments = parseConnectArguments(args);
+    await migrateDefaultLocalState();
+    const savedSettings = await readLocalBridgeSettings(defaultLocalConfigPath()).catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw error;
+    });
     const installKnownHostAdapters = !booleanFlag(args, "--no-host-install");
     const requestedHost = optionalValue(args, "--host");
     const host = requestedHost ?? "both";
@@ -184,7 +228,7 @@ const main = async (): Promise<void> => {
     const profileName = optionalValue(args, "--profile");
     const result = await connectHost({
       ...(profileName === undefined ? {} : { profileName }),
-      baseUrl: positional(args, 0),
+      baseUrl: resolveConnectDeploymentUrl(connectArguments, savedSettings, profileName),
       workspaceRoots: values(args, "--workspace-root").length > 0
         ? values(args, "--workspace-root")
         : [process.cwd()],

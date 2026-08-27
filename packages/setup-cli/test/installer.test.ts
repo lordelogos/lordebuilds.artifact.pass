@@ -31,6 +31,200 @@ const portableFixture = async (root: string) => {
 };
 
 describe("one-command ArtifactPass installer", () => {
+  it("installs the plugin and MCP without starting authentication", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifactpass-installer-disconnected-"));
+    const workspace = resolve(root, "workspace");
+    await mkdir(workspace);
+    const configPath = resolve(root, "config", "config.json");
+    const portable = await portableFixture(root);
+    const connect = vi.fn();
+
+    const receipt = await runArtifactpassInstall({
+      marketplaceSource: "/package/marketplace",
+      workspaceRoot: workspace,
+      configPath,
+      connectAfterInstall: false,
+      installKnownHostAdapters: false,
+    }, {
+      connect,
+      connectDependencies: { deviceFlowDependencies: { openBrowser: async () => undefined } },
+      installPortable: vi.fn().mockResolvedValue(portable),
+      smoke: vi.fn().mockResolvedValue({
+        negotiated: true,
+        tools: ["publish_artifact", "read_artifact"],
+        representativeInvocation: true,
+      }),
+      operationId: () => "disconnected-operation",
+    });
+
+    expect(connect).not.toHaveBeenCalled();
+    expect(receipt).toMatchObject({
+      status: "success",
+      origin: "https://artifactpass.com",
+      credential: "none",
+      mcp: { negotiated: true },
+      skills: { verified: true },
+    });
+    await expect(readFile(configPath, "utf8").then(JSON.parse)).resolves.toMatchObject({
+      active_profile: "production",
+      profiles: {
+        production: {
+          base_url: "https://artifactpass.com",
+          workspace_roots: [workspace],
+        },
+      },
+    });
+    expect(renderInstallReceipt(receipt)).toContain("installed");
+    expect(renderInstallReceipt(receipt)).toContain("not connected");
+    expect(renderInstallReceipt(receipt)).toContain("pnpm dlx artifactpass connect");
+  });
+
+  it("preserves publication and PDF settings when reinstalling without authentication", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifactpass-installer-preserve-profile-"));
+    const workspace = resolve(root, "workspace");
+    const previousWorkspace = resolve(root, "previous-workspace");
+    const publicationStatePath = resolve(root, "publication-state.json");
+    await mkdir(workspace);
+    const configPath = resolve(root, "config", "config.json");
+    await mkdir(resolve(root, "config"));
+    await writeFile(configPath, JSON.stringify({
+      version: 2,
+      active_profile: "production",
+      profiles: {
+        production: {
+          base_url: "https://artifactpass.com",
+          workspace_roots: [previousWorkspace],
+          credential_namespace: "artifactpass",
+          credential_binding: "origin",
+          pdf_key_id: "artifactpass-primary",
+          publication_state: "legacy",
+          publication_state_path: publicationStatePath,
+        },
+      },
+    }));
+    const portable = await portableFixture(root);
+
+    await runArtifactpassInstall({
+      marketplaceSource: "/package/marketplace",
+      workspaceRoot: workspace,
+      configPath,
+      connectAfterInstall: false,
+      installKnownHostAdapters: false,
+    }, {
+      connectDependencies: { deviceFlowDependencies: { openBrowser: async () => undefined } },
+      installPortable: vi.fn().mockResolvedValue(portable),
+      smoke: vi.fn().mockResolvedValue({
+        negotiated: true,
+        tools: ["publish_artifact", "read_artifact"],
+        representativeInvocation: true,
+      }),
+      operationId: () => "preserve-profile-operation",
+    });
+
+    await expect(readFile(configPath, "utf8").then(JSON.parse)).resolves.toMatchObject({
+      active_profile: "production",
+      profiles: {
+        production: {
+          base_url: "https://artifactpass.com",
+          workspace_roots: [workspace],
+          credential_namespace: "artifactpass",
+          credential_binding: "origin",
+          pdf_key_id: "artifactpass-primary",
+          publication_state: "legacy",
+          publication_state_path: publicationStatePath,
+        },
+      },
+    });
+  });
+
+  it("preserves the active deployment during a bare disconnected reinstall", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifactpass-installer-active-profile-"));
+    const workspace = resolve(root, "workspace");
+    await mkdir(workspace);
+    const configPath = resolve(root, "config", "config.json");
+    await mkdir(resolve(root, "config"));
+    await writeFile(configPath, JSON.stringify({
+      version: 2,
+      active_profile: "company",
+      profiles: {
+        company: {
+          base_url: "https://artifacts.company.example",
+          workspace_roots: [workspace],
+          credential_namespace: "artifactpass",
+          credential_binding: "origin",
+        },
+      },
+    }));
+    const portable = await portableFixture(root);
+
+    await runArtifactpassInstall({
+      marketplaceSource: "/package/marketplace",
+      workspaceRoot: workspace,
+      configPath,
+      connectAfterInstall: false,
+      installKnownHostAdapters: false,
+    }, {
+      connectDependencies: { deviceFlowDependencies: { openBrowser: async () => undefined } },
+      installPortable: vi.fn().mockResolvedValue(portable),
+      smoke: vi.fn().mockResolvedValue({
+        negotiated: true,
+        tools: ["publish_artifact", "read_artifact"],
+        representativeInvocation: true,
+      }),
+      operationId: () => "active-profile-operation",
+    });
+
+    await expect(readFile(configPath, "utf8").then(JSON.parse)).resolves.toMatchObject({
+      active_profile: "company",
+      profiles: {
+        company: {
+          base_url: "https://artifacts.company.example",
+          credential_binding: "origin",
+        },
+        production: {
+          base_url: "https://artifactpass.com",
+        },
+      },
+    });
+  });
+
+  it("refuses to retarget an existing profile during disconnected installation", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifactpass-installer-retarget-profile-"));
+    const workspace = resolve(root, "workspace");
+    await mkdir(workspace);
+    const configPath = resolve(root, "config", "config.json");
+    await mkdir(resolve(root, "config"));
+    const originalSettings = {
+      version: 2,
+      active_profile: "company",
+      profiles: {
+        company: {
+          base_url: "https://artifacts.company.example",
+          workspace_roots: [workspace],
+          credential_namespace: "artifactpass",
+        },
+      },
+    } as const;
+    await writeFile(configPath, JSON.stringify(originalSettings));
+    const portable = await portableFixture(root);
+
+    await expect(runArtifactpassInstall({
+      marketplaceSource: "/package/marketplace",
+      baseUrl: "https://artifactpass.com",
+      profileName: "company",
+      workspaceRoot: workspace,
+      configPath,
+      connectAfterInstall: false,
+      installKnownHostAdapters: false,
+    }, {
+      connectDependencies: { deviceFlowDependencies: { openBrowser: async () => undefined } },
+      installPortable: vi.fn().mockResolvedValue(portable),
+      operationId: () => "retarget-profile-operation",
+    })).rejects.toThrow("installation failed during connection");
+
+    await expect(readFile(configPath, "utf8").then(JSON.parse)).resolves.toEqual(originalSettings);
+  });
+
   it("returns one private, redacted receipt after connection and MCP verification", async () => {
     const root = await mkdtemp(resolve(tmpdir(), "artifactpass-installer-success-"));
     const workspace = resolve(root, "workspace");
@@ -59,6 +253,7 @@ describe("one-command ArtifactPass installer", () => {
 
     const receipt = await runArtifactpassInstall({
       marketplaceSource: "/package/marketplace",
+      connectAfterInstall: true,
       workspaceRoot: workspace,
       configPath,
     }, {
@@ -146,6 +341,7 @@ describe("one-command ArtifactPass installer", () => {
 
     const receipt = await runArtifactpassInstall({
       marketplaceSource: "/package/marketplace",
+      connectAfterInstall: true,
       workspaceRoot: workspace,
       configPath,
     }, {
@@ -189,6 +385,7 @@ describe("one-command ArtifactPass installer", () => {
     try {
       await runArtifactpassInstall({
         marketplaceSource: "/package/marketplace",
+        connectAfterInstall: true,
         workspaceRoot: workspace,
         configPath,
         openDevelopment: true,
@@ -241,6 +438,7 @@ describe("one-command ArtifactPass installer", () => {
     try {
       await runArtifactpassInstall({
         marketplaceSource: "/package/marketplace",
+        connectAfterInstall: true,
         workspaceRoot: workspace,
         configPath,
       }, {
@@ -279,6 +477,7 @@ describe("one-command ArtifactPass installer", () => {
     try {
       await runArtifactpassInstall({
         marketplaceSource: "/package/marketplace",
+        connectAfterInstall: true,
         workspaceRoot: root,
         configPath: resolve(root, "config.json"),
       }, {
@@ -316,6 +515,7 @@ describe("one-command ArtifactPass installer", () => {
 
     await expect(runArtifactpassInstall({
       marketplaceSource: "/package/marketplace",
+      connectAfterInstall: true,
       workspaceRoot: workspace,
       configPath: resolve(root, "config.json"),
     }, {
@@ -359,6 +559,7 @@ describe("one-command ArtifactPass installer", () => {
 
     const receipt = await runArtifactpassInstall({
       marketplaceSource: "/package/marketplace",
+      connectAfterInstall: true,
       workspaceRoot: workspace,
       configPath,
     }, {

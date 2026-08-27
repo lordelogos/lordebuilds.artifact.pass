@@ -4,10 +4,17 @@ import { access, mkdir, open, readFile, readdir, rename, rm, stat, writeFile } f
 import { homedir } from "node:os";
 import { dirname, join, parse, resolve } from "node:path";
 
-import { defaultLocalConfigPath } from "agent-bridge";
+import {
+  defaultLocalConfigPath,
+  readLocalBridgeSettings,
+  setActiveLocalBridgeProfile,
+  upsertLocalBridgeProfile,
+  writeLocalBridgeSettings,
+} from "agent-bridge";
 
 import packageMetadata from "../package.json" with { type: "json" };
 import { connectHost, type ConnectDependencies } from "./commands/connect";
+import { detectHosts, installPluginForHosts, type HostInstallation } from "./hosts";
 import { smokeArtifactpassMcp, type McpSmokeResult } from "./mcp-smoke";
 import {
   defaultPortableIntegrationDirectory,
@@ -158,6 +165,7 @@ export interface ArtifactpassInstallInput {
   readonly receiptDirectory?: string;
   readonly openDevelopment?: boolean;
   readonly installKnownHostAdapters?: boolean;
+  readonly connectAfterInstall?: boolean;
 }
 
 export interface ArtifactpassInstallDependencies {
@@ -265,13 +273,17 @@ export const renderInstallReceipt = (receipt: ArtifactpassInstallReceipt): strin
   const registration = receipt.portable_bundle.host_registration === "manual-required"
     ? `Manual host registration required. MCP: ${receipt.portable_bundle.mcp_config ?? "unavailable"}; skills: ${receipt.portable_bundle.skills_directory ?? "unavailable"}.`
     : `Installed for ${receipt.adapters.join(" and ")}.`;
-  return `ArtifactPass is connected to ${receipt.origin} for ${receipt.profile}. ${registration} Start a new agent session before using it.`;
+  const connection = receipt.credential === "none"
+    ? `ArtifactPass is installed for ${receipt.profile} but not connected. Run \`pnpm dlx artifactpass connect ${receipt.origin} --profile ${receipt.profile}\` when you want to publish.`
+    : `ArtifactPass is connected to ${receipt.origin} for ${receipt.profile}.`;
+  return `${connection} ${registration} Start a new agent session before using it.`;
 };
 
 export const runArtifactpassInstall = async (
   input: ArtifactpassInstallInput,
   dependencies: ArtifactpassInstallDependencies,
 ): Promise<ArtifactpassInstallReceipt> => {
+  const connectAfterInstall = input.connectAfterInstall === true;
   const now = dependencies.now ?? Date.now;
   const operationId = (dependencies.operationId ?? randomUUID)();
   const origin = new URL(input.baseUrl ?? "https://artifactpass.com").origin;
@@ -292,6 +304,7 @@ export const runArtifactpassInstall = async (
   let smoke: McpSmokeResult | undefined;
   let skills: readonly string[] = [];
   let connectResult: Awaited<ReturnType<typeof connectHost>> | undefined;
+  let hostInstallation: HostInstallation | undefined;
   let configSnapshot: { readonly existed: boolean; readonly bytes?: Buffer } | undefined;
   const outcomes: string[] = [];
   try {
@@ -315,7 +328,11 @@ export const runArtifactpassInstall = async (
         if (isMissing(error)) return { existed: false as const };
         throw error;
       });
-    if (dependencies.skipCredentialStorePreflight !== true && input.openDevelopment !== true) {
+    if (
+      connectAfterInstall &&
+      dependencies.skipCredentialStorePreflight !== true &&
+      input.openDevelopment !== true
+    ) {
       await verifyCredentialStore(
         dependencies.platform ?? process.platform,
         dependencies.runner ?? runProcess,
@@ -337,25 +354,87 @@ export const runArtifactpassInstall = async (
     stage = "connection";
     journal = { ...journal, stage };
     await writeJson(journalPath, journal);
-    connectResult = await (dependencies.connect ?? connectHost)({
-      baseUrl: origin,
-      profileName,
-      workspaceRoots: [workspaceRoot],
-      marketplaceSource: input.marketplaceSource,
-      hostBridgePath: resolve(portable.rootDirectory, "plugin/dist/cli.mjs"),
-      openDevelopment: input.openDevelopment === true,
-      installKnownHostAdapters: input.installKnownHostAdapters !== false,
-      ...(input.configPath === undefined ? {} : { configPath }),
-    }, {
-      ...dependencies.connectDependencies,
-      verifyConnection: async (context) => {
-        smoke = await (dependencies.smoke ?? smokeArtifactpassMcp)({
-          mcpConfigPath: portable?.mcpConfig ?? "",
-          localConfigPath: context.configPath,
-        });
-        skills = await verifySkills(portable as PortableIntegration);
-      },
-    });
+    if (connectAfterInstall) {
+      connectResult = await (dependencies.connect ?? connectHost)({
+        baseUrl: origin,
+        profileName,
+        workspaceRoots: [workspaceRoot],
+        marketplaceSource: input.marketplaceSource,
+        hostBridgePath: resolve(portable.rootDirectory, "plugin/dist/cli.mjs"),
+        openDevelopment: input.openDevelopment === true,
+        installKnownHostAdapters: input.installKnownHostAdapters !== false,
+        ...(input.configPath === undefined ? {} : { configPath }),
+      }, {
+        ...dependencies.connectDependencies,
+        verifyConnection: async (context) => {
+          [smoke, skills] = await Promise.all([
+            (dependencies.smoke ?? smokeArtifactpassMcp)({
+              mcpConfigPath: portable?.mcpConfig ?? "",
+              localConfigPath: context.configPath,
+            }),
+            verifySkills(portable as PortableIntegration),
+          ]);
+        },
+      });
+    } else {
+      const previousSettings = configSnapshot?.existed === true && configSnapshot.bytes !== undefined
+        ? await readLocalBridgeSettings(configPath)
+        : null;
+      const previousProfile = previousSettings?.profiles[profileName];
+      if (
+        previousProfile !== undefined &&
+        new URL(previousProfile.base_url).origin !== new URL(origin).origin
+      ) {
+        throw new Error(
+          `ArtifactPass ${profileName} already targets ${new URL(previousProfile.base_url).origin}; use a new profile or disconnect it before changing deployments`,
+        );
+      }
+      const installedSettings = upsertLocalBridgeProfile(
+        previousSettings,
+        profileName,
+        {
+          base_url: origin,
+          workspace_roots: [workspaceRoot],
+          ...(input.openDevelopment === true ? { open_development: true as const } : {}),
+          ...(previousProfile?.pdf_key_id === undefined ? {} : { pdf_key_id: previousProfile.pdf_key_id }),
+          ...(previousProfile?.publication_state === "legacy" ? { publication_state: "legacy" as const } : {}),
+          ...(previousProfile?.publication_state_path === undefined
+            ? {}
+            : { publication_state_path: previousProfile.publication_state_path }),
+          credential_namespace: "artifactpass",
+          ...(previousProfile?.credential_binding === "origin"
+            ? { credential_binding: "origin" as const }
+            : {}),
+        },
+      );
+      await writeLocalBridgeSettings(
+        configPath,
+        previousSettings !== null && input.profileName === undefined && input.openDevelopment !== true
+          ? setActiveLocalBridgeProfile(installedSettings, previousSettings.active_profile)
+          : installedSettings,
+      );
+      const runner = dependencies.runner ?? runProcess;
+      const hosts = input.installKnownHostAdapters === false ? [] : await detectHosts(runner);
+      hostInstallation = hosts.length === 0
+        ? undefined
+        : await installPluginForHosts(hosts, input.marketplaceSource, {
+            configPath,
+            profileName,
+            bridgePath: resolve(portable.rootDirectory, "plugin/dist/cli.mjs"),
+          }, runner);
+      [smoke, skills] = await Promise.all([
+        (dependencies.smoke ?? smokeArtifactpassMcp)({
+          mcpConfigPath: portable.mcpConfig,
+          localConfigPath: configPath,
+        }),
+        verifySkills(portable),
+      ]);
+      connectResult = {
+        hosts,
+        profileName,
+        configPath,
+      };
+    }
     outcomes.push(`credential:${connectResult.credentialAction ?? "none"}`);
     outcomes.push("host-registration:installed-or-reported");
     await dependencies.afterStage?.("connection");
@@ -418,6 +497,11 @@ export const runArtifactpassInstall = async (
     return receipt;
   } catch (error) {
     const rollbackFailures: string[] = [];
+    if (hostInstallation !== undefined) {
+      await hostInstallation.rollback().catch(() => rollbackFailures.push("host-registration"));
+    } else if ((connectResult?.hosts.length ?? 0) > 0) {
+      rollbackFailures.push("host-registration-unverified");
+    }
     if (portable !== undefined && (dependencies.portableWasCreated ?? portableIntegrationWasCreated)(portable)) {
       await rm(portable.rootDirectory, { recursive: true, force: true })
         .catch(() => rollbackFailures.push("portable-bundle"));
@@ -428,7 +512,6 @@ export const runArtifactpassInstall = async (
         : rm(configPath, { force: true });
       await restore.catch(() => rollbackFailures.push("configuration"));
     }
-    if ((connectResult?.hosts.length ?? 0) > 0) rollbackFailures.push("host-registration-unverified");
     if (connectResult?.credentialAction === "created" || connectResult?.credentialAction === "rotated") {
       rollbackFailures.push("credential-unverified");
     }

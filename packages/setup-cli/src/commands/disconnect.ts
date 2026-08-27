@@ -6,6 +6,7 @@ import {
   agentCredentialAccountForProfile,
   assertSafeDeploymentOrigin,
   selectLocalBridgeProfile,
+  resolveAgentCredential,
   type CredentialStore,
   type LocalBridgeSettings,
 } from "agent-bridge";
@@ -57,9 +58,10 @@ export const disconnectHost = async (
     }),
     migrationCommitted: true,
   });
-  const token = await store.get();
-  if (token === null) return;
+  const storedCredential = await store.get();
+  if (storedCredential === null) return;
   const origin = assertSafeDeploymentOrigin(new URL(baseUrl));
+  const token = resolveAgentCredential(storedCredential, origin);
   const response = await (options.fetch ?? globalThis.fetch)(new URL("/api/connection", origin), {
     method: "DELETE",
     headers: { Authorization: `Bearer ${token}` },

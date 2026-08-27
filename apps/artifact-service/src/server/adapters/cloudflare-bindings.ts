@@ -6,6 +6,11 @@ export interface ArtifactServiceBindings {
   readonly ARTIFACTS: R2Bucket;
   readonly ACCESS_AUD?: string;
   readonly ACCESS_TEAM_DOMAIN?: string;
+  readonly HUMAN_AUTH_MODE?: string;
+  readonly GOOGLE_OAUTH_CLIENT_ID?: string;
+  readonly GOOGLE_OAUTH_CLIENT_SECRET?: string;
+  readonly GITHUB_OAUTH_CLIENT_ID?: string;
+  readonly GITHUB_OAUTH_CLIENT_SECRET?: string;
   readonly ALLOWED_EXPIRY_SECONDS?: string;
   readonly MAX_ARTIFACT_BYTES?: string;
   readonly MAX_EXPIRY_SECONDS?: string;

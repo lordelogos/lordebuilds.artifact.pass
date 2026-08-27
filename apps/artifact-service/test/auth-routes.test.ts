@@ -29,6 +29,7 @@ let localDemoHandler: LocalDemoHandler;
 
 const bindings = (overrides: Record<string, unknown> = {}) => ({
   ...env,
+  HUMAN_AUTH_MODE: "cloudflare-access",
   ACCESS_TEAM_DOMAIN: issuer,
   ACCESS_AUD: audience,
   ...overrides,

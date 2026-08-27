@@ -11,6 +11,7 @@ export interface LocalBridgeProfileSettings {
   readonly publication_state?: "legacy";
   readonly publication_state_path?: string;
   readonly credential_namespace?: "artifactpass";
+  readonly credential_binding?: "origin";
 }
 
 export interface LocalBridgeSettings {
@@ -63,6 +64,9 @@ const validateProfile = (value: unknown): LocalBridgeProfileSettings => {
   if (candidate.credential_namespace !== undefined && candidate.credential_namespace !== "artifactpass") {
     throw new Error("ArtifactPass config contains an invalid credential namespace");
   }
+  if (candidate.credential_binding !== undefined && candidate.credential_binding !== "origin") {
+    throw new Error("ArtifactPass config contains an invalid credential binding");
+  }
   if (candidate.open_development !== undefined && candidate.open_development !== true) {
     throw new Error("ArtifactPass config open_development must be true when enabled");
   }
@@ -92,6 +96,9 @@ const validateProfile = (value: unknown): LocalBridgeProfileSettings => {
       : {}),
     ...(candidate.credential_namespace === "artifactpass"
       ? { credential_namespace: "artifactpass" as const }
+      : {}),
+    ...(candidate.credential_binding === "origin"
+      ? { credential_binding: "origin" as const }
       : {}),
   };
 };

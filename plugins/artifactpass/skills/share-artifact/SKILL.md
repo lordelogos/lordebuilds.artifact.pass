@@ -18,7 +18,7 @@ Before calling the tool:
 3. Confirm the file type is Markdown, HTML, or PDF. Explain that other formats are not supported instead of implying they will work.
 4. Use the user's requested expiry when it is one of the tool's supported values. When no expiry is requested, use one hour (3600 seconds). Otherwise ask them to choose a supported duration.
 
-Call `publish_artifact` with the exact path and a deployment expiry preset. Start with the default setup presets: 900, 1800, 3600, 43200, or 86400 seconds. If the deployment rejects one, use the allowed values in its error. The bridge infers and validates the content type from the filename.
+Call `publish_artifact` with the exact path and a deployment expiry preset. Public ArtifactPass supports 900, 1800, or 3600 seconds. If another deployment rejects a requested value, use the allowed values in its error. The bridge infers and validates the content type from the filename.
 
 For a PDF, pass `canonical_source_path` only when it names the exact UTF-8 source used to produce that PDF. The bridge verifies that source against the visible PDF content and signs a receipt; the service independently verifies the hashes, signature, key, and pipeline version. Never reconstruct, extract, or invent a canonical source merely to obtain controlled trust. If no exact source exists, omit the field: the PDF still shares for people but remains human-only for agents.
 

@@ -91067,6 +91067,29 @@ import { spawn } from "node:child_process";
 var ARTIFACTPASS_CREDENTIAL_SERVICE = "artifactpass";
 var LEGACY_ARTIFACT_SHARE_CREDENTIAL_SERVICE = "lordebuilds.artifacts.share";
 var agentCredentialAccountForProfile = (profileName) => profileName === "production" ? "agent-token" : `agent-token:${profileName}`;
+var agentTokenPattern = /^as_[A-Za-z0-9_-]{43}$/u;
+var resolveAgentCredential = (storedValue, expectedOriginValue, requireOriginBinding = false) => {
+  if (agentTokenPattern.test(storedValue)) {
+    if (requireOriginBinding) {
+      throw new Error("ArtifactPass credential predates origin binding; reconnect this profile before publishing");
+    }
+    return storedValue;
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(storedValue);
+  } catch {
+    throw new Error("ArtifactPass agent credential is malformed");
+  }
+  if (parsed === null || typeof parsed !== "object" || parsed.version !== 1 || typeof parsed.origin !== "string" || typeof parsed.token !== "string" || !agentTokenPattern.test(parsed.token)) {
+    throw new Error("ArtifactPass agent credential is malformed");
+  }
+  const expectedOrigin = new URL(expectedOriginValue).origin;
+  if (new URL(parsed.origin).origin !== expectedOrigin) {
+    throw new Error("ArtifactPass credential belongs to a different deployment; reconnect this profile");
+  }
+  return parsed.token;
+};
 var CredentialStoreCommandError = class extends Error {
   constructor(status) {
     super(`Credential store command failed with status ${status ?? "unknown"}`);
@@ -91244,8 +91267,10 @@ var resolveCredential = async (options) => {
     throw new Error("Interactive mode requires a supported OS credential store");
   }
   const value = await options.osStore.get();
-  if (value === null) throw new Error("No interactive credential is stored; connect this host first");
-  return value;
+  if (value === null) {
+    throw new Error("ArtifactPass is installed but not connected. Run `pnpm dlx artifactpass connect` in this workspace, then restart the agent session");
+  }
+  return options.expectedOrigin === void 0 ? value : resolveAgentCredential(value, options.expectedOrigin, options.requireOriginBinding === true);
 };
 
 // src/config/local-config.ts
@@ -91281,6 +91306,9 @@ var validateProfile = (value) => {
   if (candidate.credential_namespace !== void 0 && candidate.credential_namespace !== "artifactpass") {
     throw new Error("ArtifactPass config contains an invalid credential namespace");
   }
+  if (candidate.credential_binding !== void 0 && candidate.credential_binding !== "origin") {
+    throw new Error("ArtifactPass config contains an invalid credential binding");
+  }
   if (candidate.open_development !== void 0 && candidate.open_development !== true) {
     throw new Error("ArtifactPass config open_development must be true when enabled");
   }
@@ -91300,7 +91328,8 @@ var validateProfile = (value) => {
     ...typeof candidate.pdf_key_id === "string" ? { pdf_key_id: candidate.pdf_key_id } : {},
     ...candidate.publication_state === "legacy" ? { publication_state: "legacy" } : {},
     ...typeof candidate.publication_state_path === "string" ? { publication_state_path: candidate.publication_state_path } : {},
-    ...candidate.credential_namespace === "artifactpass" ? { credential_namespace: "artifactpass" } : {}
+    ...candidate.credential_namespace === "artifactpass" ? { credential_namespace: "artifactpass" } : {},
+    ...candidate.credential_binding === "origin" ? { credential_binding: "origin" } : {}
   };
 };
 var validateSettings = (value) => {
@@ -91735,10 +91764,10 @@ var responseError = async (response) => {
 // src/logging/redacting-logger.ts
 var sensitiveKey = /(?:authorization|content|data|share_?url|token|secret|credential|password)/iu;
 var bearerPattern = /\bBearer\s+[A-Za-z0-9._~-]+/giu;
-var agentTokenPattern = /\bas_[A-Za-z0-9_-]{20,}\b/gu;
+var agentTokenPattern2 = /\bas_[A-Za-z0-9_-]{20,}\b/gu;
 var cloudflareTokenPattern = /\bcfut_[A-Za-z0-9_-]{20,}\b/gu;
 var shareUrlPattern = /https:\/\/[^\s/]+\/a\/[A-Za-z0-9_-]{32,256}(?:\/[^\s]*)?/gu;
-var redactSensitiveText = (value) => value.replace(bearerPattern, "Bearer [REDACTED]").replace(agentTokenPattern, "[REDACTED]").replace(cloudflareTokenPattern, "[REDACTED]").replace(shareUrlPattern, "[REDACTED SHARE URL]");
+var redactSensitiveText = (value) => value.replace(bearerPattern, "Bearer [REDACTED]").replace(agentTokenPattern2, "[REDACTED]").replace(cloudflareTokenPattern, "[REDACTED]").replace(shareUrlPattern, "[REDACTED SHARE URL]");
 var redact = (value, key) => {
   if (key !== void 0 && sensitiveKey.test(key)) return "[REDACTED]";
   if (typeof value === "string") return redactSensitiveText(value);
@@ -92851,7 +92880,7 @@ var publishArtifactInputSchema = external_exports.object({
     "Optional UTF-8 source used to generate a PDF. When configured, ArtifactPass verifies it against the PDF and signs the agent-readable representation."
   ),
   expires_in_seconds: external_exports.number().int().positive().default(3600).describe(
-    "Deployment expiry preset in seconds. Defaults to one hour (3600). Default setup presets: 900, 1800, 3600, 43200, 86400; a rejection reports the deployment's allowed values."
+    "Deployment expiry preset in seconds. Defaults to one hour (3600). Public ArtifactPass presets: 900, 1800, or 3600; a rejection reports the deployment's allowed values."
   )
 });
 var publishArtifactOutputSchema = external_exports.object({
@@ -92862,7 +92891,9 @@ var publishArtifactOutputSchema = external_exports.object({
 var readArtifactInputSchema = external_exports.object({
   share_url: external_exports.string().url(),
   cursor: external_exports.string().optional(),
-  max_bytes: external_exports.number().int().positive().optional(),
+  max_bytes: external_exports.number().int().positive().max(PROTOCOL_MAX_SOURCE_CHUNK_BYTES).optional().describe(
+    `Maximum source bytes per call. Defaults to ${PROTOCOL_MAX_SOURCE_CHUNK_BYTES}.`
+  ),
   representation: external_exports.enum(["auto", "source", "derived"]).optional()
 });
 var readArtifactOutputSchema = external_exports.object({
@@ -92949,7 +92980,9 @@ var createBridgeServer = (configuration) => {
       const token = configuration.openDevelopment === true ? void 0 : await resolveCredential({
         headless: configuration.headless,
         environmentStore: configuration.environmentStore,
-        ...configuration.osStore === void 0 ? {} : { osStore: configuration.osStore }
+        ...configuration.osStore === void 0 ? {} : { osStore: configuration.osStore },
+        expectedOrigin: configuration.baseUrl,
+        requireOriginBinding: configuration.requireOriginBoundCredential === true
       });
       const pdfProvenance = canonicalSourcePath === void 0 ? void 0 : await resolvePdfProvenance(configuration);
       const result = await publishArtifact({
@@ -93024,7 +93057,17 @@ var configurationFromEnvironment = (environment = process.env) => {
     "ARTIFACTPASS_OPEN_DEVELOPMENT",
     "ARTIFACT_SHARE_OPEN_DEVELOPMENT"
   );
-  const localState = baseUrlEnvironment === void 0 || rootsEnvironment === void 0 ? readCompatibleLocalBridgeSettingsSync(environment) : void 0;
+  const mayUseUnconfiguredPublicPlugin = environment.ARTIFACTPASS_CONFIG_PATH === void 0 && environment.ARTIFACT_SHARE_CONFIG_PATH === void 0;
+  const localState = baseUrlEnvironment === void 0 || rootsEnvironment === void 0 ? (() => {
+    try {
+      return readCompatibleLocalBridgeSettingsSync(environment);
+    } catch (error51) {
+      if (mayUseUnconfiguredPublicPlugin && error51 instanceof Error && "code" in error51 && error51.code === "ENOENT") {
+        return void 0;
+      }
+      throw error51;
+    }
+  })() : void 0;
   const localConfigPath = localState?.path ?? (environment.ARTIFACTPASS_CONFIG_PATH === void 0 && environment.ARTIFACT_SHARE_CONFIG_PATH !== void 0 ? legacyLocalConfigPath(environment) : defaultLocalConfigPath(environment));
   const localConfiguration = localState?.settings;
   const selectedProfile = localConfiguration === void 0 ? void 0 : selectLocalBridgeProfile(localConfiguration, profileEnvironment);
@@ -93032,10 +93075,9 @@ var configurationFromEnvironment = (environment = process.env) => {
   const profileName = selectedProfile?.name ?? validateProfileName(
     profileEnvironment ?? (openDevelopmentEnvironment === "1" ? "environment" : "production")
   );
-  const baseUrlValue = baseUrlEnvironment ?? localSettings?.base_url;
-  if (baseUrlValue === void 0) throw new Error("ARTIFACTPASS_BASE_URL is required");
+  const baseUrlValue = baseUrlEnvironment ?? localSettings?.base_url ?? "https://artifactpass.com";
   const rootsValue = rootsEnvironment;
-  const workspaceRoots = rootsValue === void 0 ? [...localSettings?.workspace_roots ?? []] : rootsValue.split(delimiter).filter((root) => root.length > 0);
+  const workspaceRoots = rootsValue === void 0 ? [...localSettings?.workspace_roots ?? [resolve3(process.cwd())]] : rootsValue.split(delimiter).filter((root) => root.length > 0);
   if (workspaceRoots.length === 0) throw new Error("ARTIFACTPASS_WORKSPACE_ROOTS must not be empty");
   const environmentStore = new CompatibleEnvironmentCredentialStore(
     "ARTIFACTPASS_TOKEN",
@@ -93070,6 +93112,7 @@ var configurationFromEnvironment = (environment = process.env) => {
     headless,
     environmentStore,
     publicationStatePath,
+    ...localSettings?.credential_binding === "origin" ? { requireOriginBoundCredential: true } : {},
     ...pdfProvenanceKeyId === void 0 || pdfProvenancePrivateKey === void 0 ? localSettings?.pdf_key_id === void 0 ? {} : {
       pdfProvenanceKeyId: localSettings.pdf_key_id,
       pdfProvenanceStore: new CompatibleCredentialStore({

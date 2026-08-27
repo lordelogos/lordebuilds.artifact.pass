@@ -98,6 +98,10 @@ export class ArtifactApplicationService {
     }));
   }
 
+  public async publicationExists(publisherId: string, publicationAttempt: string): Promise<boolean> {
+    return await this.options.repository.findByPublication(publisherId, publicationAttempt) !== null;
+  }
+
   public async create(input: ArtifactUploadInput): Promise<CreatedArtifact> {
     const declaredPdfTrust = input.pdfTrust ?? (
       input.mimeType.toLowerCase() === "application/pdf"

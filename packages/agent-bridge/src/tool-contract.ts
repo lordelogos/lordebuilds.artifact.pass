@@ -16,7 +16,7 @@ export const publishArtifactInputSchema = z.object({
     "Optional UTF-8 source used to generate a PDF. When configured, ArtifactPass verifies it against the PDF and signs the agent-readable representation.",
   ),
   expires_in_seconds: z.number().int().positive().default(3600).describe(
-    "Deployment expiry preset in seconds. Defaults to one hour (3600). Default setup presets: 900, 1800, 3600, 43200, 86400; a rejection reports the deployment's allowed values.",
+    "Deployment expiry preset in seconds. Defaults to one hour (3600). Public ArtifactPass presets: 900, 1800, or 3600; a rejection reports the deployment's allowed values.",
   ),
 });
 
@@ -29,7 +29,9 @@ export const publishArtifactOutputSchema = z.object({
 export const readArtifactInputSchema = z.object({
   share_url: z.string().url(),
   cursor: z.string().optional(),
-  max_bytes: z.number().int().positive().optional(),
+  max_bytes: z.number().int().positive().max(PROTOCOL_MAX_SOURCE_CHUNK_BYTES).optional().describe(
+    `Maximum source bytes per call. Defaults to ${PROTOCOL_MAX_SOURCE_CHUNK_BYTES}.`,
+  ),
   representation: z.enum(["auto", "source", "derived"]).optional(),
 });
 

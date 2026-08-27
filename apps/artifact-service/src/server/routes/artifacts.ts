@@ -12,11 +12,81 @@ import {
   type ArtifactHonoEnvironment,
   type AuthorizationOptions,
 } from "../middleware/authorize";
+import { consumeRateLimit } from "../auth/rate-limit";
 import { ArtifactApplicationService } from "../storage/artifact-service";
 import { sha256 } from "../storage/crypto";
 import { ArtifactError } from "../storage/artifact-error";
 
 type ServiceFactory = (bindings: ArtifactServiceBindings) => ArtifactApplicationService;
+
+const PUBLIC_UPLOAD_WINDOW_MILLISECONDS = 10 * 60 * 1_000;
+const PUBLIC_UPLOAD_MAXIMUM_REQUESTS = 10;
+const PUBLIC_UPLOAD_MAXIMUM_BYTES = 64 * 1024 * 1024;
+const UPLOAD_FIELDS = new Set([
+  "derived_text",
+  "expires_in_seconds",
+  "extraction_reason",
+  "extraction_status",
+  "extractor",
+  "extractor_version",
+  "file",
+  "page_count",
+  "payload_commitment",
+  "pdf_provenance",
+  "publication_attempt",
+  "share_token",
+]);
+
+export interface PublicUploadOptions {
+  readonly now?: () => number;
+  readonly disabled?: boolean;
+  readonly windowMilliseconds?: number;
+  readonly maximumRequests?: number;
+  readonly maximumBytes?: number;
+}
+
+interface PublicUploadQuota {
+  readonly units: number;
+  readonly maximumUnits: number;
+  readonly actorNamespace: string;
+  readonly networkNamespace: string;
+  readonly errorMessage: string;
+}
+
+const createPublicUploadBudget = (
+  context: Context<ArtifactHonoEnvironment>,
+  options: PublicUploadOptions,
+) => {
+  if (context.env.HUMAN_AUTH_MODE !== "artifactpass" || options.disabled === true) return null;
+  const principal = context.get("agentPrincipal");
+  const identity = context.get("humanIdentity");
+  if (principal === undefined && identity === undefined) return null;
+  const actor = `identity:${principal?.subject ?? identity?.subject ?? "unknown"}`;
+  const network = context.req.header("cf-connecting-ip") ?? "unknown";
+  const common = {
+    database: context.env.ARTIFACT_DB,
+    timestamp: (options.now ?? Date.now)(),
+    windowMilliseconds: options.windowMilliseconds ?? PUBLIC_UPLOAD_WINDOW_MILLISECONDS,
+  };
+  return async (quota: PublicUploadQuota): Promise<void> => {
+    await consumeRateLimit({
+      ...common,
+      namespace: quota.actorNamespace,
+      source: actor,
+      units: quota.units,
+      maximumUnits: quota.maximumUnits,
+      errorMessage: quota.errorMessage,
+    });
+    await consumeRateLimit({
+      ...common,
+      namespace: quota.networkNamespace,
+      source: network,
+      units: quota.units,
+      maximumUnits: quota.maximumUnits,
+      errorMessage: quota.errorMessage,
+    });
+  };
+};
 
 const parseInteger = (value: FormDataEntryValue | null, field: string): number => {
   if (typeof value !== "string" || !/^(?:0|[1-9]\d*)$/u.test(value)) {
@@ -91,37 +161,77 @@ const parsePdfTrust = (form: FormData, isPdf: boolean): PdfTrust => {
 export const createArtifactsRouter = (
   createService: ServiceFactory,
   authorizationOptions: AuthorizationOptions = {},
+  publicUploadOptions: PublicUploadOptions = {},
 ) => {
   const router = new Hono<ArtifactHonoEnvironment>();
 
   router.post("/", requireUploader(authorizationOptions), async (context) => {
-    if (context.req.header("cf-access-jwt-assertion") !== undefined) {
+    if (context.get("humanIdentity") !== undefined) {
       const origin = context.req.header("origin");
       if (origin !== new URL(context.req.url).origin) {
         throw new ArtifactError("not_found", "Route is unavailable", 404);
       }
     }
+    const consumePublicUpload = createPublicUploadBudget(context, publicUploadOptions);
+    await consumePublicUpload?.({
+      units: 1,
+      maximumUnits: publicUploadOptions.maximumRequests ?? PUBLIC_UPLOAD_MAXIMUM_REQUESTS,
+      actorNamespace: "public-upload-attempt-actor",
+      networkNamespace: "public-upload-attempt-network",
+      errorMessage: "Public upload attempt limit exceeded; try again later",
+    });
     const form = await context.req.formData().catch(() => {
       throw new ArtifactError("malformed_upload", "Expected a multipart upload", 400);
     });
     const file = form.get("file");
+    const derivedEntry = form.get("derived_text");
+    const encodedDerivedText = typeof derivedEntry === "string"
+      ? new TextEncoder().encode(derivedEntry)
+      : undefined;
+    const seenFields = new Set<string>();
+    let uploadByteLength = 0;
+    let invalidField: string | undefined;
+    for (const [field, entry] of form.entries()) {
+      if (!UPLOAD_FIELDS.has(field) || seenFields.has(field)) invalidField ??= field;
+      seenFields.add(field);
+      uploadByteLength += entry instanceof File
+        ? entry.size
+        : field === "derived_text" && encodedDerivedText !== undefined
+          ? encodedDerivedText.byteLength
+          : new TextEncoder().encode(entry).byteLength;
+    }
+    if (invalidField !== undefined) {
+      throw new ArtifactError("malformed_upload", `Upload field is unknown or duplicated: ${invalidField}`, 400);
+    }
     if (!(file instanceof File)) {
       throw new ArtifactError("malformed_upload", "Upload must include one file", 400);
     }
-    const derivedEntry = form.get("derived_text");
     const derivedText =
       derivedEntry instanceof File
         ? new Uint8Array(await derivedEntry.arrayBuffer())
-        : typeof derivedEntry === "string"
-          ? new TextEncoder().encode(derivedEntry)
-          : undefined;
-    const service = createService(context.env);
+        : encodedDerivedText;
     const publicationAttempt = optionalString(form.get("publication_attempt"));
     const shareToken = optionalString(form.get("share_token"));
     const payloadCommitment = optionalString(form.get("payload_commitment"));
     const hasPublicationFields =
       publicationAttempt !== undefined || shareToken !== undefined || payloadCommitment !== undefined;
     const publisherId = hasPublicationFields ? await publicationPublisher(context) : undefined;
+    const service = createService(context.env);
+    const isPublicationRetry =
+      publisherId !== undefined &&
+      publicationAttempt !== undefined &&
+      shareToken !== undefined &&
+      payloadCommitment !== undefined &&
+      await service.publicationExists(publisherId, publicationAttempt);
+    if (!isPublicationRetry) {
+      await consumePublicUpload?.({
+        units: uploadByteLength,
+        maximumUnits: publicUploadOptions.maximumBytes ?? PUBLIC_UPLOAD_MAXIMUM_BYTES,
+        actorNamespace: "public-upload-bytes-actor",
+        networkNamespace: "public-upload-bytes-network",
+        errorMessage: "Public upload byte limit exceeded; try again later",
+      });
+    }
     const created = await service.create({
       filename: file.name,
       mimeType: file.type,

@@ -7,6 +7,7 @@ export {
 } from "./http/safe-fetch";
 export {
   agentCredentialAccountForProfile,
+  bindAgentCredential,
   ARTIFACTPASS_CREDENTIAL_SERVICE,
   LEGACY_ARTIFACT_SHARE_CREDENTIAL_SERVICE,
   CompatibleCredentialStore,
@@ -15,6 +16,7 @@ export {
   EnvironmentCredentialStore,
   OsCredentialStore,
   resolveCredential,
+  resolveAgentCredential,
   type CommandRunner,
   type CredentialStore,
   type CompatibleCredentialStoreOptions,

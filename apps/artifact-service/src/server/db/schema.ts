@@ -91,6 +91,23 @@ export const requestRateLimits = sqliteTable("request_rate_limits", {
   expiresAt: integer("expires_at").notNull(),
 });
 
+export const oauthTransactions = sqliteTable("oauth_transactions", {
+  stateHash: text("state_hash").primaryKey(),
+  provider: text("provider", { enum: ["google", "github"] }).notNull(),
+  returnTo: text("return_to").notNull(),
+  createdAt: integer("created_at").notNull(),
+  expiresAt: integer("expires_at").notNull(),
+});
+
+export const webSessions = sqliteTable("web_sessions", {
+  tokenHash: text("token_hash").primaryKey(),
+  identitySubject: text("identity_subject").notNull(),
+  identityEmail: text("identity_email").notNull(),
+  createdAt: integer("created_at").notNull(),
+  expiresAt: integer("expires_at").notNull(),
+  revokedAt: integer("revoked_at"),
+});
+
 export const ARTIFACT_SCHEMA_SQL = [
   "CREATE TABLE IF NOT EXISTS artifacts (id TEXT PRIMARY KEY NOT NULL, status TEXT NOT NULL CHECK (status IN ('staging', 'active', 'cleanup_pending')), object_key TEXT NOT NULL UNIQUE, derived_object_key TEXT, legacy_derived_object_key TEXT, filename TEXT NOT NULL, mime_type TEXT NOT NULL, byte_size INTEGER NOT NULL CHECK (byte_size >= 0), sha256 TEXT NOT NULL, share_token_hash TEXT NOT NULL UNIQUE, publisher_id TEXT, publication_attempt TEXT, payload_commitment TEXT, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, extraction_status TEXT NOT NULL, extractor TEXT, extractor_version TEXT, page_count INTEGER, extraction_reason TEXT, pdf_trust_status TEXT NOT NULL DEFAULT 'not_applicable', pdf_trust_reason TEXT, pdf_provenance_receipt TEXT, cleanup_attempts INTEGER NOT NULL DEFAULT 0, last_cleanup_error TEXT);",
   "CREATE INDEX IF NOT EXISTS artifacts_status_expires_at_idx ON artifacts (status, expires_at);",
@@ -101,4 +118,9 @@ export const ARTIFACT_SCHEMA_SQL = [
   "CREATE INDEX IF NOT EXISTS agent_tokens_expires_at_idx ON agent_tokens (expires_at);",
   "CREATE TABLE IF NOT EXISTS request_rate_limits (bucket_key TEXT PRIMARY KEY NOT NULL, window_start INTEGER NOT NULL, request_count INTEGER NOT NULL CHECK (request_count >= 0), expires_at INTEGER NOT NULL);",
   "CREATE INDEX IF NOT EXISTS request_rate_limits_expires_at_idx ON request_rate_limits (expires_at);",
+  "CREATE TABLE IF NOT EXISTS oauth_transactions (state_hash TEXT PRIMARY KEY NOT NULL, provider TEXT NOT NULL CHECK (provider IN ('google', 'github')), return_to TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL);",
+  "CREATE INDEX IF NOT EXISTS oauth_transactions_expires_at_idx ON oauth_transactions (expires_at);",
+  "CREATE TABLE IF NOT EXISTS web_sessions (token_hash TEXT PRIMARY KEY NOT NULL, identity_subject TEXT NOT NULL, identity_email TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, revoked_at INTEGER);",
+  "CREATE INDEX IF NOT EXISTS web_sessions_expires_at_idx ON web_sessions (expires_at);",
+  "CREATE INDEX IF NOT EXISTS web_sessions_revoked_at_idx ON web_sessions (revoked_at) WHERE revoked_at IS NOT NULL;",
 ].join("\n");

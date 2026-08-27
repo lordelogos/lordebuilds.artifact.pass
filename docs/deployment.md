@@ -1,61 +1,87 @@
-# Deploy ArtifactPass
+# Deploy public ArtifactPass
 
-ArtifactPass runs in your Cloudflare account on one custom hostname. D1 metadata and private R2 objects stay in that account. `/upload` and `/connect/approve` are protected by one Cloudflare Access application; `/api/*` uses a scoped ArtifactPass bearer token; `/a/*` is a temporary capability URL.
+This procedure is for the ArtifactPass release operator, not for people installing the plugin. Public users install and connect to `https://artifactpass.com`; they never need a Cloudflare account.
 
-## Prerequisites
+The production service uses one Cloudflare Worker custom domain, one managed D1 database, and one private R2 bucket. Google and GitHub authenticate people in the browser. Scoped ArtifactPass tokens authenticate agent publishing. Temporary `/a/*` URLs remain bearer capabilities.
 
-- Node.js 24 or newer and pnpm.
-- An active Cloudflare zone and a configured Zero Trust organization.
-- A Cloudflare OAuth login or short-lived API token with: Workers Scripts Write, Workers Routes Write, D1 Write, Workers R2 Storage Write, Zone Read, Access: Apps and Policies Write, and Access: Organizations, Identity Providers, and Groups Read.
+## Provider applications
 
-For an interactive deployment, keep Wrangler's OAuth credential encrypted with its key in the operating-system keychain:
+Create one Google OAuth web application and one GitHub OAuth application for ArtifactPass:
+
+- Google authorized redirect URI: `https://artifactpass.com/auth/callback/google`
+- GitHub callback URL: `https://artifactpass.com/auth/callback/github`
+- GitHub homepage URL: `https://artifactpass.com`
+
+Qualify a separate provider pair in staging before creating the production applications. The staging
+registration uses `https://staging.artifactpass.com`, with callbacks at
+`/auth/callback/google` and `/auth/callback/github`. Its Google branding links are the staging root,
+`/privacy`, and `/terms`; all three must resolve to the deployed Worker rather than placeholder pages.
+Keep the Google staging application in Testing status and limit it to the release operator's test
+account. Do not reuse staging credentials or callback URLs in the production applications.
+
+The client IDs are non-secret deployment inputs. Keep both client secrets in the operator's secret store. Never put them in a repository file, approval manifest, shell history, or chat.
+
+## Cloudflare access
+
+Use a short-lived Cloudflare token with Workers Scripts Write, Workers Routes Write, D1 Write, Workers R2 Storage Write, Zone Read, Access: Apps and Policies Write, and Access: Organizations, Identity Providers, and Groups Read. The Access permissions are temporarily required to identify and remove the old path-scoped Access application after ArtifactPass login is proven healthy.
+
+Load the token and provider secrets without placing their values in shell history. On macOS, the Cloudflare token can come from the Keychain entry created during the earlier setup; the provider prompts remain silent:
 
 ```sh
-pnpm --dir packages/setup-cli exec wrangler login --use-keyring
+export CLOUDFLARE_API_TOKEN="$(security find-generic-password -w -s artifactpass-cloudflare-api-token -a "$USER")"
+read -rs "ARTIFACTPASS_GOOGLE_OAUTH_CLIENT_SECRET?Google OAuth client secret: " && export ARTIFACTPASS_GOOGLE_OAUTH_CLIENT_SECRET && printf '\n'
+read -rs "ARTIFACTPASS_GITHUB_OAUTH_CLIENT_SECRET?GitHub OAuth client secret: " && export ARTIFACTPASS_GITHUB_OAUTH_CLIENT_SECRET && printf '\n'
 ```
 
-For automation, export a short-lived token only for the deployment shell:
+## State-bound release
+
+Build the reviewed Worker and setup package, then write an approval manifest. The manifest contains hashes of the provider secrets, never their values.
 
 ```sh
-export CLOUDFLARE_API_TOKEN="your-short-lived-token"
-```
-
-The setup CLI retrieves the current OAuth or API token through Wrangler. It does not write it to repository files, generated Worker config, logs, or the local agent configuration.
-
-## Preview the deployment
-
-Dry-run planning performs no Cloudflare mutations and does not require a token:
-
-```sh
+pnpm install --frozen-lockfile
 pnpm --dir packages/setup-cli build
-node packages/setup-cli/dist/cli.mjs deploy \
+node packages/setup-cli/dist/cli.mjs deploy-public \
   --account-id 0123456789abcdef0123456789abcdef \
   --zone-id fedcba9876543210fedcba9876543210 \
-  --hostname artifacts.example.com \
-  --allow-domain example.com \
-  --dry-run
+  --hostname artifactpass.com \
+  --workers-subdomain artifactpass \
+  --pdf-key-id artifactpass-primary \
+  --pdf-public-key BASE64_ED25519_PUBLIC_KEY \
+  --google-client-id GOOGLE_CLIENT_ID \
+  --github-client-id GITHUB_CLIENT_ID \
+  --write-approval-manifest /private/path/artifactpass-public-approval.json
 ```
 
-Remove `--dry-run` only after approving the hosted run. That is the mutation boundary: the deployer verifies permissions, reuses or creates D1/R2/Access resources, deploys the Worker and custom domain, applies migrations and lifecycle defense-in-depth, and verifies `/health`. Reruns reuse resources with the canonical names and refuse hostname or Access-path collisions.
+Review the manifest, then rerun the same values with `--approve-manifest` pointing to that file. The deployer stops if the Worker bundle, OAuth inputs, or Cloudflare state changed after approval.
 
-The complete values, command order, verification, and rollback checklist is in the [hosted activation packet](hosted-activation.md).
+The mutation order is deliberate:
 
-## Connect a developer
+1. Reuse or create D1 and R2, then apply migrations and lifecycle policy.
+2. Store Google and GitHub client secrets as Cloudflare Worker secrets.
+3. Deploy with public expiry limited to 15, 30, or 60 minutes.
+4. Verify health says ArtifactPass authentication is fully configured.
+5. Verify the sign-in page and both provider redirects.
+6. Remove only the matching legacy Cloudflare Access application.
+7. Verify anonymous `/upload` now redirects to ArtifactPass sign-in.
 
-Run the team command printed by deployment:
+If the final upload check fails after removal, the running deploy process recreates the managed legacy Access application and its policies as a containment gate before returning the error. An operator interruption after deletion can still require manual restoration, so watch the command through this final check.
+
+## Public user connection
+
+After deployment, a user installs without authentication:
 
 ```sh
-pnpm dlx artifactpass connect https://artifacts.example.com --profile production
+pnpm dlx artifactpass
 ```
 
-The command detects Claude Code and Codex, installs the same plugin, opens the Access-protected device approval page, stores the scoped agent token in the production profile's operating-system credential account, and writes only non-secret profile settings locally. The existing local development profile is preserved. A trusted host that creates controlled PDFs must also receive the matching private key through the team's secret manager; it is never downloaded from the service.
-
-To revoke the current agent token and remove it from the credential store:
+They connect later from the workspace they want to authorize:
 
 ```sh
-pnpm dlx artifactpass disconnect --profile production
+pnpm dlx artifactpass connect
 ```
 
-## Manual fallback
+The browser signs in at ArtifactPass with Google or GitHub. The terminal receives only the scoped ArtifactPass token after the person approves the displayed device code.
 
-If Access API automation is unavailable, create one self-hosted Access application with destinations `artifacts.example.com/upload*` and `artifacts.example.com/connect/approve*`, add an Allow policy for your uploader identities, and set the Worker variables `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD` to that application's issuer and audience. Keep R2 private. Attach the Worker using a Custom Domain, then apply every D1 migration and the bundled R2 lifecycle file.
+## Organization-owned deployments
+
+The repository retains the earlier Cloudflare Access deployment machinery for compatibility and development, but it is not the public v1 setup path. The planned organization-owned product will add a separate admin experience, customer-selected identity configuration, and customer-controlled retention without changing the MCP tools or Agent Skills.

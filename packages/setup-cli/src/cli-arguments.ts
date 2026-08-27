@@ -1,0 +1,50 @@
+export interface ConnectArguments {
+  readonly deploymentUrl?: string;
+}
+
+const CONNECT_VALUE_OPTIONS = new Set([
+  "--profile",
+  "--workspace-root",
+  "--host",
+  "--marketplace",
+]);
+
+const CONNECT_BOOLEAN_OPTIONS = new Set([
+  "--no-host-install",
+  "--open-development",
+]);
+
+export const parseConnectArguments = (args: readonly string[]): ConnectArguments => {
+  const positionals: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index] ?? "";
+    if (CONNECT_VALUE_OPTIONS.has(argument)) {
+      const optionValue = args[index + 1];
+      if (optionValue === undefined || optionValue.startsWith("--")) {
+        throw new Error(`${argument} requires a value`);
+      }
+      index += 1;
+      continue;
+    }
+    if (CONNECT_BOOLEAN_OPTIONS.has(argument)) continue;
+    if (argument.startsWith("--")) throw new Error(`Unknown connect option: ${argument}`);
+    positionals.push(argument);
+  }
+  if (positionals.length > 1) throw new Error("connect accepts at most one deployment URL");
+  return positionals[0] === undefined ? {} : { deploymentUrl: positionals[0] };
+};
+
+export const resolveConnectDeploymentUrl = (
+  parsed: ConnectArguments,
+  settings: LocalBridgeSettings | null,
+  requestedProfile?: string,
+): string => {
+  if (parsed.deploymentUrl !== undefined) return parsed.deploymentUrl;
+  if (requestedProfile !== undefined && settings?.profiles[requestedProfile] === undefined) {
+    throw new Error(`Unknown ArtifactPass profile: ${requestedProfile}; provide its deployment URL to create it`);
+  }
+  const profileName = requestedProfile ?? settings?.active_profile;
+  return (profileName === undefined ? undefined : settings?.profiles[profileName]?.base_url) ??
+    "https://artifactpass.com";
+};
+import type { LocalBridgeSettings } from "agent-bridge";

@@ -56,7 +56,8 @@ describe("ArtifactPass active identity", () => {
       .toContain('{ name: "lordebuilds.artifacts.share"');
     expect(await read("packages/agent-bridge/src/auth/credential-store.ts"))
       .toContain('LEGACY_ARTIFACT_SHARE_CREDENTIAL_SERVICE = "lordebuilds.artifacts.share"');
-    expect(await read("docs/hosted-activation.md"))
-      .toContain("existing Access allow policy remains named `Artifact Share uploaders`");
+    const activation = await read("docs/hosted-activation.md");
+    expect(activation).toContain("removes only the matching legacy Access application");
+    expect(activation).not.toContain("existing Access allow policy remains");
   });
 });

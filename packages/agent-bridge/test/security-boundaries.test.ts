@@ -3,12 +3,14 @@ import { describe, expect, it, vi } from "vitest";
 import { createRedactingLogger } from "../src/logging/redacting-logger";
 import {
   agentCredentialAccountForProfile,
+  bindAgentCredential,
   CompatibleCredentialStore,
   CompatibleEnvironmentCredentialStore,
   CredentialStoreCommandError,
   EnvironmentCredentialStore,
   OsCredentialStore,
   resolveCredential,
+  resolveAgentCredential,
 } from "../src/auth/credential-store";
 
 const agentToken = `as_${"t".repeat(43)}`;
@@ -44,6 +46,15 @@ describe("credential and logging boundaries", () => {
       "ARTIFACT_SHARE_TOKEN",
       { ARTIFACTPASS_TOKEN: agentToken, ARTIFACT_SHARE_TOKEN: `as_${"x".repeat(43)}` },
     ).get()).rejects.toThrow("conflicts");
+  });
+
+  it("binds stored agent credentials to one deployment origin", async () => {
+    const stored = bindAgentCredential("https://artifacts.company.example/path", agentToken);
+    expect(resolveAgentCredential(stored, "https://artifacts.company.example")).toBe(agentToken);
+    expect(() => resolveAgentCredential(stored, "https://artifactpass.com"))
+      .toThrow("different deployment");
+    expect(() => resolveAgentCredential(agentToken, "https://artifactpass.com", true))
+      .toThrow("predates origin binding");
   });
 
   it("reads a legacy credential but writes only to ArtifactPass", async () => {
