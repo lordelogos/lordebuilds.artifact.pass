@@ -1,6 +1,25 @@
 import { describe, expect, it } from "vitest";
 
-import { parseConnectArguments, resolveConnectDeploymentUrl } from "../src/cli-arguments";
+import {
+  isInstallInvocation,
+  parseConnectArguments,
+  resolveConnectDeploymentUrl,
+} from "../src/cli-arguments";
+
+describe("install CLI arguments", () => {
+  it("dispatches documented install flags without an install subcommand", () => {
+    expect(isInstallInvocation("--base-url")).toBe(true);
+    expect(isInstallInvocation("--profile")).toBe(true);
+    expect(isInstallInvocation("--workspace-root")).toBe(true);
+    expect(isInstallInvocation("--open-development")).toBe(true);
+    expect(isInstallInvocation("--no-host-install")).toBe(true);
+    expect(isInstallInvocation("--json")).toBe(true);
+    expect(isInstallInvocation(undefined)).toBe(true);
+    expect(isInstallInvocation("install")).toBe(true);
+    expect(isInstallInvocation("--help")).toBe(false);
+    expect(isInstallInvocation("doctor")).toBe(false);
+  });
+});
 
 describe("connect CLI arguments", () => {
   it("keeps a deployment URL that follows a boolean option", () => {

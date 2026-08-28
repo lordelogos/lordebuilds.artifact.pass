@@ -12,7 +12,13 @@ import {
 import { runDeployCommand } from "./commands/deploy";
 import { connectHost } from "./commands/connect";
 import { disconnectHost, selectDisconnectProfile } from "./commands/disconnect";
-import { parseConnectArguments, resolveConnectDeploymentUrl } from "./cli-arguments";
+import {
+  INSTALL_BOOLEAN_OPTIONS,
+  INSTALL_VALUE_OPTIONS,
+  isInstallInvocation,
+  parseConnectArguments,
+  resolveConnectDeploymentUrl,
+} from "./cli-arguments";
 import type { IdentityRule } from "./cloudflare/deployment";
 import { runDoctor } from "./doctor";
 import type { AgentHost } from "./hosts";
@@ -93,14 +99,12 @@ let jsonOutputRequested = false;
 
 const main = async (): Promise<void> => {
   const [command, ...args] = process.argv.slice(2);
-  if (command === undefined || command === "install" || command === "--json") {
+  if (isInstallInvocation(command)) {
     const installArgs = command === "install" ? args : process.argv.slice(2);
     jsonOutputRequested = booleanFlag(installArgs, "--json");
-    const valuedFlags = new Set(["--base-url", "--profile", "--workspace-root"]);
-    const booleanFlags = new Set(["--json", "--open-development", "--no-host-install"]);
     const unexpected = installArgs.filter((argument, index) => {
-      if (booleanFlags.has(argument) || valuedFlags.has(argument)) return false;
-      return index === 0 || !valuedFlags.has(installArgs[index - 1] ?? "");
+      if (INSTALL_BOOLEAN_OPTIONS.has(argument) || INSTALL_VALUE_OPTIONS.has(argument)) return false;
+      return index === 0 || !INSTALL_VALUE_OPTIONS.has(installArgs[index - 1] ?? "");
     });
     if (unexpected.length > 0) throw new Error(`Unknown install option: ${unexpected[0]}`);
     const baseUrl = optionalValue(installArgs, "--base-url");

@@ -2,6 +2,24 @@ export interface ConnectArguments {
   readonly deploymentUrl?: string;
 }
 
+export const INSTALL_VALUE_OPTIONS: ReadonlySet<string> = new Set([
+  "--base-url",
+  "--profile",
+  "--workspace-root",
+]);
+
+export const INSTALL_BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
+  "--open-development",
+  "--no-host-install",
+  "--json",
+]);
+
+export const isInstallInvocation = (command: string | undefined): boolean =>
+  command === undefined ||
+  command === "install" ||
+  INSTALL_VALUE_OPTIONS.has(command) ||
+  INSTALL_BOOLEAN_OPTIONS.has(command);
+
 const CONNECT_VALUE_OPTIONS = new Set([
   "--profile",
   "--workspace-root",
