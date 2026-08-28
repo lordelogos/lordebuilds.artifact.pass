@@ -152,6 +152,53 @@ describe("host connection", () => {
     expect(runner).not.toHaveBeenCalledWith("claude", expect.arrayContaining(["mcp", "add"]));
   });
 
+  it("rebinds stale temporary marketplaces before upgrading host plugins", async () => {
+    const runner: ProcessRunner = vi.fn(async (command, args) => {
+      const joined = args.join(" ");
+      if (command === "codex" && joined === "plugin marketplace list --json") {
+        return { stdout: JSON.stringify({ marketplaces: [{
+          name: "artifactpass",
+          marketplaceSource: { sourceType: "local", source: "/tmp/old-codex-marketplace" },
+        }] }), stderr: "" };
+      }
+      if (command === "codex" && joined === "plugin list --json") {
+        return { stdout: JSON.stringify({ installed: [{ pluginId: "artifactpass@artifactpass" }] }), stderr: "" };
+      }
+      if (command === "codex" && joined === "mcp list --json") {
+        return { stdout: "[]", stderr: "" };
+      }
+      if (command === "claude" && joined === "plugin marketplace list --json") {
+        return { stdout: JSON.stringify([{
+          name: "artifactpass",
+          source: "directory",
+          path: "/tmp/old-claude-marketplace",
+        }]), stderr: "" };
+      }
+      if (command === "claude" && joined === "plugin list --json") {
+        return { stdout: JSON.stringify([{ id: "artifactpass@artifactpass", scope: "user" }]), stderr: "" };
+      }
+      if (command === "claude" && joined === "mcp list") {
+        return { stdout: "", stderr: "" };
+      }
+      return { stdout: "{}", stderr: "" };
+    });
+
+    await installPluginForHosts(["codex", "claude"], "/tmp/current-marketplace", runner);
+
+    expect(runner).toHaveBeenCalledWith("codex", [
+      "plugin", "marketplace", "remove", "artifactpass",
+    ]);
+    expect(runner).toHaveBeenCalledWith("codex", [
+      "plugin", "marketplace", "add", "/tmp/current-marketplace", "--json",
+    ]);
+    expect(runner).toHaveBeenCalledWith("claude", [
+      "plugin", "marketplace", "remove", "artifactpass",
+    ]);
+    expect(runner).toHaveBeenCalledWith("claude", [
+      "plugin", "marketplace", "add", "/tmp/current-marketplace",
+    ]);
+  });
+
   it("configures the portable MCP and skills package without invoking a vendor host", async () => {
     const root = await mkdtemp(resolve(tmpdir(), "artifact-share-portable-connect-test-"));
     const configPath = resolve(root, "config.json");
