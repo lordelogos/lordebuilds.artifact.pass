@@ -333,6 +333,7 @@ export const runArtifactpassInstall = async (
   let skills: readonly string[] = [];
   let connectResult: Awaited<ReturnType<typeof connectHost>> | undefined;
   let hostInstallation: HostInstallation | undefined;
+  let hostRegistrationAttempted = false;
   let configSnapshot: { readonly existed: boolean; readonly bytes?: Buffer } | undefined;
   let previousSettings: LocalBridgeSettings | null = null;
   const outcomes: string[] = [];
@@ -381,10 +382,11 @@ export const runArtifactpassInstall = async (
     stage = "bundle";
     journal = { ...journal, stage };
     await writeJson(journalPath, journal);
-    portable = await (dependencies.installPortable ?? installPortableIntegration)({
-      sourceRoot: resolve(input.marketplaceSource, "plugins/artifactpass"),
+    const installedPortable = await (dependencies.installPortable ?? installPortableIntegration)({
+      marketplaceSource: input.marketplaceSource,
       destinationDirectory: defaultPortableIntegrationDirectory(configPath),
     });
+    portable = installedPortable;
     outcomes.push("portable-bundle:verified");
     await dependencies.afterStage?.("bundle");
 
@@ -392,23 +394,28 @@ export const runArtifactpassInstall = async (
     journal = { ...journal, stage };
     await writeJson(journalPath, journal);
     if (connectAfterInstall) {
+      hostRegistrationAttempted = input.installKnownHostAdapters !== false;
       connectResult = await (dependencies.connect ?? connectHost)({
         baseUrl: origin,
         profileName,
         workspaceRoots: [workspaceRoot],
-        marketplaceSource: input.marketplaceSource,
+        marketplaceSource: installedPortable.marketplaceDirectory,
         openDevelopment: input.openDevelopment === true,
         installKnownHostAdapters: input.installKnownHostAdapters !== false,
         ...(input.configPath === undefined ? {} : { configPath }),
       }, {
         ...dependencies.connectDependencies,
+        installPortable: async () => installedPortable,
+        captureHostInstallation: (installation) => {
+          hostInstallation = installation;
+        },
         verifyConnection: async (context) => {
           [smoke, skills] = await Promise.all([
             (dependencies.smoke ?? smokeArtifactpassMcp)({
-              mcpConfigPath: portable?.mcpConfig ?? "",
+              mcpConfigPath: installedPortable.mcpConfig,
               localConfigPath: context.configPath,
             }),
-            verifySkills(portable as PortableIntegration),
+            verifySkills(installedPortable),
           ]);
         },
       });
@@ -420,15 +427,16 @@ export const runArtifactpassInstall = async (
       }, input.openDevelopment === true));
       const runner = dependencies.runner ?? runProcess;
       const hosts = input.installKnownHostAdapters === false ? [] : await detectHosts(runner);
+      hostRegistrationAttempted = hosts.length > 0;
       hostInstallation = hosts.length === 0
         ? undefined
-        : await installPluginForHosts(hosts, input.marketplaceSource, runner);
+        : await installPluginForHosts(hosts, installedPortable.marketplaceDirectory, runner);
       [smoke, skills] = await Promise.all([
         (dependencies.smoke ?? smokeArtifactpassMcp)({
-          mcpConfigPath: portable.mcpConfig,
+          mcpConfigPath: installedPortable.mcpConfig,
           localConfigPath: configPath,
         }),
-        verifySkills(portable),
+        verifySkills(installedPortable),
       ]);
       connectResult = {
         hosts,
@@ -498,12 +506,22 @@ export const runArtifactpassInstall = async (
     return receipt;
   } catch (error) {
     const rollbackFailures: string[] = [];
+    let hostRollbackComplete = !hostRegistrationAttempted;
     if (hostInstallation !== undefined) {
-      await hostInstallation.rollback().catch(() => rollbackFailures.push("host-registration"));
+      await hostInstallation.rollback()
+        .then(() => {
+          hostRollbackComplete = true;
+        })
+        .catch(() => rollbackFailures.push("host-registration"));
     } else if ((connectResult?.hosts.length ?? 0) > 0) {
       rollbackFailures.push("host-registration-unverified");
     }
-    if (portable !== undefined && (dependencies.portableWasCreated ?? portableIntegrationWasCreated)(portable)) {
+    if (
+      portable !== undefined &&
+      hostRollbackComplete &&
+      !hostRegistrationAttempted &&
+      (dependencies.portableWasCreated ?? portableIntegrationWasCreated)(portable)
+    ) {
       await rm(portable.rootDirectory, { recursive: true, force: true })
         .catch(() => rollbackFailures.push("portable-bundle"));
     }

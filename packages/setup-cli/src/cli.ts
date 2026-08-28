@@ -298,7 +298,7 @@ const main = async (): Promise<void> => {
     const hosts = host === "both" ? undefined : [host as AgentHost];
     const marketplaceSource = optionalValue(args, "--marketplace") ?? defaultMarketplace;
     const portableIntegration = await installPortableIntegration({
-      sourceRoot: resolve(marketplaceSource, "plugins/artifactpass"),
+      marketplaceSource,
     });
     const profileName = optionalValue(args, "--profile");
     const requestedWorkspaceRoots = values(args, "--workspace-root");
@@ -311,9 +311,10 @@ const main = async (): Promise<void> => {
       workspaceRoots,
       ...(hosts === undefined ? {} : { hosts }),
       installKnownHostAdapters,
-      marketplaceSource,
+      marketplaceSource: portableIntegration.marketplaceDirectory,
       openDevelopment: booleanFlag(args, "--open-development"),
     }, {
+      installPortable: async () => portableIntegration,
       deviceFlowDependencies: {
         openBrowser,
         onManualApprovalRequired: (url) => {

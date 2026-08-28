@@ -1,3 +1,6 @@
+import { access } from "node:fs/promises";
+import { join } from "node:path";
+
 import type { ProcessRunner } from "../process";
 import { runProcess } from "../process";
 
@@ -52,6 +55,16 @@ interface MarketplaceEntry {
   readonly localSource?: string;
 }
 
+const marketplaceSourceIsReadable = async (
+  source: string,
+  host: AgentHost,
+): Promise<boolean> => {
+  const manifest = host === "claude"
+    ? join(source, ".claude-plugin", "marketplace.json")
+    : join(source, ".agents", "plugins", "marketplace.json");
+  return access(manifest).then(() => true).catch(() => false);
+};
+
 const marketplaceEntries = (
   value: unknown,
   label: string,
@@ -98,7 +111,7 @@ interface LegacyMcpRegistration {
 }
 
 const legacyBridgePath = (value: string): boolean =>
-  /(?:^|[/\\])portable-integration[/\\][a-f0-9]{64}[/\\]plugin[/\\]dist[/\\]cli\.mjs$/u.test(value);
+  /(?:^|[/\\])portable-integration[/\\][a-f0-9]{64}[/\\](?:plugin|marketplace[/\\]plugins[/\\]artifactpass)[/\\]dist[/\\]cli\.mjs$/u.test(value);
 
 const codexLegacyMcp = async (runner: ProcessRunner): Promise<LegacyMcpRegistration | null> => {
   const listed = namedEntries(parseJson(
@@ -148,9 +161,10 @@ export const installPluginForHosts = async (
   runner: ProcessRunner = runProcess,
 ): Promise<HostInstallation> => {
   const rollbackActions: Array<() => Promise<void>> = [];
+  const marketplaceRollbackActions: Array<() => Promise<void>> = [];
   const rollback = async (): Promise<void> => {
     const errors: unknown[] = [];
-    for (const action of [...rollbackActions].reverse()) {
+    for (const action of [...rollbackActions, ...marketplaceRollbackActions].reverse()) {
       await action().catch((error: unknown) => errors.push(error));
     }
     if (errors.length > 0) throw new AggregateError(errors, "ArtifactPass host rollback was incomplete");
@@ -166,13 +180,31 @@ export const installPluginForHosts = async (
     const existingMarketplace = marketplaces.find(
       (marketplace) => marketplace.name === artifactpassMarketplaceId,
     );
-    if (existingMarketplace?.localSource !== marketplaceSource) {
+    if (
+      existingMarketplace === undefined ||
+      (existingMarketplace.localSource !== undefined &&
+        existingMarketplace.localSource !== marketplaceSource)
+    ) {
       if (existingMarketplace !== undefined) {
+        const previousMarketplaceSource = existingMarketplace.localSource as string;
+        const previousMarketplaceIsReadable = await marketplaceSourceIsReadable(
+          previousMarketplaceSource,
+          "codex",
+        );
         await runner("codex", ["plugin", "marketplace", "remove", artifactpassMarketplaceId]);
+        marketplaceRollbackActions.push(async () => {
+          await runner("codex", ["plugin", "marketplace", "remove", artifactpassMarketplaceId])
+            .catch(() => undefined);
+          await runner("codex", [
+            "plugin", "marketplace", "add",
+            previousMarketplaceIsReadable ? previousMarketplaceSource : marketplaceSource,
+            "--json",
+          ]);
+        });
       }
       await runner("codex", ["plugin", "marketplace", "add", marketplaceSource, "--json"]);
       if (existingMarketplace === undefined) {
-        rollbackActions.push(async () => {
+        marketplaceRollbackActions.push(async () => {
           await runner("codex", ["plugin", "marketplace", "remove", artifactpassMarketplaceId]);
         });
       }
@@ -211,13 +243,30 @@ export const installPluginForHosts = async (
     const existingMarketplace = marketplaces.find(
       (marketplace) => marketplace.name === artifactpassMarketplaceId,
     );
-    if (existingMarketplace?.localSource !== marketplaceSource) {
+    if (
+      existingMarketplace === undefined ||
+      (existingMarketplace.localSource !== undefined &&
+        existingMarketplace.localSource !== marketplaceSource)
+    ) {
       if (existingMarketplace !== undefined) {
+        const previousMarketplaceSource = existingMarketplace.localSource as string;
+        const previousMarketplaceIsReadable = await marketplaceSourceIsReadable(
+          previousMarketplaceSource,
+          "claude",
+        );
         await runner("claude", ["plugin", "marketplace", "remove", artifactpassMarketplaceId]);
+        marketplaceRollbackActions.push(async () => {
+          await runner("claude", ["plugin", "marketplace", "remove", artifactpassMarketplaceId])
+            .catch(() => undefined);
+          await runner("claude", [
+            "plugin", "marketplace", "add",
+            previousMarketplaceIsReadable ? previousMarketplaceSource : marketplaceSource,
+          ]);
+        });
       }
       await runner("claude", ["plugin", "marketplace", "add", marketplaceSource]);
       if (existingMarketplace === undefined) {
-        rollbackActions.push(async () => {
+        marketplaceRollbackActions.push(async () => {
           await runner("claude", ["plugin", "marketplace", "remove", artifactpassMarketplaceId]);
         });
       }

@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
@@ -199,6 +199,115 @@ describe("host connection", () => {
     ]);
   });
 
+  it("restores a stale marketplace when the replacement plugin fails", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifactpass-claude-marketplace-rollback-"));
+    const oldMarketplace = resolve(root, "old-marketplace");
+    const newMarketplace = resolve(root, "new-marketplace");
+    await mkdir(resolve(oldMarketplace, ".claude-plugin"), { recursive: true });
+    await writeFile(resolve(oldMarketplace, ".claude-plugin", "marketplace.json"), "{}");
+    const calls: string[] = [];
+    let pluginInstallAttempts = 0;
+    const runner: ProcessRunner = vi.fn(async (command, args) => {
+      const joined = `${command} ${args.join(" ")}`;
+      calls.push(joined);
+      if (joined === "claude plugin marketplace list --json") {
+        return { stdout: JSON.stringify([{
+          name: "artifactpass",
+          source: "directory",
+          path: oldMarketplace,
+        }]), stderr: "" };
+      }
+      if (joined === "claude plugin list --json") {
+        return { stdout: JSON.stringify([{ id: "artifactpass@artifactpass", scope: "user" }]), stderr: "" };
+      }
+      if (joined === "claude mcp list") return { stdout: "", stderr: "" };
+      if (joined === "claude plugin install artifactpass@artifactpass --scope user") {
+        pluginInstallAttempts += 1;
+        if (pluginInstallAttempts === 1) throw new Error("injected plugin failure");
+      }
+      return { stdout: "{}", stderr: "" };
+    });
+
+    await expect(installPluginForHosts(["claude"], newMarketplace, runner))
+      .rejects.toThrow("injected plugin failure");
+
+    const failedInstall = calls.indexOf("claude plugin install artifactpass@artifactpass --scope user");
+    const rollbackRemove = calls.lastIndexOf("claude plugin marketplace remove artifactpass");
+    const rollbackRestore = calls.lastIndexOf(`claude plugin marketplace add ${oldMarketplace}`);
+    expect(failedInstall).toBeGreaterThan(-1);
+    expect(rollbackRemove).toBeGreaterThan(failedInstall);
+    expect(rollbackRestore).toBeGreaterThan(rollbackRemove);
+  });
+
+  it("restores a stale marketplace when registering its replacement fails", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifactpass-codex-marketplace-rollback-"));
+    const oldMarketplace = resolve(root, "old-marketplace");
+    const newMarketplace = resolve(root, "new-marketplace");
+    await mkdir(resolve(oldMarketplace, ".agents", "plugins"), { recursive: true });
+    await writeFile(resolve(oldMarketplace, ".agents", "plugins", "marketplace.json"), "{}");
+    let replacementAttempts = 0;
+    const runner: ProcessRunner = vi.fn(async (command, args) => {
+      const joined = `${command} ${args.join(" ")}`;
+      if (joined === "codex plugin marketplace list --json") {
+        return { stdout: JSON.stringify({ marketplaces: [{
+          name: "artifactpass",
+          marketplaceSource: { sourceType: "local", source: oldMarketplace },
+        }] }), stderr: "" };
+      }
+      if (joined === `codex plugin marketplace add ${newMarketplace} --json`) {
+        replacementAttempts += 1;
+        throw new Error("injected marketplace failure");
+      }
+      return { stdout: "{}", stderr: "" };
+    });
+
+    await expect(installPluginForHosts(["codex"], newMarketplace, runner))
+      .rejects.toThrow("injected marketplace failure");
+
+    expect(replacementAttempts).toBe(1);
+    expect(runner).toHaveBeenCalledWith("codex", [
+      "plugin", "marketplace", "add", oldMarketplace, "--json",
+    ]);
+  });
+
+  it("keeps the durable marketplace when the stale source is already missing", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifactpass-missing-marketplace-rollback-"));
+    const missingMarketplace = resolve(root, "removed-rc8-marketplace");
+    const durableMarketplace = resolve(root, "durable-rc9-marketplace");
+    const calls: string[] = [];
+    let pluginInstallAttempts = 0;
+    const runner: ProcessRunner = vi.fn(async (command, args) => {
+      const joined = `${command} ${args.join(" ")}`;
+      calls.push(joined);
+      if (joined === "claude plugin marketplace list --json") {
+        return { stdout: JSON.stringify([{
+          name: "artifactpass",
+          source: "directory",
+          path: missingMarketplace,
+        }]), stderr: "" };
+      }
+      if (joined === "claude plugin list --json") {
+        return { stdout: JSON.stringify([{ id: "artifactpass@artifactpass", scope: "user" }]), stderr: "" };
+      }
+      if (joined === "claude mcp list") return { stdout: "", stderr: "" };
+      if (joined === "claude plugin install artifactpass@artifactpass --scope user") {
+        pluginInstallAttempts += 1;
+        if (pluginInstallAttempts === 1) throw new Error("injected plugin failure");
+      }
+      return { stdout: "{}", stderr: "" };
+    });
+
+    await expect(installPluginForHosts(["claude"], durableMarketplace, runner))
+      .rejects.toThrow("injected plugin failure");
+
+    const failedInstall = calls.indexOf("claude plugin install artifactpass@artifactpass --scope user");
+    const restoredDurableMarketplace = calls.lastIndexOf(
+      `claude plugin marketplace add ${durableMarketplace}`,
+    );
+    expect(restoredDurableMarketplace).toBeGreaterThan(failedInstall);
+    expect(calls).not.toContain(`claude plugin marketplace add ${missingMarketplace}`);
+  });
+
   it("configures the portable MCP and skills package without invoking a vendor host", async () => {
     const root = await mkdtemp(resolve(tmpdir(), "artifact-share-portable-connect-test-"));
     const configPath = resolve(root, "config.json");
@@ -248,8 +357,9 @@ describe("host connection", () => {
     const portableIntegration = {
       digest: "a".repeat(64),
       rootDirectory: resolve(root, "portable"),
+      marketplaceDirectory: resolve(root, "portable", "marketplace"),
       mcpConfig: resolve(root, "portable", "mcp.json"),
-      skillsDirectory: resolve(root, "portable", "plugin", "skills"),
+      skillsDirectory: resolve(root, "portable", "marketplace", "plugins", "artifactpass", "skills"),
     };
     const installPortable = vi.fn().mockResolvedValue(portableIntegration);
 
@@ -278,7 +388,7 @@ describe("host connection", () => {
       portableIntegration,
     });
     expect(installPortable).toHaveBeenCalledWith({
-      sourceRoot: "/trusted/repository/plugins/artifactpass",
+      marketplaceSource: "/trusted/repository",
     });
   });
 
@@ -383,7 +493,8 @@ describe("host connection", () => {
 
   it("removes legacy standalone MCP registrations after installing the plugin", async () => {
     const digest = "a".repeat(64);
-    const bridgePath = `/tmp/portable-integration/${digest}/plugin/dist/cli.mjs`;
+    const codexBridgePath = `/tmp/portable-integration/${digest}/plugin/dist/cli.mjs`;
+    const claudeBridgePath = `/tmp/portable-integration/${digest}/marketplace/plugins/artifactpass/dist/cli.mjs`;
     const runner: ProcessRunner = vi.fn(async (command, args) => {
       const joined = args.join(" ");
       if (command === "codex" && joined === "plugin marketplace list --json") {
@@ -400,7 +511,7 @@ describe("host connection", () => {
           transport: {
             type: "stdio",
             command: "/usr/bin/node",
-            args: [bridgePath],
+            args: [codexBridgePath],
             env: {
               ARTIFACTPASS_CONFIG_PATH: "/tmp/artifactpass/config.json",
               ARTIFACTPASS_PROFILE: "staging",
@@ -423,7 +534,7 @@ describe("host connection", () => {
           "  Scope: User config",
           "  Type: stdio",
           "  Command: /usr/bin/node",
-          `  Args: ${bridgePath}`,
+          `  Args: ${claudeBridgePath}`,
           "  Environment:",
           "    ARTIFACTPASS_CONFIG_PATH=/tmp/artifactpass/config.json",
           "    ARTIFACTPASS_PROFILE=staging",
