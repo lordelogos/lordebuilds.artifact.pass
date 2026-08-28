@@ -273,6 +273,7 @@ export const createBridgeServer = (configuration: BridgeConfiguration): McpServe
 
 export const configurationFromEnvironment = (
   environment: Readonly<Record<string, string | undefined>> = process.env,
+  currentWorkspace: string = process.cwd(),
 ): BridgeConfiguration => {
   const compatibleValue = (artifactpassName: string, legacyName: string): string | undefined => {
     const artifactpassValue = environment[artifactpassName];
@@ -321,7 +322,7 @@ export const configurationFromEnvironment = (
   const localConfiguration = localState?.settings;
   const selectedProfile = localConfiguration === undefined
     ? undefined
-    : selectLocalBridgeProfile(localConfiguration, profileEnvironment);
+    : selectLocalBridgeProfile(localConfiguration, profileEnvironment, currentWorkspace);
   const localSettings = selectedProfile?.settings;
   const profileName = selectedProfile?.name ?? validateProfileName(
     profileEnvironment ?? (
@@ -331,7 +332,7 @@ export const configurationFromEnvironment = (
   const baseUrlValue = baseUrlEnvironment ?? localSettings?.base_url ?? "https://artifactpass.com";
   const rootsValue = rootsEnvironment;
   const workspaceRoots = rootsValue === undefined
-    ? [...(localSettings?.workspace_roots ?? [resolve(process.cwd())])]
+    ? [...(localSettings?.workspace_roots ?? [resolve(currentWorkspace)])]
     : rootsValue.split(delimiter).filter((root) => root.length > 0);
   if (workspaceRoots.length === 0) throw new Error("ARTIFACTPASS_WORKSPACE_ROOTS must not be empty");
   const environmentStore = new CompatibleEnvironmentCredentialStore(

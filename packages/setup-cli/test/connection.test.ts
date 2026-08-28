@@ -109,6 +109,7 @@ describe("host connection", () => {
     expect(JSON.parse(await readFile(configPath, "utf8"))).toEqual({
       version: 2,
       active_profile: "production",
+      workspace_profiles: { [root]: "production" },
       profiles: {
         local: {
           base_url: "http://127.0.0.1:8787/",
@@ -182,6 +183,7 @@ describe("host connection", () => {
     expect(JSON.parse(await readFile(configPath, "utf8"))).toEqual({
       version: 2,
       active_profile: "local",
+      workspace_profiles: { [root]: "local" },
       profiles: {
         local: {
           base_url: "http://127.0.0.1:8787/",
@@ -682,6 +684,7 @@ describe("host connection", () => {
     expect(JSON.parse(await readFile(configPath, "utf8"))).toEqual({
       version: 2,
       active_profile: "local",
+      workspace_profiles: { [root]: "local" },
       profiles: {
         local: {
           base_url: "http://127.0.0.1:8787/",
@@ -728,6 +731,7 @@ describe("host connection", () => {
     expect(JSON.parse(await readFile(configPath, "utf8"))).toEqual({
       version: 2,
       active_profile: "local",
+      workspace_profiles: { [root]: "local" },
       profiles: {
         local: {
           base_url: "http://127.0.0.1:8787/",

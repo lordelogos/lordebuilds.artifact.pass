@@ -8,9 +8,9 @@ import {
   ARTIFACTPASS_MCP_TOOL_NAMES,
   defaultLocalConfigPath,
   readLocalBridgeSettings,
-  setActiveLocalBridgeProfile,
-  upsertLocalBridgeProfile,
+  selectLocalBridgeProfile,
   writeLocalBridgeSettings,
+  type LocalBridgeSettings,
 } from "agent-bridge";
 
 import packageMetadata from "../package.json" with { type: "json" };
@@ -24,6 +24,7 @@ import {
   type PortableIntegration,
 } from "./portable-integration";
 import { runProcess, type ProcessRunner } from "./process";
+import { applyWorkspaceConfiguration } from "./workspace-configuration";
 
 export const installReceiptVersion = 3 as const;
 
@@ -287,8 +288,8 @@ export const runArtifactpassInstall = async (
   const connectAfterInstall = input.connectAfterInstall === true;
   const now = dependencies.now ?? Date.now;
   const operationId = (dependencies.operationId ?? randomUUID)();
-  const origin = new URL(input.baseUrl ?? "https://artifactpass.com").origin;
-  const profileName = input.profileName ?? (input.openDevelopment === true ? "local" : "production");
+  let origin = new URL(input.baseUrl ?? "https://artifactpass.com").origin;
+  let profileName = input.profileName ?? (input.openDevelopment === true ? "local" : "production");
   const workspaceRoot = resolve(input.workspaceRoot ?? process.cwd());
   const configPath = input.configPath ?? defaultLocalConfigPath();
   const receiptDirectory = resolve(input.receiptDirectory ?? join(dirname(configPath), "receipts"));
@@ -307,6 +308,7 @@ export const runArtifactpassInstall = async (
   let connectResult: Awaited<ReturnType<typeof connectHost>> | undefined;
   let hostInstallation: HostInstallation | undefined;
   let configSnapshot: { readonly existed: boolean; readonly bytes?: Buffer } | undefined;
+  let previousSettings: LocalBridgeSettings | null = null;
   const outcomes: string[] = [];
   try {
     const previousJournal = await readJournal(journalPath);
@@ -329,6 +331,14 @@ export const runArtifactpassInstall = async (
         if (isMissing(error)) return { existed: false as const };
         throw error;
       });
+    previousSettings = configSnapshot.existed && configSnapshot.bytes !== undefined
+      ? await readLocalBridgeSettings(configPath)
+      : null;
+    if (input.baseUrl === undefined && input.profileName === undefined && previousSettings !== null) {
+      const selected = selectLocalBridgeProfile(previousSettings, undefined, workspaceRoot);
+      origin = new URL(selected.settings.base_url).origin;
+      profileName = selected.name;
+    }
     if (
       connectAfterInstall &&
       dependencies.skipCredentialStorePreflight !== true &&
@@ -377,42 +387,11 @@ export const runArtifactpassInstall = async (
         },
       });
     } else {
-      const previousSettings = configSnapshot?.existed === true && configSnapshot.bytes !== undefined
-        ? await readLocalBridgeSettings(configPath)
-        : null;
-      const previousProfile = previousSettings?.profiles[profileName];
-      if (
-        previousProfile !== undefined &&
-        new URL(previousProfile.base_url).origin !== new URL(origin).origin
-      ) {
-        throw new Error(
-          `ArtifactPass ${profileName} already targets ${new URL(previousProfile.base_url).origin}; use a new profile or disconnect it before changing deployments`,
-        );
-      }
-      const installedSettings = upsertLocalBridgeProfile(
-        previousSettings,
+      await writeLocalBridgeSettings(configPath, applyWorkspaceConfiguration(previousSettings, {
+        baseUrl: origin,
         profileName,
-        {
-          base_url: origin,
-          workspace_roots: [workspaceRoot],
-          ...(input.openDevelopment === true ? { open_development: true as const } : {}),
-          ...(previousProfile?.pdf_key_id === undefined ? {} : { pdf_key_id: previousProfile.pdf_key_id }),
-          ...(previousProfile?.publication_state === "legacy" ? { publication_state: "legacy" as const } : {}),
-          ...(previousProfile?.publication_state_path === undefined
-            ? {}
-            : { publication_state_path: previousProfile.publication_state_path }),
-          credential_namespace: "artifactpass",
-          ...(previousProfile?.credential_binding === "origin"
-            ? { credential_binding: "origin" as const }
-            : {}),
-        },
-      );
-      await writeLocalBridgeSettings(
-        configPath,
-        previousSettings !== null && input.profileName === undefined && input.openDevelopment !== true
-          ? setActiveLocalBridgeProfile(installedSettings, previousSettings.active_profile)
-          : installedSettings,
-      );
+        workspaceRoot,
+      }, input.openDevelopment === true));
       const runner = dependencies.runner ?? runProcess;
       const hosts = input.installKnownHostAdapters === false ? [] : await detectHosts(runner);
       hostInstallation = hosts.length === 0

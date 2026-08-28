@@ -64,14 +64,19 @@ describe("connect CLI arguments", () => {
   it("uses the saved workspace deployment when the URL is omitted", () => {
     expect(resolveConnectDeploymentUrl({}, {
       version: 2,
-      active_profile: "company",
+      active_profile: "production",
+      workspace_profiles: { "/workspace": "company" },
       profiles: {
+        production: {
+          base_url: "https://artifactpass.com",
+          workspace_roots: ["/personal"],
+        },
         company: {
           base_url: "https://artifacts.company.example",
           workspace_roots: ["/workspace"],
         },
       },
-    })).toBe("https://artifacts.company.example");
+    }, undefined, "/workspace/project")).toBe("https://artifacts.company.example");
   });
 
   it("fails closed when an explicit profile is misspelled without a URL", () => {

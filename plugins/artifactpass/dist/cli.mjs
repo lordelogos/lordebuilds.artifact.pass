@@ -85099,41 +85099,41 @@ var require_fast_uri = /* @__PURE__ */ __commonJSMin(((exports, module) => {
     schemelessOptions.skipEscape = true;
     return serialize(resolved, schemelessOptions);
   }
-  function resolveComponent(base, relative2, options, skipNormalization) {
+  function resolveComponent(base, relative3, options, skipNormalization) {
     const target = {};
     if (!skipNormalization) {
       base = parse3(serialize(base, options), options);
-      relative2 = parse3(serialize(relative2, options), options);
+      relative3 = parse3(serialize(relative3, options), options);
     }
     options = options || {};
-    if (!options.tolerant && relative2.scheme) {
-      target.scheme = relative2.scheme;
-      target.userinfo = relative2.userinfo;
-      target.host = relative2.host;
-      target.port = relative2.port;
-      target.path = removeDotSegments(relative2.path || "");
-      target.query = relative2.query;
+    if (!options.tolerant && relative3.scheme) {
+      target.scheme = relative3.scheme;
+      target.userinfo = relative3.userinfo;
+      target.host = relative3.host;
+      target.port = relative3.port;
+      target.path = removeDotSegments(relative3.path || "");
+      target.query = relative3.query;
     } else {
-      if (relative2.userinfo !== void 0 || relative2.host !== void 0 || relative2.port !== void 0) {
-        target.userinfo = relative2.userinfo;
-        target.host = relative2.host;
-        target.port = relative2.port;
-        target.path = removeDotSegments(relative2.path || "");
-        target.query = relative2.query;
+      if (relative3.userinfo !== void 0 || relative3.host !== void 0 || relative3.port !== void 0) {
+        target.userinfo = relative3.userinfo;
+        target.host = relative3.host;
+        target.port = relative3.port;
+        target.path = removeDotSegments(relative3.path || "");
+        target.query = relative3.query;
       } else {
-        if (!relative2.path) {
+        if (!relative3.path) {
           target.path = base.path;
-          if (relative2.query !== void 0) target.query = relative2.query;
+          if (relative3.query !== void 0) target.query = relative3.query;
           else target.query = base.query;
         } else {
-          if (relative2.path[0] === "/") target.path = removeDotSegments(relative2.path);
+          if (relative3.path[0] === "/") target.path = removeDotSegments(relative3.path);
           else {
-            if ((base.userinfo !== void 0 || base.host !== void 0 || base.port !== void 0) && !base.path) target.path = "/" + relative2.path;
-            else if (!base.path) target.path = relative2.path;
-            else target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative2.path;
+            if ((base.userinfo !== void 0 || base.host !== void 0 || base.port !== void 0) && !base.path) target.path = "/" + relative3.path;
+            else if (!base.path) target.path = relative3.path;
+            else target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative3.path;
             target.path = removeDotSegments(target.path);
           }
-          target.query = relative2.query;
+          target.query = relative3.query;
         }
         target.userinfo = base.userinfo;
         target.host = base.host;
@@ -85141,7 +85141,7 @@ var require_fast_uri = /* @__PURE__ */ __commonJSMin(((exports, module) => {
       }
       target.scheme = base.scheme;
     }
-    target.fragment = relative2.fragment;
+    target.fragment = relative3.fragment;
     return target;
   }
   function equal(uriA, uriB, options) {
@@ -91825,7 +91825,7 @@ var createConnectionController = (options) => {
 // src/config/local-config.ts
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, resolve } from "node:path";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 var profileNamePattern = /^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/u;
 var isRecord = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 var canonicalize = (value) => {
@@ -91905,10 +91905,47 @@ var validateSettings = (value) => {
   if (!Object.hasOwn(profiles, value.active_profile)) {
     throw new Error(`Unknown ArtifactPass profile: ${value.active_profile}`);
   }
-  return { version: 2, active_profile: value.active_profile, profiles };
+  if (value.workspace_profiles !== void 0 && !isRecord(value.workspace_profiles)) {
+    throw new Error("ArtifactPass workspace profile bindings must contain a JSON object");
+  }
+  const workspaceProfiles = value.workspace_profiles === void 0 ? void 0 : Object.fromEntries(Object.entries(value.workspace_profiles).map(([workspaceRoot, profileName]) => {
+    if (resolve(workspaceRoot) !== workspaceRoot) {
+      throw new Error("ArtifactPass workspace profile bindings require absolute workspace roots");
+    }
+    if (typeof profileName !== "string") {
+      throw new Error("ArtifactPass workspace profile bindings require profile names");
+    }
+    const validatedProfileName = validateProfileName(profileName);
+    if (!Object.hasOwn(profiles, validatedProfileName)) {
+      throw new Error(`Unknown ArtifactPass profile: ${validatedProfileName}`);
+    }
+    return [workspaceRoot, validatedProfileName];
+  }));
+  return {
+    version: 2,
+    active_profile: value.active_profile,
+    ...workspaceProfiles === void 0 ? {} : { workspace_profiles: workspaceProfiles },
+    profiles
+  };
 };
-var selectLocalBridgeProfile = (settings, requestedProfile) => {
-  const name = validateProfileName(requestedProfile ?? settings.active_profile);
+var containsWorkspace = (workspaceRoot, currentWorkspace) => {
+  const path = relative(workspaceRoot, currentWorkspace);
+  return path === "" || path !== ".." && !path.startsWith(`..${sep}`) && !isAbsolute(path);
+};
+var localBridgeProfileNameForWorkspace = (settings, currentWorkspace) => {
+  const resolvedWorkspace = resolve(currentWorkspace);
+  let match;
+  for (const entry of Object.entries(settings.workspace_profiles ?? {})) {
+    if (!containsWorkspace(entry[0], resolvedWorkspace)) continue;
+    if (match === void 0 || entry[0].length > match[0].length || entry[0].length === match[0].length && entry[0].localeCompare(match[0]) < 0) {
+      match = entry;
+    }
+  }
+  return match?.[1];
+};
+var selectLocalBridgeProfile = (settings, requestedProfile, currentWorkspace) => {
+  const workspaceProfile = requestedProfile === void 0 && currentWorkspace !== void 0 ? localBridgeProfileNameForWorkspace(settings, currentWorkspace) : void 0;
+  const name = validateProfileName(requestedProfile ?? workspaceProfile ?? settings.active_profile);
   if (!Object.hasOwn(settings.profiles, name)) throw new Error(`Unknown ArtifactPass profile: ${name}`);
   const profile = settings.profiles[name];
   if (profile === void 0) throw new Error(`Unknown ArtifactPass profile: ${name}`);
@@ -92032,7 +92069,7 @@ var createRedactingLogger = (write = (line) => process.stderr.write(`${line}
 // src/tools/publish-artifact.ts
 import { createHash as createHash2 } from "node:crypto";
 import { open as open2, realpath } from "node:fs/promises";
-import { basename, extname, isAbsolute, relative, resolve as resolve2, sep } from "node:path";
+import { basename, extname, isAbsolute as isAbsolute2, relative as relative2, resolve as resolve2, sep as sep2 } from "node:path";
 
 // ../representation-pipeline/src/pdf-text.ts
 var normalizePageText = (text) => text.replaceAll("\0", "").replace(/[ \t]+\n/gu, "\n").replace(/[ \t]{2,}/gu, " ").trim();
@@ -92888,8 +92925,8 @@ var assertUnchanged = (before, after) => {
   }
 };
 var isWithin = (root, candidate) => {
-  const path = relative(root, candidate);
-  return path === "" || !path.startsWith(`..${sep}`) && path !== ".." && !isAbsolute(path);
+  const path = relative2(root, candidate);
+  return path === "" || !path.startsWith(`..${sep2}`) && path !== ".." && !isAbsolute2(path);
 };
 var resolveApprovedPath = async (candidate, roots, operations) => {
   if (roots.length === 0) throw new Error("At least one approved workspace root is required");
@@ -93363,7 +93400,7 @@ var createBridgeServer = (configuration) => {
   });
   return server;
 };
-var configurationFromEnvironment = (environment = process.env) => {
+var configurationFromEnvironment = (environment = process.env, currentWorkspace = process.cwd()) => {
   const compatibleValue = (artifactpassName, legacyName) => {
     const artifactpassValue = environment[artifactpassName];
     const legacyValue = environment[legacyName];
@@ -93392,14 +93429,14 @@ var configurationFromEnvironment = (environment = process.env) => {
   })() : void 0;
   const localConfigPath = localState?.path ?? (environment.ARTIFACTPASS_CONFIG_PATH === void 0 && environment.ARTIFACT_SHARE_CONFIG_PATH !== void 0 ? legacyLocalConfigPath(environment) : defaultLocalConfigPath(environment));
   const localConfiguration = localState?.settings;
-  const selectedProfile = localConfiguration === void 0 ? void 0 : selectLocalBridgeProfile(localConfiguration, profileEnvironment);
+  const selectedProfile = localConfiguration === void 0 ? void 0 : selectLocalBridgeProfile(localConfiguration, profileEnvironment, currentWorkspace);
   const localSettings = selectedProfile?.settings;
   const profileName = selectedProfile?.name ?? validateProfileName(
     profileEnvironment ?? (openDevelopmentEnvironment === "1" ? "environment" : "production")
   );
   const baseUrlValue = baseUrlEnvironment ?? localSettings?.base_url ?? "https://artifactpass.com";
   const rootsValue = rootsEnvironment;
-  const workspaceRoots = rootsValue === void 0 ? [...localSettings?.workspace_roots ?? [resolve3(process.cwd())]] : rootsValue.split(delimiter).filter((root) => root.length > 0);
+  const workspaceRoots = rootsValue === void 0 ? [...localSettings?.workspace_roots ?? [resolve3(currentWorkspace)]] : rootsValue.split(delimiter).filter((root) => root.length > 0);
   if (workspaceRoots.length === 0) throw new Error("ARTIFACTPASS_WORKSPACE_ROOTS must not be empty");
   const environmentStore = new CompatibleEnvironmentCredentialStore(
     "ARTIFACTPASS_TOKEN",

@@ -6,6 +6,7 @@ import {
   LEGACY_ARTIFACT_SHARE_CREDENTIAL_SERVICE,
   OsCredentialStore,
   agentCredentialAccountForProfile,
+  bindLocalBridgeWorkspace,
   bindAgentCredential,
   assertDeploymentOrigin,
   defaultLocalConfigPath,
@@ -17,6 +18,7 @@ import {
   validateProfileName,
   writeLocalBridgeSettings,
   type CredentialStore,
+  type LocalBridgeProfileSettings,
   type LocalBridgeSettings,
 } from "agent-bridge";
 
@@ -32,6 +34,15 @@ import {
 
 const isMissingFile = (error: unknown): boolean =>
   error instanceof Error && "code" in error && error.code === "ENOENT";
+
+const bindWorkspaceRoots = (
+  settings: LocalBridgeSettings,
+  roots: readonly string[],
+  profileName: string,
+): LocalBridgeSettings => roots.reduce(
+  (current, root) => bindLocalBridgeWorkspace(current, root, profileName),
+  settings,
+);
 
 const revokeToken = async (
   origin: URL,
@@ -165,6 +176,9 @@ export const connectHost = async (
     throw error;
   });
   const previousProfile = previousSettings?.profiles[profileName];
+  const profileRoots = [...new Set([...(previousProfile?.workspace_roots ?? []), ...roots])];
+  const configuredSettings = (profile: LocalBridgeProfileSettings): LocalBridgeSettings =>
+    bindWorkspaceRoots(upsertLocalBridgeProfile(previousSettings, profileName, profile), roots, profileName);
   const store = dependencies.credentialStore ?? new OsCredentialStore({
     service: ARTIFACTPASS_CREDENTIAL_SERVICE,
     account: agentCredentialAccountForProfile(profileName),
@@ -210,20 +224,16 @@ export const connectHost = async (
   };
   if (openDevelopment) {
     try {
-      await (dependencies.writeSettings ?? writeLocalBridgeSettings)(configPath, upsertLocalBridgeProfile(
-        previousSettings,
-        profileName,
-        {
+      await (dependencies.writeSettings ?? writeLocalBridgeSettings)(configPath, configuredSettings({
           base_url: origin.toString(),
-          workspace_roots: roots,
+          workspace_roots: profileRoots,
           open_development: true,
           ...(previousProfile?.publication_state === "legacy" ? { publication_state: "legacy" } : {}),
           ...(previousProfile?.publication_state_path === undefined
             ? {}
             : { publication_state_path: previousProfile.publication_state_path }),
           credential_namespace: "artifactpass",
-        },
-      ));
+        }));
       await installAndVerify();
     } catch (error) {
       const restore = previousSettings === null
@@ -269,12 +279,9 @@ export const connectHost = async (
           await store.set(boundCredential);
           migratedCredential = true;
         }
-        await (dependencies.writeSettings ?? writeLocalBridgeSettings)(configPath, upsertLocalBridgeProfile(
-          previousSettings,
-          profileName,
-          {
+        await (dependencies.writeSettings ?? writeLocalBridgeSettings)(configPath, configuredSettings({
             base_url: origin.toString(),
-            workspace_roots: roots,
+            workspace_roots: profileRoots,
             ...(previousProfile.publication_state === "legacy" ? { publication_state: "legacy" } : {}),
             ...(previousProfile.publication_state_path === undefined
               ? {}
@@ -284,8 +291,7 @@ export const connectHost = async (
             ...(healthBody.pdf_provenance_key_id === undefined
               ? previousProfile.pdf_key_id === undefined ? {} : { pdf_key_id: previousProfile.pdf_key_id }
               : { pdf_key_id: healthBody.pdf_provenance_key_id }),
-          },
-        ));
+          }));
         await installAndVerify();
       } catch (error) {
         if (migratedCredential) await store.set(previousStoredCredential as string);
@@ -313,12 +319,9 @@ export const connectHost = async (
   let wroteConfig = false;
   let rollbackHostInstallation: (() => Promise<void>) | undefined;
   try {
-    await (dependencies.writeSettings ?? writeLocalBridgeSettings)(configPath, upsertLocalBridgeProfile(
-      previousSettings,
-      profileName,
-      {
+    await (dependencies.writeSettings ?? writeLocalBridgeSettings)(configPath, configuredSettings({
         base_url: origin.toString(),
-        workspace_roots: roots,
+        workspace_roots: profileRoots,
         ...(previousProfile?.publication_state === "legacy" ? { publication_state: "legacy" } : {}),
         ...(previousProfile?.publication_state_path === undefined
           ? {}
@@ -328,8 +331,7 @@ export const connectHost = async (
         ...(healthBody.pdf_provenance_key_id === undefined
           ? {}
           : { pdf_key_id: healthBody.pdf_provenance_key_id }),
-      },
-    ));
+      }));
     wroteConfig = true;
     await store.set(bindAgentCredential(origin, token.accessToken));
     rollbackHostInstallation = await installAndVerify();
