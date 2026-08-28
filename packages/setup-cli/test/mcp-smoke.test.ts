@@ -28,7 +28,7 @@ it("negotiates and invokes the installed portable ArtifactPass MCP", async () =>
       },
     });
     const portable = await installPortableIntegration({
-      marketplaceSource: resolve(repositoryRoot, "packages/setup-cli/dist/marketplace"),
+      marketplaceSource: repositoryRoot,
       destinationDirectory: resolve(root, "portable"),
     });
 
