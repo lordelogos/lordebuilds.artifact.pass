@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   ArtifactpassInstallError,
   parseArtifactpassInstallReceipt,
+  renderInstallFailure,
   renderInstallReceipt,
   runArtifactpassInstall,
   type ArtifactpassInstallReceipt,
@@ -477,6 +478,10 @@ describe("one-command ArtifactPass installer", () => {
       rollback: "complete",
       outcomes: expect.arrayContaining(["rollback:complete"]),
     });
+    expect(renderInstallFailure(failure as ArtifactpassInstallError))
+      .toContain("Cause: MCP verification failed");
+    expect(renderInstallFailure(failure as ArtifactpassInstallError))
+      .not.toContain("Previous working state was restored");
     await expect(stat(portable.rootDirectory)).rejects.toMatchObject({ code: "ENOENT" });
     await expect(stat(configPath)).rejects.toMatchObject({ code: "ENOENT" });
   });

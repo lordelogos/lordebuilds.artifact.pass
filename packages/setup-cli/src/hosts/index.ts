@@ -47,6 +47,30 @@ const namedEntries = (value: unknown, label: string): readonly { readonly name: 
   return value as readonly { readonly name: string }[];
 };
 
+interface MarketplaceEntry {
+  readonly name: string;
+  readonly localSource?: string;
+}
+
+const marketplaceEntries = (
+  value: unknown,
+  label: string,
+  host: AgentHost,
+): readonly MarketplaceEntry[] => {
+  const entries = namedEntries(value, label);
+  return entries.map((entry, index) => {
+    const raw = (value as readonly Readonly<Record<string, unknown>>[])[index];
+    if (raw === undefined) return entry;
+    if (host === "claude") {
+      return typeof raw.path === "string" ? { ...entry, localSource: raw.path } : entry;
+    }
+    const source = raw.marketplaceSource;
+    return isRecord(source) && source.sourceType === "local" && typeof source.source === "string"
+      ? { ...entry, localSource: source.source }
+      : entry;
+  });
+};
+
 const codexPluginEntries = (value: unknown): readonly { readonly pluginId: string }[] => {
   if (!isRecord(value) || !Array.isArray(value.installed) ||
       !value.installed.every((item) => isRecord(item) && typeof item.pluginId === "string")) {
@@ -138,13 +162,20 @@ export const installPluginForHosts = async (
       "Codex",
     );
     if (!isRecord(marketplaceResponse)) throw new Error("Codex returned an unexpected marketplace list");
-    const marketplaces = namedEntries(marketplaceResponse.marketplaces, "Codex");
-    const hadMarketplace = marketplaces.some((marketplace) => marketplace.name === artifactpassMarketplaceId);
-    if (!hadMarketplace) {
-      await runner("codex", ["plugin", "marketplace", "add", marketplaceSource, "--json"]);
-      rollbackActions.push(async () => {
+    const marketplaces = marketplaceEntries(marketplaceResponse.marketplaces, "Codex", "codex");
+    const existingMarketplace = marketplaces.find(
+      (marketplace) => marketplace.name === artifactpassMarketplaceId,
+    );
+    if (existingMarketplace?.localSource !== marketplaceSource) {
+      if (existingMarketplace !== undefined) {
         await runner("codex", ["plugin", "marketplace", "remove", artifactpassMarketplaceId]);
-      });
+      }
+      await runner("codex", ["plugin", "marketplace", "add", marketplaceSource, "--json"]);
+      if (existingMarketplace === undefined) {
+        rollbackActions.push(async () => {
+          await runner("codex", ["plugin", "marketplace", "remove", artifactpassMarketplaceId]);
+        });
+      }
     }
     const plugins = codexPluginEntries(parseJson(
       (await runner("codex", ["plugin", "list", "--json"])).stdout,
@@ -173,16 +204,23 @@ export const installPluginForHosts = async (
     }
 
     if (hosts.includes("claude")) {
-    const marketplaces = namedEntries(parseJson(
+    const marketplaces = marketplaceEntries(parseJson(
       (await runner("claude", ["plugin", "marketplace", "list", "--json"])).stdout,
       "Claude",
-    ), "Claude");
-    const hadMarketplace = marketplaces.some((marketplace) => marketplace.name === artifactpassMarketplaceId);
-    if (!hadMarketplace) {
-      await runner("claude", ["plugin", "marketplace", "add", marketplaceSource]);
-      rollbackActions.push(async () => {
+    ), "Claude", "claude");
+    const existingMarketplace = marketplaces.find(
+      (marketplace) => marketplace.name === artifactpassMarketplaceId,
+    );
+    if (existingMarketplace?.localSource !== marketplaceSource) {
+      if (existingMarketplace !== undefined) {
         await runner("claude", ["plugin", "marketplace", "remove", artifactpassMarketplaceId]);
-      });
+      }
+      await runner("claude", ["plugin", "marketplace", "add", marketplaceSource]);
+      if (existingMarketplace === undefined) {
+        rollbackActions.push(async () => {
+          await runner("claude", ["plugin", "marketplace", "remove", artifactpassMarketplaceId]);
+        });
+      }
     }
     const plugins = claudePluginEntries(parseJson(
       (await runner("claude", ["plugin", "list", "--json"])).stdout,

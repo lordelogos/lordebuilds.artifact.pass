@@ -8,6 +8,7 @@ import {
   ARTIFACTPASS_MCP_TOOL_NAMES,
   defaultLocalConfigPath,
   readLocalBridgeSettings,
+  redactSensitiveText,
   selectLocalBridgeProfile,
   writeLocalBridgeSettings,
   type LocalBridgeSettings,
@@ -270,7 +271,7 @@ export const renderInstallReceipt = (receipt: ArtifactpassInstallReceipt): strin
     if (receipt.rollback === "incomplete") {
       return `ArtifactPass installation failed during ${receipt.failed_stage ?? "setup"}. Rollback is incomplete: ${(receipt.rollback_failures ?? ["unknown state"]).join(", ")}.`;
     }
-    return `ArtifactPass installation failed during ${receipt.failed_stage ?? "setup"}. Previous working state was restored.`;
+    return `ArtifactPass installation failed during ${receipt.failed_stage ?? "setup"}.`;
   }
   const registration = receipt.portable_bundle.host_registration === "manual-required"
     ? `Manual host registration required. MCP: ${receipt.portable_bundle.mcp_config ?? "unavailable"}; skills: ${receipt.portable_bundle.skills_directory ?? "unavailable"}.`
@@ -279,6 +280,31 @@ export const renderInstallReceipt = (receipt: ArtifactpassInstallReceipt): strin
     ? `ArtifactPass is installed for ${receipt.profile} and is not connected. Open it in your agent and choose Connect ArtifactPass when you want to publish.`
     : `ArtifactPass is connected to ${receipt.origin} for ${receipt.profile}.`;
   return `${connection} ${registration} Start a new agent session before using it.`;
+};
+
+const leafErrorMessages = (error: unknown, seen = new Set<unknown>()): readonly string[] => {
+  if (error === undefined || error === null || seen.has(error)) return [];
+  seen.add(error);
+  if (error instanceof AggregateError) {
+    const nested = error.errors.flatMap((candidate) => leafErrorMessages(candidate, seen));
+    return nested.length > 0 ? nested : [error.message];
+  }
+  if (error instanceof Error) {
+    const nested = leafErrorMessages(error.cause, seen);
+    return nested.length > 0 ? nested : [error.message];
+  }
+  return [];
+};
+
+export const renderInstallFailure = (error: ArtifactpassInstallError): string => {
+  const details = [...new Set(leafErrorMessages(error.cause)
+    .map((message) => redactSensitiveText(message).replace(/\s+/gu, " ").trim())
+    .filter((message) => message.length > 0))]
+    .slice(0, 3)
+    .join(" | ");
+  return details.length > 0
+    ? `${renderInstallReceipt(error.receipt)}\nCause: ${details}`
+    : renderInstallReceipt(error.receipt);
 };
 
 export const runArtifactpassInstall = async (

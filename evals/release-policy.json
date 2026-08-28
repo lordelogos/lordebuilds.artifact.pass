@@ -1,7 +1,7 @@
 {
   "version": 1,
   "policy_id": "artifactpass-0.1.0-initial",
-  "candidate_sha256": "faae655579b9f2043643524734fe26fb41a44910b46abe220452f9c1758bb988",
+  "candidate_sha256": "3fe86f68c8aafefc3c3fa86e8ccb2c4f88a36c858ef8fa4f07d32307a75e56b3",
   "scorer_version": "1.0.0",
   "created_at": "2026-08-19T00:00:00.000Z",
   "cohorts": [
