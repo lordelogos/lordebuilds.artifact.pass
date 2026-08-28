@@ -28,6 +28,7 @@ import { installPortableIntegration } from "./portable-integration";
 import { migrateDefaultLocalState } from "./local-state-migration";
 import {
   ArtifactpassInstallError,
+  renderInstallFailure,
   renderInstallReceipt,
   runArtifactpassInstall,
 } from "./installer";
@@ -378,7 +379,7 @@ const main = async (): Promise<void> => {
 
 void main().catch((error: unknown) => {
   if (error instanceof ArtifactpassInstallError) {
-    print(jsonOutputRequested ? error.receipt : renderInstallReceipt(error.receipt));
+    print(jsonOutputRequested ? error.receipt : renderInstallFailure(error));
     process.exitCode = 1;
     return;
   }
