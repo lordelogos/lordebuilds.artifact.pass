@@ -24,15 +24,22 @@ Install from the workspace the agent may share:
 pnpm dlx artifactpass
 ```
 
-This installs the ArtifactPass plugin, MCP server, and both Agent Skills. It does not open a browser or create a connection.
+The setup asks whether this workspace uses public ArtifactPass or an organization deployment, then installs the plugin, MCP server, and both Agent Skills. It does not open a browser or create a connection.
 
 Start a new agent session once so it loads the newly installed plugin. ArtifactPass will be present but disconnected. Ask the agent to share an artifact or say **Connect ArtifactPass**. The plugin opens `artifactpass.com`; sign in with Google or GitHub and approve the code you just requested. The plugin stores only the resulting scoped agent token in the operating-system credential store, becomes connected in that same session, and continues the pending publication. There is no terminal connection command, reinstall, or post-login restart.
 
-Install against an explicit deployment URL for staging, development, or a future organization-owned deployment:
+You can change the deployment later without reinstalling or editing config files. Run this from the workspace you want to change:
+
+```sh
+pnpm dlx artifactpass configure
+```
+
+The choice applies only to that workspace. Existing profiles and credentials for other workspaces are preserved. Start a new agent session after changing it; authentication still happens only when the agent uses **Connect ArtifactPass**.
+
+For scripts, install against an explicit deployment URL non-interactively:
 
 ```sh
 pnpm dlx artifactpass --base-url https://artifacts.example.com \
-  --profile production \
   --workspace-root /absolute/path/to/approved/workspace
 ```
 

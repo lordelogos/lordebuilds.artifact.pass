@@ -1,3 +1,5 @@
+import { selectLocalBridgeProfile, type LocalBridgeSettings } from "agent-bridge";
+
 export interface ConnectArguments {
   readonly deploymentUrl?: string;
 }
@@ -56,13 +58,12 @@ export const resolveConnectDeploymentUrl = (
   parsed: ConnectArguments,
   settings: LocalBridgeSettings | null,
   requestedProfile?: string,
+  currentWorkspace = process.cwd(),
 ): string => {
   if (parsed.deploymentUrl !== undefined) return parsed.deploymentUrl;
   if (requestedProfile !== undefined && settings?.profiles[requestedProfile] === undefined) {
     throw new Error(`Unknown ArtifactPass profile: ${requestedProfile}; provide its deployment URL to create it`);
   }
-  const profileName = requestedProfile ?? settings?.active_profile;
-  return (profileName === undefined ? undefined : settings?.profiles[profileName]?.base_url) ??
-    "https://artifactpass.com";
+  if (settings === null) return "https://artifactpass.com";
+  return selectLocalBridgeProfile(settings, requestedProfile, currentWorkspace).settings.base_url;
 };
-import type { LocalBridgeSettings } from "agent-bridge";

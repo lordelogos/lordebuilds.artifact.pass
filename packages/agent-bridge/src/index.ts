@@ -22,7 +22,9 @@ export {
   type CompatibleCredentialStoreOptions,
 } from "./auth/credential-store";
 export {
+  bindLocalBridgeWorkspace,
   defaultLocalConfigPath,
+  localBridgeProfileNameForWorkspace,
   legacyLocalConfigPath,
   publicationStatePathForProfile,
   readCompatibleLocalBridgeSettingsSync,

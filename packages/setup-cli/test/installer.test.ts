@@ -67,6 +67,9 @@ describe("one-command ArtifactPass installer", () => {
     });
     await expect(readFile(configPath, "utf8").then(JSON.parse)).resolves.toMatchObject({
       active_profile: "production",
+      workspace_profiles: {
+        [workspace]: "production",
+      },
       profiles: {
         production: {
           base_url: "https://artifactpass.com",
@@ -77,6 +80,53 @@ describe("one-command ArtifactPass installer", () => {
     expect(renderInstallReceipt(receipt)).toContain("installed");
     expect(renderInstallReceipt(receipt)).toContain("not connected");
     expect(renderInstallReceipt(receipt)).toContain("choose Connect ArtifactPass");
+  });
+
+  it("rebinds one workspace without changing another workspace's deployment", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifactpass-installer-workspace-rebind-"));
+    const personalWorkspace = resolve(root, "personal");
+    const companyWorkspace = resolve(root, "company");
+    await mkdir(personalWorkspace);
+    await mkdir(companyWorkspace);
+    const configPath = resolve(root, "config", "config.json");
+    const portable = await portableFixture(root);
+    const dependencies = {
+      connectDependencies: { deviceFlowDependencies: { openBrowser: async () => undefined } },
+      installPortable: vi.fn().mockResolvedValue(portable),
+      smoke: vi.fn().mockResolvedValue({
+        negotiated: true,
+        tools: ["connect_artifactpass", "connection_status", "publish_artifact", "read_artifact"],
+        representativeInvocation: true,
+      }),
+    };
+
+    await runArtifactpassInstall({
+      marketplaceSource: "/package/marketplace",
+      workspaceRoot: personalWorkspace,
+      configPath,
+      connectAfterInstall: false,
+      installKnownHostAdapters: false,
+    }, { ...dependencies, operationId: () => "personal-install" });
+    await runArtifactpassInstall({
+      marketplaceSource: "/package/marketplace",
+      baseUrl: "https://artifacts.company.example",
+      profileName: "company",
+      workspaceRoot: companyWorkspace,
+      configPath,
+      connectAfterInstall: false,
+      installKnownHostAdapters: false,
+    }, { ...dependencies, operationId: () => "company-install" });
+
+    await expect(readFile(configPath, "utf8").then(JSON.parse)).resolves.toMatchObject({
+      workspace_profiles: {
+        [personalWorkspace]: "production",
+        [companyWorkspace]: "company",
+      },
+      profiles: {
+        production: { base_url: "https://artifactpass.com" },
+        company: { base_url: "https://artifacts.company.example" },
+      },
+    });
   });
 
   it("preserves publication and PDF settings when reinstalling without authentication", async () => {
@@ -126,7 +176,7 @@ describe("one-command ArtifactPass installer", () => {
       profiles: {
         production: {
           base_url: "https://artifactpass.com",
-          workspace_roots: [workspace],
+          workspace_roots: [previousWorkspace, workspace],
           credential_namespace: "artifactpass",
           credential_binding: "origin",
           pdf_key_id: "artifactpass-primary",
@@ -176,13 +226,13 @@ describe("one-command ArtifactPass installer", () => {
 
     await expect(readFile(configPath, "utf8").then(JSON.parse)).resolves.toMatchObject({
       active_profile: "company",
+      workspace_profiles: {
+        [workspace]: "company",
+      },
       profiles: {
         company: {
           base_url: "https://artifacts.company.example",
           credential_binding: "origin",
-        },
-        production: {
-          base_url: "https://artifactpass.com",
         },
       },
     });

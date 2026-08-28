@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, resolve } from "node:path";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
 export interface LocalBridgeProfileSettings {
   readonly base_url: string;
@@ -17,6 +17,7 @@ export interface LocalBridgeProfileSettings {
 export interface LocalBridgeSettings {
   readonly version: 2;
   readonly active_profile: string;
+  readonly workspace_profiles?: Readonly<Record<string, string>>;
   readonly profiles: Readonly<Record<string, LocalBridgeProfileSettings>>;
 }
 
@@ -127,18 +128,85 @@ const validateSettings = (value: unknown): LocalBridgeSettings => {
   if (!Object.hasOwn(profiles, value.active_profile)) {
     throw new Error(`Unknown ArtifactPass profile: ${value.active_profile}`);
   }
-  return { version: 2, active_profile: value.active_profile, profiles };
+  if (value.workspace_profiles !== undefined && !isRecord(value.workspace_profiles)) {
+    throw new Error("ArtifactPass workspace profile bindings must contain a JSON object");
+  }
+  const workspaceProfiles = value.workspace_profiles === undefined
+    ? undefined
+    : Object.fromEntries(Object.entries(value.workspace_profiles).map(([workspaceRoot, profileName]) => {
+        if (resolve(workspaceRoot) !== workspaceRoot) {
+          throw new Error("ArtifactPass workspace profile bindings require absolute workspace roots");
+        }
+        if (typeof profileName !== "string") {
+          throw new Error("ArtifactPass workspace profile bindings require profile names");
+        }
+        const validatedProfileName = validateProfileName(profileName);
+        if (!Object.hasOwn(profiles, validatedProfileName)) {
+          throw new Error(`Unknown ArtifactPass profile: ${validatedProfileName}`);
+        }
+        return [workspaceRoot, validatedProfileName];
+      }));
+  return {
+    version: 2,
+    active_profile: value.active_profile,
+    ...(workspaceProfiles === undefined ? {} : { workspace_profiles: workspaceProfiles }),
+    profiles,
+  };
+};
+
+const containsWorkspace = (workspaceRoot: string, currentWorkspace: string): boolean => {
+  const path = relative(workspaceRoot, currentWorkspace);
+  return path === "" || (path !== ".." && !path.startsWith(`..${sep}`) && !isAbsolute(path));
+};
+
+export const localBridgeProfileNameForWorkspace = (
+  settings: LocalBridgeSettings,
+  currentWorkspace: string,
+): string | undefined => {
+  const resolvedWorkspace = resolve(currentWorkspace);
+  let match: readonly [string, string] | undefined;
+  for (const entry of Object.entries(settings.workspace_profiles ?? {})) {
+    if (!containsWorkspace(entry[0], resolvedWorkspace)) continue;
+    if (
+      match === undefined ||
+      entry[0].length > match[0].length ||
+      (entry[0].length === match[0].length && entry[0].localeCompare(match[0]) < 0)
+    ) {
+      match = entry;
+    }
+  }
+  return match?.[1];
 };
 
 export const selectLocalBridgeProfile = (
   settings: LocalBridgeSettings,
   requestedProfile?: string,
+  currentWorkspace?: string,
 ): { readonly name: string; readonly settings: LocalBridgeProfileSettings } => {
-  const name = validateProfileName(requestedProfile ?? settings.active_profile);
+  const workspaceProfile = requestedProfile === undefined && currentWorkspace !== undefined
+    ? localBridgeProfileNameForWorkspace(settings, currentWorkspace)
+    : undefined;
+  const name = validateProfileName(requestedProfile ?? workspaceProfile ?? settings.active_profile);
   if (!Object.hasOwn(settings.profiles, name)) throw new Error(`Unknown ArtifactPass profile: ${name}`);
   const profile = settings.profiles[name];
   if (profile === undefined) throw new Error(`Unknown ArtifactPass profile: ${name}`);
   return { name, settings: profile };
+};
+
+export const bindLocalBridgeWorkspace = (
+  settings: LocalBridgeSettings,
+  workspaceRootValue: string,
+  profileNameValue: string,
+): LocalBridgeSettings => {
+  const workspaceRoot = resolve(workspaceRootValue);
+  const profileName = validateProfileName(profileNameValue);
+  return validateSettings({
+    ...settings,
+    workspace_profiles: {
+      ...settings.workspace_profiles,
+      [workspaceRoot]: profileName,
+    },
+  });
 };
 
 export const publicationStatePathForProfile = (configPath: string, profileName: string): string =>
@@ -154,6 +222,7 @@ export const upsertLocalBridgeProfile = (
   return validateSettings({
     version: 2,
     active_profile: name,
+    ...(settings?.workspace_profiles === undefined ? {} : { workspace_profiles: settings.workspace_profiles }),
     profiles: { ...settings?.profiles, [name]: profile },
   });
 };

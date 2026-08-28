@@ -68,6 +68,72 @@ describe("local bridge config", () => {
     expect(() => selectLocalBridgeProfile(withBoth, "constructor")).toThrow("Unknown ArtifactPass profile");
   });
 
+  it("selects the deployment bound to the current workspace", () => {
+    const personalRoot = "/tmp/personal-project";
+    const companyRoot = "/tmp/company-project";
+    const settings = {
+      version: 2 as const,
+      active_profile: "production",
+      workspace_profiles: {
+        [personalRoot]: "production",
+        [companyRoot]: "company",
+      },
+      profiles: {
+        production: {
+          base_url: "https://artifactpass.com/",
+          workspace_roots: [personalRoot],
+        },
+        company: {
+          base_url: "https://artifacts.company.example/",
+          workspace_roots: [companyRoot],
+        },
+      },
+    };
+
+    expect(selectLocalBridgeProfile(settings, undefined, resolve(companyRoot, "packages", "app")))
+      .toMatchObject({ name: "company" });
+    expect(selectLocalBridgeProfile(settings, undefined, resolve(personalRoot, "docs")))
+      .toMatchObject({ name: "production" });
+    expect(selectLocalBridgeProfile(settings, "production", companyRoot))
+      .toMatchObject({ name: "production" });
+  });
+
+  it("loads the bound deployment into each workspace's MCP session", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifactpass-workspace-binding-test-"));
+    const path = resolve(root, "config.json");
+    const personalRoot = resolve(root, "personal");
+    const companyRoot = resolve(root, "company");
+    await Promise.all([mkdir(personalRoot), mkdir(companyRoot)]);
+    await writeLocalBridgeSettings(path, {
+      version: 2,
+      active_profile: "production",
+      workspace_profiles: {
+        [personalRoot]: "production",
+        [companyRoot]: "company",
+      },
+      profiles: {
+        production: {
+          base_url: "https://artifactpass.com/",
+          workspace_roots: [personalRoot],
+        },
+        company: {
+          base_url: "https://artifacts.company.example/",
+          workspace_roots: [companyRoot],
+        },
+      },
+    });
+
+    const environment = { ARTIFACTPASS_CONFIG_PATH: path };
+    expect(configurationFromEnvironment(environment, personalRoot)).toMatchObject({
+      profileName: "production",
+      baseUrl: new URL("https://artifactpass.com"),
+    });
+    expect(configurationFromEnvironment(environment, companyRoot)).toMatchObject({
+      profileName: "company",
+      baseUrl: new URL("https://artifacts.company.example"),
+    });
+  });
+
   it("rejects an inherited property as the active profile", async () => {
     const root = await mkdtemp(resolve(tmpdir(), "artifact-share-profile-key-test-"));
     const path = resolve(root, "config.json");

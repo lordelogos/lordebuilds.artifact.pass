@@ -1,4 +1,5 @@
 import { dirname, resolve } from "node:path";
+import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -30,6 +31,11 @@ import {
   renderInstallReceipt,
   runArtifactpassInstall,
 } from "./installer";
+import {
+  applyWorkspaceConfiguration,
+  resolveWorkspaceConfiguration,
+  type WorkspaceConfigurationPrompt,
+} from "./workspace-configuration";
 
 const deploymentRoot = resolve(dirname(fileURLToPath(import.meta.url)), "deployment");
 const defaultMarketplace = resolve(dirname(fileURLToPath(import.meta.url)), "marketplace");
@@ -79,6 +85,7 @@ const help = `ArtifactPass setup
 Commands:
   artifactpass [--json]
   install [--base-url <url>] [--profile <name>] [--workspace-root <path>] [--open-development] [--no-host-install] [--json]
+  configure [--base-url <url>] [--profile <name>] [--workspace-root <path>] [--open-development] [--json]
   deploy-public --account-id <id> --zone-id <id> --hostname <host> [--service-name <name>] --workers-subdomain <name> --pdf-key-id <id> --pdf-public-key <base64> --google-client-id <id> --github-client-id <id> (--dry-run | --write-approval-manifest <path> | --approve-manifest <path>)
   deploy --account-id <id> --zone-id <id> --hostname <host> [--service-name <name>] --workers-subdomain <name> --pdf-key-id <id> --pdf-public-key <base64> (--allow-email <email> | --allow-domain <domain>) (--dry-run | --write-approval-manifest <path> | --approve-manifest <path>)
   connect [base-url] [--profile <name>] [--workspace-root <path>] [--host codex|claude|both] [--no-host-install] [--marketplace <source>] [--open-development]
@@ -97,6 +104,53 @@ const requiredEnvironment = (name: string): string => {
 
 let jsonOutputRequested = false;
 
+const readSavedSettings = async () => {
+  await migrateDefaultLocalState();
+  return readLocalBridgeSettings(defaultLocalConfigPath()).catch((error: unknown) => {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  });
+};
+
+const workspacePrompt = (): { readonly prompt: WorkspaceConfigurationPrompt; readonly close: () => void } => {
+  const reader = createInterface({ input: process.stdin, output: process.stderr });
+  return {
+    prompt: (question) => reader.question(question),
+    close: () => reader.close(),
+  };
+};
+
+const resolveCliWorkspaceConfiguration = async (
+  args: readonly string[],
+  forceInteractive: boolean,
+) => {
+  const baseUrl = optionalValue(args, "--base-url");
+  const profileName = optionalValue(args, "--profile");
+  const workspaceRoot = resolve(optionalValue(args, "--workspace-root") ?? process.cwd());
+  const openDevelopment = booleanFlag(args, "--open-development");
+  const settings = await readSavedSettings();
+  const interactive = baseUrl === undefined && profileName === undefined &&
+    process.stdin.isTTY === true && process.stderr.isTTY === true && !jsonOutputRequested;
+  if (forceInteractive && !interactive && baseUrl === undefined && profileName === undefined) {
+    throw new Error("ArtifactPass configure needs an interactive terminal or --base-url");
+  }
+  const promptSession = interactive ? workspacePrompt() : undefined;
+  try {
+    const resolved = await resolveWorkspaceConfiguration({
+      workspaceRoot,
+      settings,
+      interactive,
+      prompt: promptSession?.prompt ?? (async () => ""),
+      ...(baseUrl === undefined ? {} : { baseUrl }),
+      ...(profileName === undefined ? {} : { profileName }),
+      openDevelopment,
+    });
+    return { resolved, settings, openDevelopment };
+  } finally {
+    promptSession?.close();
+  }
+};
+
 const main = async (): Promise<void> => {
   const [command, ...args] = process.argv.slice(2);
   if (isInstallInvocation(command)) {
@@ -107,16 +161,13 @@ const main = async (): Promise<void> => {
       return index === 0 || !INSTALL_VALUE_OPTIONS.has(installArgs[index - 1] ?? "");
     });
     if (unexpected.length > 0) throw new Error(`Unknown install option: ${unexpected[0]}`);
-    const baseUrl = optionalValue(installArgs, "--base-url");
-    const profileName = optionalValue(installArgs, "--profile");
-    const workspaceRoot = optionalValue(installArgs, "--workspace-root");
-    const openDevelopment = booleanFlag(installArgs, "--open-development");
+    const configuration = await resolveCliWorkspaceConfiguration(installArgs, false);
     const receipt = await runArtifactpassInstall({
       marketplaceSource: defaultMarketplace,
-      ...(baseUrl === undefined ? {} : { baseUrl }),
-      ...(profileName === undefined ? {} : { profileName }),
-      ...(workspaceRoot === undefined ? {} : { workspaceRoot }),
-      openDevelopment,
+      baseUrl: configuration.resolved.baseUrl,
+      profileName: configuration.resolved.profileName,
+      workspaceRoot: configuration.resolved.workspaceRoot,
+      openDevelopment: configuration.openDevelopment,
       connectAfterInstall: false,
       installKnownHostAdapters: !booleanFlag(installArgs, "--no-host-install"),
     }, {
@@ -130,6 +181,29 @@ const main = async (): Promise<void> => {
       },
     });
     print(jsonOutputRequested ? receipt : renderInstallReceipt(receipt));
+    return;
+  }
+  if (command === "configure") {
+    jsonOutputRequested = booleanFlag(args, "--json");
+    const supportedOptions = new Set([...INSTALL_VALUE_OPTIONS, "--open-development", "--json"]);
+    const unexpected = args.filter((argument, index) => {
+      if (supportedOptions.has(argument)) return false;
+      return index === 0 || !INSTALL_VALUE_OPTIONS.has(args[index - 1] ?? "");
+    });
+    if (unexpected.length > 0) throw new Error(`Unknown configure option: ${unexpected[0]}`);
+    const configuration = await resolveCliWorkspaceConfiguration(args, true);
+    const updated = applyWorkspaceConfiguration(
+      configuration.settings,
+      configuration.resolved,
+      configuration.openDevelopment,
+    );
+    await writeLocalBridgeSettings(defaultLocalConfigPath(), updated);
+    print(jsonOutputRequested ? {
+      profile: configuration.resolved.profileName,
+      origin: configuration.resolved.baseUrl,
+      workspace_root: configuration.resolved.workspaceRoot,
+      connection_status: "not-checked",
+    } : `ArtifactPass now uses ${configuration.resolved.baseUrl} for ${configuration.resolved.workspaceRoot}. Start a new agent session; if this deployment is not connected, connect from the agent when you first use it.`);
     return;
   }
   if (command === "help" || command === "--help") {
@@ -212,11 +286,7 @@ const main = async (): Promise<void> => {
   }
   if (command === "connect") {
     const connectArguments = parseConnectArguments(args);
-    await migrateDefaultLocalState();
-    const savedSettings = await readLocalBridgeSettings(defaultLocalConfigPath()).catch((error: unknown) => {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
-      throw error;
-    });
+    const savedSettings = await readSavedSettings();
     const installKnownHostAdapters = !booleanFlag(args, "--no-host-install");
     const requestedHost = optionalValue(args, "--host");
     const host = requestedHost ?? "both";
@@ -230,12 +300,14 @@ const main = async (): Promise<void> => {
       sourceRoot: resolve(marketplaceSource, "plugins/artifactpass"),
     });
     const profileName = optionalValue(args, "--profile");
+    const requestedWorkspaceRoots = values(args, "--workspace-root");
+    const workspaceRoots = requestedWorkspaceRoots.length > 0
+      ? requestedWorkspaceRoots
+      : [process.cwd()];
     const result = await connectHost({
       ...(profileName === undefined ? {} : { profileName }),
-      baseUrl: resolveConnectDeploymentUrl(connectArguments, savedSettings, profileName),
-      workspaceRoots: values(args, "--workspace-root").length > 0
-        ? values(args, "--workspace-root")
-        : [process.cwd()],
+      baseUrl: resolveConnectDeploymentUrl(connectArguments, savedSettings, profileName, workspaceRoots[0]),
+      workspaceRoots,
       ...(hosts === undefined ? {} : { hosts }),
       installKnownHostAdapters,
       marketplaceSource,
