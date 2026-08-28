@@ -26,6 +26,7 @@ const portableFixture = async (root: string) => {
   return {
     digest: "a".repeat(64),
     rootDirectory,
+    marketplaceDirectory: resolve(rootDirectory, "marketplace"),
     mcpConfig,
     skillsDirectory,
   };
@@ -81,6 +82,59 @@ describe("one-command ArtifactPass installer", () => {
     expect(renderInstallReceipt(receipt)).toContain("installed");
     expect(renderInstallReceipt(receipt)).toContain("not connected");
     expect(renderInstallReceipt(receipt)).toContain("choose Connect ArtifactPass");
+  });
+
+  it("registers a detected host from the durable marketplace without authentication", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifactpass-installer-host-disconnected-"));
+    const workspace = resolve(root, "workspace");
+    await mkdir(workspace);
+    const portable = await portableFixture(root);
+    const runner = vi.fn(async (command: string, args: readonly string[]) => {
+      const joined = args.join(" ");
+      if (joined === "--version") {
+        if (command === "claude") return { stdout: "2.1.197", stderr: "" };
+        throw new Error("host unavailable");
+      }
+      if (command === "claude" && joined === "plugin marketplace list --json") {
+        return { stdout: "[]", stderr: "" };
+      }
+      if (command === "claude" && joined === "plugin list --json") {
+        return { stdout: "[]", stderr: "" };
+      }
+      if (command === "claude" && joined === "mcp list") {
+        return { stdout: "", stderr: "" };
+      }
+      return { stdout: "{}", stderr: "" };
+    });
+
+    const receipt = await runArtifactpassInstall({
+      marketplaceSource: "/temporary/package/marketplace",
+      workspaceRoot: workspace,
+      configPath: resolve(root, "config", "config.json"),
+      connectAfterInstall: false,
+    }, {
+      runner,
+      connectDependencies: { deviceFlowDependencies: { openBrowser: async () => undefined } },
+      installPortable: vi.fn().mockResolvedValue(portable),
+      smoke: vi.fn().mockResolvedValue({
+        negotiated: true,
+        tools: ["connect_artifactpass", "connection_status", "publish_artifact", "read_artifact"],
+        representativeInvocation: true,
+      }),
+      operationId: () => "detected-host-operation",
+    });
+
+    expect(runner).toHaveBeenCalledWith("claude", [
+      "plugin", "marketplace", "add", portable.marketplaceDirectory,
+    ]);
+    expect(runner).not.toHaveBeenCalledWith("claude", [
+      "plugin", "marketplace", "add", "/temporary/package/marketplace",
+    ]);
+    expect(receipt).toMatchObject({
+      adapters: ["claude"],
+      credential: "none",
+      portable_bundle: { host_registration: "installed" },
+    });
   });
 
   it("rebinds one workspace without changing another workspace's deployment", async () => {
@@ -349,7 +403,9 @@ describe("one-command ArtifactPass installer", () => {
     });
     expect(receipt.portable_bundle).not.toHaveProperty("mcp_config");
     expect(connect).toHaveBeenCalledWith(
-      expect.not.objectContaining({ hostBridgePath: expect.anything() }),
+      expect.objectContaining({
+        marketplaceSource: portable.marketplaceDirectory,
+      }),
       expect.anything(),
     );
     expect(parseArtifactpassInstallReceipt(receipt)).toEqual(receipt);
@@ -393,6 +449,9 @@ describe("one-command ArtifactPass installer", () => {
     const configPath = resolve(root, "config.json");
     const portable = await portableFixture(root);
     const connect = vi.fn(async (_input, dependencies) => {
+      await expect(dependencies.installPortable?.({
+        marketplaceSource: "/unused/package/marketplace",
+      })).resolves.toBe(portable);
       await dependencies.verifyConnection?.({
         configPath,
         profileName: "production",
@@ -540,6 +599,61 @@ describe("one-command ArtifactPass installer", () => {
     });
     expect(renderInstallReceipt(failure?.receipt as ArtifactpassInstallReceipt))
       .toContain("Rollback is incomplete: host-registration-unverified");
+  });
+
+  it("rolls back a captured host installation without deleting its durable marketplace", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifactpass-installer-host-rollback-"));
+    const workspace = resolve(root, "workspace");
+    await mkdir(workspace);
+    const configPath = resolve(root, "config.json");
+    const portable = await portableFixture(root);
+    const rollback = vi.fn(async () => undefined);
+    const connect = vi.fn(async (_input, dependencies) => {
+      await dependencies.verifyConnection?.({
+        configPath,
+        profileName: "production",
+        hosts: ["claude"],
+      });
+      dependencies.captureHostInstallation?.({ hosts: ["claude"], rollback });
+      return {
+        hosts: ["claude"] as const,
+        profileName: "production",
+        configPath,
+        credentialAction: "reused" as const,
+      };
+    });
+
+    let failure: ArtifactpassInstallError | undefined;
+    try {
+      await runArtifactpassInstall({
+        marketplaceSource: "/package/marketplace",
+        connectAfterInstall: true,
+        workspaceRoot: workspace,
+        configPath,
+      }, {
+        connect,
+        connectDependencies: { deviceFlowDependencies: { openBrowser: async () => undefined } },
+        installPortable: vi.fn().mockResolvedValue(portable),
+        portableWasCreated: () => true,
+        smoke: vi.fn().mockResolvedValue({
+          negotiated: true,
+          tools: ["connect_artifactpass", "connection_status", "publish_artifact", "read_artifact"],
+          representativeInvocation: true,
+        }),
+        skipCredentialStorePreflight: true,
+        operationId: () => "captured-host-operation",
+        afterStage: (stage) => {
+          if (stage === "connection") throw new Error("staged failure");
+        },
+      });
+    } catch (error) {
+      if (error instanceof ArtifactpassInstallError) failure = error;
+      else throw error;
+    }
+
+    expect(failure?.receipt).toMatchObject({ rollback: "complete" });
+    expect(rollback).toHaveBeenCalledOnce();
+    await expect(stat(portable.rootDirectory)).resolves.toBeDefined();
   });
 
   it("fails before connection for unsafe roots and emits the same receipt shape", async () => {

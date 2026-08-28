@@ -23,7 +23,12 @@ import {
 } from "agent-bridge";
 
 import { completeDeviceFlow, type DeviceFlowDependencies } from "../device-flow";
-import { detectHosts, installPluginForHosts, type AgentHost } from "../hosts";
+import {
+  detectHosts,
+  installPluginForHosts,
+  type AgentHost,
+  type HostInstallation,
+} from "../hosts";
 import type { ProcessRunner } from "../process";
 import { runProcess } from "../process";
 import { migrateLegacyLocalState } from "../local-state-migration";
@@ -108,6 +113,7 @@ export interface ConnectDependencies {
   readonly writeSettings?: typeof writeLocalBridgeSettings;
   readonly migrateState?: typeof migrateLegacyLocalState;
   readonly installPortable?: typeof installPortableIntegration;
+  readonly captureHostInstallation?: (installation: HostInstallation) => void;
   readonly now?: () => number;
   readonly verifyConnection?: (context: {
     readonly configPath: string;
@@ -196,10 +202,10 @@ export const connectHost = async (
   const hosts = installKnownHostAdapters ? (input.hosts ?? await detectHosts(runner)) : [];
   const portableIntegration = installKnownHostAdapters && hosts.length === 0
     ? await (dependencies.installPortable ?? installPortableIntegration)({
-        sourceRoot: resolve(input.marketplaceSource, "plugins/artifactpass"),
+        marketplaceSource: input.marketplaceSource,
       })
     : undefined;
-  const installAndVerify = async (): Promise<() => Promise<void>> => {
+  const installAndVerify = async (): Promise<HostInstallation | undefined> => {
     const hostInstallation = installKnownHostAdapters && hosts.length > 0
       ? await installPluginForHosts(hosts, input.marketplaceSource, runner)
       : undefined;
@@ -210,7 +216,7 @@ export const connectHost = async (
         hosts,
         ...(portableIntegration === undefined ? {} : { portableIntegration }),
       });
-      return hostInstallation?.rollback ?? (async () => undefined);
+      return hostInstallation;
     } catch (error) {
       if (hostInstallation !== undefined) {
         try {
@@ -234,7 +240,8 @@ export const connectHost = async (
             : { publication_state_path: previousProfile.publication_state_path }),
           credential_namespace: "artifactpass",
         }));
-      await installAndVerify();
+      const hostInstallation = await installAndVerify();
+      if (hostInstallation !== undefined) dependencies.captureHostInstallation?.(hostInstallation);
     } catch (error) {
       const restore = previousSettings === null
         ? rm(configPath, { force: true })
@@ -292,7 +299,8 @@ export const connectHost = async (
               ? previousProfile.pdf_key_id === undefined ? {} : { pdf_key_id: previousProfile.pdf_key_id }
               : { pdf_key_id: healthBody.pdf_provenance_key_id }),
           }));
-        await installAndVerify();
+        const hostInstallation = await installAndVerify();
+        if (hostInstallation !== undefined) dependencies.captureHostInstallation?.(hostInstallation);
       } catch (error) {
         if (migratedCredential) await store.set(previousStoredCredential as string);
         await (dependencies.writeSettings ?? writeLocalBridgeSettings)(configPath, previousSettings)
@@ -317,7 +325,7 @@ export const connectHost = async (
     dependencies.deviceFlowDependencies,
   );
   let wroteConfig = false;
-  let rollbackHostInstallation: (() => Promise<void>) | undefined;
+  let hostInstallation: HostInstallation | undefined;
   try {
     await (dependencies.writeSettings ?? writeLocalBridgeSettings)(configPath, configuredSettings({
         base_url: origin.toString(),
@@ -334,7 +342,7 @@ export const connectHost = async (
       }));
     wroteConfig = true;
     await store.set(bindAgentCredential(origin, token.accessToken));
-    rollbackHostInstallation = await installAndVerify();
+    hostInstallation = await installAndVerify();
     if (
       previousToken !== null &&
       previousProfile !== undefined &&
@@ -348,7 +356,7 @@ export const connectHost = async (
     }
   } catch (error) {
     const cleanupErrors: unknown[] = [];
-    await rollbackHostInstallation?.().catch((cleanupError: unknown) => {
+    await hostInstallation?.rollback().catch((cleanupError: unknown) => {
       cleanupErrors.push(cleanupError);
     });
     await revokeToken(origin, token.accessToken, fetchImplementation).catch((cleanupError: unknown) => {
@@ -370,6 +378,7 @@ export const connectHost = async (
     }
     throw error;
   }
+  if (hostInstallation !== undefined) dependencies.captureHostInstallation?.(hostInstallation);
   return {
     hosts,
     profileName,
