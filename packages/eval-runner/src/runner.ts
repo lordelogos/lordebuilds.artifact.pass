@@ -278,7 +278,9 @@ export const runDeterministicProfile = async (options: {
       },
     });
     const tools = await host.listTools();
-    if (JSON.stringify(tools) !== JSON.stringify(["publish_artifact", "read_artifact"])) {
+    if (JSON.stringify(tools) !== JSON.stringify([
+      "connect_artifactpass", "connection_status", "publish_artifact", "read_artifact",
+    ])) {
       throw new Error("Installed MCP bridge exposed an unexpected tool contract");
     }
     const trial = await runTrial(options.repositoryRoot, environment, host);

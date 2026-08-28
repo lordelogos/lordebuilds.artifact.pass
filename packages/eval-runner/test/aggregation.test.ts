@@ -14,7 +14,7 @@ const report = (
   version: 1,
   run_id: runId,
   candidate: { sha256: candidate },
-  receipt_version: 2,
+  receipt_version: 3,
   scenario: { id: "generic-fidelity", version: 1, sha256: "b".repeat(64) },
   scorer_version: "1.0.0",
   host: { agent_a: "generic", agent_b: "generic", runtime: "node-test" },

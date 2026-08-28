@@ -70,6 +70,19 @@ describe("portable agent package", () => {
     expect(source).not.toMatch(/slash command|hook syntax|end[- ]of[- ]turn command/iu);
   });
 
+  it("connects from the plugin on first publication without a terminal command or restart", async () => {
+    const source = await readFile(
+      resolve(pluginRoot, "skills/share-artifact/SKILL.md"),
+      "utf8",
+    );
+
+    expect(source).toContain("connection_status");
+    expect(source).toContain("connect_artifactpass");
+    expect(source).toMatch(/same agent session/iu);
+    expect(source).not.toMatch(/pnpm dlx artifactpass connect/iu);
+    expect(source).not.toMatch(/restart.*(?:approval|connect)/iu);
+  });
+
   it("keeps ecosystem manifests as thin references to the same MCP and skills", async () => {
     const [codexManifest, claudeManifest, claudeMcp] = await Promise.all([
       readJson(resolve(pluginRoot, ".codex-plugin/plugin.json")),

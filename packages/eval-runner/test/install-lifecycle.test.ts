@@ -29,14 +29,14 @@ describe("real candidate installation in a disposable eval home", () => {
       });
       for (const result of [first, repaired]) {
         expect(result.receipt).toMatchObject({
-          receipt_version: 2,
+          receipt_version: 3,
           product: "ArtifactPass",
           status: "success",
           origin: environment.baseUrl.origin,
           workspace_roots: [environment.workspaces.agentA],
           mcp: {
             negotiated: true,
-            tools: ["publish_artifact", "read_artifact"],
+            tools: ["connect_artifactpass", "connection_status", "publish_artifact", "read_artifact"],
             representative_invocation: true,
           },
           skills: {

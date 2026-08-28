@@ -74,13 +74,7 @@ After deployment, a user installs without authentication:
 pnpm dlx artifactpass
 ```
 
-They connect later from the workspace they want to authorize:
-
-```sh
-pnpm dlx artifactpass connect
-```
-
-The browser signs in at ArtifactPass with Google or GitHub. The terminal receives only the scoped ArtifactPass token after the person approves the displayed device code.
+They start a new agent session, where ArtifactPass is installed but disconnected. When they ask the agent to share an artifact or say **Connect ArtifactPass**, the plugin opens ArtifactPass sign-in with Google or GitHub. After the person approves the displayed device code, the running plugin stores the scoped ArtifactPass token and becomes connected without another command or restart.
 
 ## Organization-owned deployments
 

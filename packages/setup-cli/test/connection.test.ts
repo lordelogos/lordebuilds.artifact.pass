@@ -11,12 +11,6 @@ import { completeDeviceFlow } from "../src/device-flow";
 import { detectHosts, installPluginForHosts } from "../src/hosts";
 import type { ProcessRunner } from "../src/process";
 
-const hostBinding = {
-  configPath: "/private/config/artifactpass/config.json",
-  profileName: "staging-eval",
-  bridgePath: "/private/config/artifactpass/portable-integration/digest/plugin/dist/cli.mjs",
-} as const;
-
 const runnerFor = (available: readonly string[]): ProcessRunner => vi.fn(async (command, args) => {
   if (args[0] === "--version") {
     if (!available.includes(command)) throw new Error("missing");
@@ -28,11 +22,17 @@ const runnerFor = (available: readonly string[]): ProcessRunner => vi.fn(async (
   if (command === "codex" && args.join(" ") === "plugin list --json") {
     return { stdout: JSON.stringify({ installed: [] }), stderr: "" };
   }
+  if (command === "codex" && args.join(" ") === "mcp list --json") {
+    return { stdout: "[]", stderr: "" };
+  }
   if (command === "claude" && args.join(" ") === "plugin marketplace list --json") {
     return { stdout: "[]", stderr: "" };
   }
   if (command === "claude" && args.join(" ") === "plugin list --json") {
     return { stdout: "[]", stderr: "" };
+  }
+  if (command === "claude" && args.join(" ") === "mcp list") {
+    return { stdout: "", stderr: "" };
   }
   return { stdout: "{}", stderr: "" };
 });
@@ -140,25 +140,15 @@ describe("host connection", () => {
 
   it("installs the same marketplace plugin in both hosts", async () => {
     const runner = runnerFor(["codex", "claude"]);
-    await installPluginForHosts(["codex", "claude"], "/trusted/repository", hostBinding, runner);
+    await installPluginForHosts(["codex", "claude"], "/trusted/repository", runner);
     expect(runner).toHaveBeenCalledWith("codex", [
       "plugin", "add", "artifactpass@artifactpass", "--json",
     ]);
     expect(runner).toHaveBeenCalledWith("claude", [
       "plugin", "install", "artifactpass@artifactpass", "--scope", "user",
     ]);
-    expect(runner).toHaveBeenCalledWith("codex", [
-      "mcp", "add", "artifactpass",
-      "--env", `ARTIFACTPASS_CONFIG_PATH=${hostBinding.configPath}`,
-      "--env", `ARTIFACTPASS_PROFILE=${hostBinding.profileName}`,
-      "--", process.execPath, hostBinding.bridgePath,
-    ]);
-    expect(runner).toHaveBeenCalledWith("claude", [
-      "mcp", "add", "--scope", "user", "artifactpass",
-      "-e", `ARTIFACTPASS_CONFIG_PATH=${hostBinding.configPath}`,
-      "-e", `ARTIFACTPASS_PROFILE=${hostBinding.profileName}`,
-      "--", process.execPath, hostBinding.bridgePath,
-    ]);
+    expect(runner).not.toHaveBeenCalledWith("codex", expect.arrayContaining(["mcp", "add"]));
+    expect(runner).not.toHaveBeenCalledWith("claude", expect.arrayContaining(["mcp", "add"]));
   });
 
   it("configures the portable MCP and skills package without invoking a vendor host", async () => {
@@ -254,6 +244,9 @@ describe("host connection", () => {
           { pluginId: "artifact-share@lordebuilds-artifacts" },
         ] }), stderr: "" };
       }
+      if (command === "codex" && args.join(" ") === "mcp list --json") {
+        return { stdout: "[]", stderr: "" };
+      }
       if (command === "claude" && args.join(" ") === "plugin marketplace list --json") {
         return { stdout: JSON.stringify([{ name: "artifactpass" }]), stderr: "" };
       }
@@ -266,9 +259,12 @@ describe("host connection", () => {
           scope: "user",
         }]), stderr: "" };
       }
+      if (command === "claude" && args.join(" ") === "mcp list") {
+        return { stdout: "", stderr: "" };
+      }
       return { stdout: "{}", stderr: "" };
     });
-    await installPluginForHosts(["codex", "claude"], "/trusted/repository", hostBinding, runner);
+    await installPluginForHosts(["codex", "claude"], "/trusted/repository", runner);
     expect(runner).toHaveBeenCalledWith("codex", [
       "plugin", "remove", "artifactpass@artifactpass",
     ]);
@@ -285,7 +281,7 @@ describe("host connection", () => {
 
   it("rejects malformed host CLI output before changing plugin state", async () => {
     const runner: ProcessRunner = vi.fn(async () => ({ stdout: "{}", stderr: "" }));
-    await expect(installPluginForHosts(["codex"], "/trusted/repository", hostBinding, runner))
+    await expect(installPluginForHosts(["codex"], "/trusted/repository", runner))
       .rejects.toThrow("unexpected marketplace list");
     expect(runner).toHaveBeenCalledTimes(1);
   });
@@ -301,11 +297,17 @@ describe("host connection", () => {
       if (command === "codex" && joined === "plugin list --json") {
         return { stdout: JSON.stringify({ installed: [{ pluginId: "artifactpass@artifactpass" }] }), stderr: "" };
       }
+      if (command === "codex" && joined === "mcp list --json") {
+        return { stdout: "[]", stderr: "" };
+      }
       if (command === "claude" && joined === "plugin marketplace list --json") {
         return { stdout: JSON.stringify([{ name: "artifactpass" }]), stderr: "" };
       }
       if (command === "claude" && joined === "plugin list --json") {
         return { stdout: JSON.stringify([{ id: "artifactpass@artifactpass", scope: "local" }]), stderr: "" };
+      }
+      if (command === "claude" && joined === "mcp list") {
+        return { stdout: "", stderr: "" };
       }
       if (command === "claude" && joined === "plugin install artifactpass@artifactpass --scope user") {
         claudeUserInstallAttempts += 1;
@@ -317,13 +319,75 @@ describe("host connection", () => {
       return { stdout: "{}", stderr: "" };
     });
 
-    await expect(installPluginForHosts(["codex", "claude"], "/trusted/repository", hostBinding, runner))
+    await expect(installPluginForHosts(["codex", "claude"], "/trusted/repository", runner))
       .rejects.toThrow("injected Claude install failure");
 
     expect(codexInstallAttempts).toBe(2);
-    expect(runner).toHaveBeenCalledWith("codex", ["mcp", "remove", "artifactpass"]);
+    expect(runner).not.toHaveBeenCalledWith("codex", ["mcp", "remove", "artifactpass"]);
+    expect(runner).not.toHaveBeenCalledWith("claude", [
+      "mcp", "remove", "artifactpass", "--scope", "user",
+    ]);
     expect(runner).toHaveBeenCalledWith("claude", [
       "plugin", "install", "artifactpass@artifactpass", "--scope", "local",
+    ]);
+  });
+
+  it("removes legacy standalone MCP registrations after installing the plugin", async () => {
+    const digest = "a".repeat(64);
+    const bridgePath = `/tmp/portable-integration/${digest}/plugin/dist/cli.mjs`;
+    const runner: ProcessRunner = vi.fn(async (command, args) => {
+      const joined = args.join(" ");
+      if (command === "codex" && joined === "plugin marketplace list --json") {
+        return { stdout: JSON.stringify({ marketplaces: [{ name: "artifactpass" }] }), stderr: "" };
+      }
+      if (command === "codex" && joined === "plugin list --json") {
+        return { stdout: JSON.stringify({ installed: [] }), stderr: "" };
+      }
+      if (command === "codex" && joined === "mcp list --json") {
+        return { stdout: JSON.stringify([{ name: "artifactpass" }]), stderr: "" };
+      }
+      if (command === "codex" && joined === "mcp get artifactpass --json") {
+        return { stdout: JSON.stringify({
+          transport: {
+            type: "stdio",
+            command: "/usr/bin/node",
+            args: [bridgePath],
+            env: {
+              ARTIFACTPASS_CONFIG_PATH: "/tmp/artifactpass/config.json",
+              ARTIFACTPASS_PROFILE: "staging",
+            },
+          },
+        }), stderr: "" };
+      }
+      if (command === "claude" && joined === "plugin marketplace list --json") {
+        return { stdout: JSON.stringify([{ name: "artifactpass" }]), stderr: "" };
+      }
+      if (command === "claude" && joined === "plugin list --json") {
+        return { stdout: "[]", stderr: "" };
+      }
+      if (command === "claude" && joined === "mcp list") {
+        return { stdout: "artifactpass: legacy stdio server\n", stderr: "" };
+      }
+      if (command === "claude" && joined === "mcp get artifactpass") {
+        return { stdout: [
+          "artifactpass:",
+          "  Scope: User config",
+          "  Type: stdio",
+          "  Command: /usr/bin/node",
+          `  Args: ${bridgePath}`,
+          "  Environment:",
+          "    ARTIFACTPASS_CONFIG_PATH=/tmp/artifactpass/config.json",
+          "    ARTIFACTPASS_PROFILE=staging",
+        ].join("\n"), stderr: "" };
+      }
+      return { stdout: "{}", stderr: "" };
+    });
+
+    await installPluginForHosts(["codex", "claude"], "/trusted/repository", runner);
+
+    expect(runner).toHaveBeenCalledWith("codex", ["mcp", "remove", "artifactpass"]);
+    expect(runner).toHaveBeenCalledWith("claude", [
+      "mcp", "remove", "artifactpass", "--scope", "user",
     ]);
   });
 
@@ -373,6 +437,20 @@ describe("host connection", () => {
     expect(manual).toHaveLength(1);
     expect(manual[0]).toContain("user_code=");
     expect(manual[0]).not.toContain("as_");
+  });
+
+  it("rejects an approval URL from a different deployment origin", async () => {
+    await expect(completeDeviceFlow("https://artifactpass.com", {
+      fetch: vi.fn(async () => new Response(JSON.stringify({
+        device_code: "d".repeat(43),
+        user_code: "u".repeat(12),
+        verification_uri: "https://login.example.test/connect/approve",
+        expires_in: 600,
+        interval: 1,
+      }), { status: 201 })),
+      openBrowser: vi.fn(),
+      wait: async () => undefined,
+    })).rejects.toThrow("approval URL must use the configured deployment origin");
   });
 
   it("retries the same device exchange after a lost token response", async () => {

@@ -36,7 +36,7 @@ Local storage never reads or writes production D1 or R2. Deployment sends the bu
 
 The bridge selects one profile at startup. Credentials and journals are isolated per profile. A profile migrated from config v1 retains the original journal path so its SQLite publisher and retry identity survive a live upgrade; profiles created under config v2 use namespaced journal paths.
 
-The public package, executable, plugin, marketplace, MCP registration key, and skill namespace are `artifactpass`. Compatibility reads retain the legacy `lordebuilds.artifacts.share` config, credential, and health identifiers until cleanup is safe. The MCP tool names `publish_artifact` and `read_artifact`, signed PDF qualifiers, publication commitments, Cloudflare resource names, and storage bindings remain stable protocol or infrastructure identifiers.
+The public package, executable, plugin, marketplace, MCP registration key, and skill namespace are `artifactpass`. Compatibility reads retain the legacy `lordebuilds.artifacts.share` config, credential, and health identifiers until cleanup is safe. The MCP surface exposes `connection_status`, `connect_artifactpass`, `publish_artifact`, and `read_artifact`. Signed PDF qualifiers, publication commitments, Cloudflare resource names, and storage bindings remain stable protocol or infrastructure identifiers.
 
 The service returns a random URL under `/a/`. Public readers may fetch only the named artifact representations. They cannot list artifacts or create new ones. Source reads are bounded to 64 KiB and carry a stable total length and SHA-256, allowing an agent to reconstruct and verify a large artifact.
 

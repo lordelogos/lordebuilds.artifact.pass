@@ -12,12 +12,6 @@ export interface HostInstallation {
   rollback(): Promise<void>;
 }
 
-export interface HostBridgeBinding {
-  readonly configPath: string;
-  readonly profileName: string;
-  readonly bridgePath: string;
-}
-
 const canRun = async (runner: ProcessRunner, command: string): Promise<boolean> => {
   try {
     await runner(command, ["--version"]);
@@ -73,10 +67,60 @@ const claudePluginEntries = (
   return value as readonly { readonly id: string; readonly scope?: string }[];
 };
 
+interface LegacyMcpRegistration {
+  readonly command: string;
+  readonly args: readonly string[];
+  readonly environment: Readonly<Record<string, string>>;
+}
+
+const legacyBridgePath = (value: string): boolean =>
+  /(?:^|[/\\])portable-integration[/\\][a-f0-9]{64}[/\\]plugin[/\\]dist[/\\]cli\.mjs$/u.test(value);
+
+const codexLegacyMcp = async (runner: ProcessRunner): Promise<LegacyMcpRegistration | null> => {
+  const listed = namedEntries(parseJson(
+    (await runner("codex", ["mcp", "list", "--json"])).stdout,
+    "Codex MCP",
+  ), "Codex MCP");
+  if (!listed.some((entry) => entry.name === "artifactpass")) return null;
+  const details = parseJson(
+    (await runner("codex", ["mcp", "get", "artifactpass", "--json"])).stdout,
+    "Codex MCP",
+  );
+  if (!isRecord(details) || !isRecord(details.transport)) return null;
+  const transport = details.transport;
+  if (
+    transport.type !== "stdio" || typeof transport.command !== "string" ||
+    !Array.isArray(transport.args) || !transport.args.every((argument) => typeof argument === "string") ||
+    !transport.args.some(legacyBridgePath)
+  ) return null;
+  const environment = isRecord(transport.env)
+    ? Object.fromEntries(Object.entries(transport.env).filter(
+        (entry): entry is [string, string] => typeof entry[1] === "string",
+      ))
+    : {};
+  return { command: transport.command, args: transport.args as string[], environment };
+};
+
+const claudeLegacyMcp = async (runner: ProcessRunner): Promise<LegacyMcpRegistration | null> => {
+  const list = (await runner("claude", ["mcp", "list"])).stdout;
+  if (!list.split(/\r?\n/u).some((line) => line.startsWith("artifactpass:"))) return null;
+  const details = (await runner("claude", ["mcp", "get", "artifactpass"])).stdout;
+  const command = /^\s*Command:\s*(.+)$/mu.exec(details)?.[1];
+  const bridgePath = /^\s*Args:\s*(.+)$/mu.exec(details)?.[1];
+  if (command === undefined || bridgePath === undefined || !legacyBridgePath(bridgePath)) return null;
+  const environment = Object.fromEntries([...details.matchAll(/^\s{4}([A-Za-z_][A-Za-z0-9_]*)=(.*)$/gmu)]
+    .map((match) => [match[1] as string, match[2] as string]));
+  return { command, args: [bridgePath], environment };
+};
+
+const environmentArguments = (
+  flag: "--env" | "-e",
+  environment: Readonly<Record<string, string>>,
+): string[] => Object.entries(environment).flatMap(([name, value]) => [flag, `${name}=${value}`]);
+
 export const installPluginForHosts = async (
   hosts: readonly AgentHost[],
   marketplaceSource: string,
-  binding: HostBridgeBinding,
   runner: ProcessRunner = runProcess,
 ): Promise<HostInstallation> => {
   const rollbackActions: Array<() => Promise<void>> = [];
@@ -110,20 +154,22 @@ export const installPluginForHosts = async (
     if (hadPlugin) {
       await runner("codex", ["plugin", "remove", artifactpassPluginId]);
     }
+    const legacyMcp = await codexLegacyMcp(runner);
+    if (legacyMcp !== null) await runner("codex", ["mcp", "remove", "artifactpass"]);
+    if (legacyMcp !== null) {
+      rollbackActions.push(async () => {
+        await runner("codex", [
+          "mcp", "add", "artifactpass",
+          ...environmentArguments("--env", legacyMcp.environment),
+          "--", legacyMcp.command, ...legacyMcp.args,
+        ]);
+      });
+    }
     rollbackActions.push(async () => {
       await runner("codex", ["plugin", "remove", artifactpassPluginId]);
       if (hadPlugin) await runner("codex", ["plugin", "add", artifactpassPluginId, "--json"]);
     });
     await runner("codex", ["plugin", "add", artifactpassPluginId, "--json"]);
-    await runner("codex", [
-      "mcp", "add", "artifactpass",
-      "--env", `ARTIFACTPASS_CONFIG_PATH=${binding.configPath}`,
-      "--env", `ARTIFACTPASS_PROFILE=${binding.profileName}`,
-      "--", process.execPath, binding.bridgePath,
-    ]);
-    rollbackActions.push(async () => {
-      await runner("codex", ["mcp", "remove", "artifactpass"]);
-    });
     }
 
     if (hosts.includes("claude")) {
@@ -148,6 +194,17 @@ export const installPluginForHosts = async (
         "plugin", "uninstall", artifactpassPluginId, "--scope", plugin.scope ?? "user",
       ]);
     }
+    const legacyMcp = await claudeLegacyMcp(runner);
+    if (legacyMcp !== null) {
+      await runner("claude", ["mcp", "remove", "artifactpass", "--scope", "user"]);
+      rollbackActions.push(async () => {
+        await runner("claude", [
+          "mcp", "add", "--scope", "user", "artifactpass",
+          ...environmentArguments("-e", legacyMcp.environment),
+          "--", legacyMcp.command, ...legacyMcp.args,
+        ]);
+      });
+    }
     rollbackActions.push(async () => {
       await runner("claude", ["plugin", "uninstall", artifactpassPluginId, "--scope", "user"]);
       for (const plugin of previousPlugins) {
@@ -159,15 +216,6 @@ export const installPluginForHosts = async (
     await runner("claude", [
       "plugin", "install", artifactpassPluginId, "--scope", "user",
     ]);
-    await runner("claude", [
-      "mcp", "add", "--scope", "user", "artifactpass",
-      "-e", `ARTIFACTPASS_CONFIG_PATH=${binding.configPath}`,
-      "-e", `ARTIFACTPASS_PROFILE=${binding.profileName}`,
-      "--", process.execPath, binding.bridgePath,
-    ]);
-    rollbackActions.push(async () => {
-      await runner("claude", ["mcp", "remove", "artifactpass", "--scope", "user"]);
-    });
     }
     return { hosts, rollback };
   } catch (error) {

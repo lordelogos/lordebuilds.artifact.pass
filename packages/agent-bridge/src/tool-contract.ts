@@ -10,6 +10,26 @@ const webUrlSchema = z.url({ protocol: /^https?$/u });
 const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/u);
 const opaqueCursorSchema = z.string().regex(/^[A-Za-z0-9_-]{16,256}$/u);
 
+export const ARTIFACTPASS_MCP_TOOL_NAMES = [
+  "connect_artifactpass",
+  "connection_status",
+  "publish_artifact",
+  "read_artifact",
+] as const;
+
+export const connectionInputSchema = z.object({}).strict();
+
+export const connectionOutputSchema = z.object({
+  status: z.enum(["disconnected", "connecting", "connected", "failed"]),
+  profile: z.string().min(1),
+  origin: z.string().url(),
+  expires_at: z.number().int().positive().optional(),
+  user_code: z.string().min(1).optional(),
+  approval_url: z.string().url().optional(),
+  browser_opened: z.boolean().optional(),
+  message: z.string().min(1).optional(),
+}).strict();
+
 export const publishArtifactInputSchema = z.object({
   path: z.string().min(1).describe("Absolute or workspace-relative local file path"),
   canonical_source_path: z.string().min(1).optional().describe(

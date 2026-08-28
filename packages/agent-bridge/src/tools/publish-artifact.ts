@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { open, realpath } from "node:fs/promises";
 import { basename, extname, isAbsolute, relative, resolve, sep } from "node:path";
 
@@ -330,8 +331,16 @@ export const publishArtifact = async (
       mimeType,
     });
     const journal = authorizedDependencies.journal ?? new MemoryPublicationJournal();
+    const journalCommitment = authorizedDependencies.token === undefined
+      ? payloadCommitment
+      : createHash("sha256")
+          .update("artifactpass-publication-v1\0")
+          .update(authorizedDependencies.token)
+          .update("\0")
+          .update(payloadCommitment)
+          .digest("hex");
     const publication = await journal.prepare(
-      payloadCommitment,
+      journalCommitment,
       Date.now() + input.expiresInSeconds * 1000,
     );
     form.set("publication_attempt", publication.attemptId);
@@ -363,7 +372,7 @@ export const publishArtifact = async (
       throw new Error("ArtifactPass returned a foreign share origin");
     }
     await journal.acknowledge(
-      payloadCommitment,
+      journalCommitment,
       publication.attemptId,
       Date.parse(result.manifest.expires_at),
     );

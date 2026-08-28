@@ -276,7 +276,7 @@ export const resolveCredential = async (
   }
   const value = await options.osStore.get();
   if (value === null) {
-    throw new Error("ArtifactPass is installed but not connected. Run `pnpm dlx artifactpass connect` in this workspace, then restart the agent session");
+    throw new Error("ArtifactPass is disconnected. Use the Connect ArtifactPass tool, approve the browser sign-in, then retry this action");
   }
   return options.expectedOrigin === undefined
     ? value

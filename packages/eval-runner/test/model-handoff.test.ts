@@ -32,7 +32,7 @@ const successfulInstall = (root: string, agent: "agent-a" | "agent-b"): EvalInst
   hostRestartVerified: true,
   candidateArchiveSha256: "b".repeat(64),
   receipt: {
-    receipt_version: 2,
+    receipt_version: 3,
     product: "ArtifactPass",
     product_version: "test",
     operation_id: `${agent}-operation`,
@@ -47,7 +47,7 @@ const successfulInstall = (root: string, agent: "agent-a" | "agent-b"): EvalInst
       mcp_config: join(root, agent, "mcp.json"),
       skills_directory: join(root, agent, "skills"),
     },
-    mcp: { negotiated: true, tools: ["publish_artifact", "read_artifact"], representative_invocation: true },
+    mcp: { negotiated: true, tools: ["connect_artifactpass", "connection_status", "publish_artifact", "read_artifact"], representative_invocation: true },
     skills: { verified: true, names: ["read-shared-artifact", "share-artifact"] },
     credential: "created",
     migration: { actions: [], legacy_preserved: true },

@@ -26,7 +26,7 @@ const posture = (host: MatrixHost, principalId: string): HostPosture => ({
   filesystemContainment: "enforced",
   networkContainment: "enforced",
   approvalMode: "normal",
-  mcpTools: ["publish_artifact", "read_artifact"],
+  mcpTools: ["connect_artifactpass", "connection_status", "publish_artifact", "read_artifact"],
   principalId,
   principalIsolation: "proven",
   skillSelectionEvidence: "explicit",

@@ -3,11 +3,11 @@ import { dirname } from "node:path";
 
 import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
-import { redactSensitiveText } from "agent-bridge";
+import { ARTIFACTPASS_MCP_TOOL_NAMES, redactSensitiveText } from "agent-bridge";
 
 export interface McpSmokeResult {
   readonly negotiated: true;
-  readonly tools: readonly ["publish_artifact", "read_artifact"];
+  readonly tools: typeof ARTIFACTPASS_MCP_TOOL_NAMES;
   readonly representativeInvocation: true;
 }
 
@@ -56,8 +56,8 @@ export const smokeArtifactpassMcp = async (options: {
     await client.connect(transport, { timeout });
     const listed = await client.listTools({}, { timeout });
     const tools = listed.tools.map((tool) => tool.name).sort();
-    if (JSON.stringify(tools) !== JSON.stringify(["publish_artifact", "read_artifact"])) {
-      throw new Error("ArtifactPass MCP did not negotiate exactly two expected tools");
+    if (JSON.stringify(tools) !== JSON.stringify(ARTIFACTPASS_MCP_TOOL_NAMES)) {
+      throw new Error("ArtifactPass MCP did not negotiate the expected connection, publish, and read tools");
     }
     const invocation = await client.callTool({
       name: "read_artifact",
@@ -68,7 +68,7 @@ export const smokeArtifactpassMcp = async (options: {
     }
     return {
       negotiated: true,
-      tools: ["publish_artifact", "read_artifact"],
+      tools: ARTIFACTPASS_MCP_TOOL_NAMES,
       representativeInvocation: true,
     };
   } catch (error) {

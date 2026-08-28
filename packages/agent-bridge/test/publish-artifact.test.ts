@@ -502,6 +502,53 @@ describe("publish_artifact", () => {
     expect(observedTokens[1]).not.toBe(observedTokens[0]);
   });
 
+  it("starts a fresh publication attempt after the agent credential rotates", async () => {
+    const root = await workspace();
+    const path = join(root, "reconnected.md");
+    await writeFile(path, "# Reconnected handoff\n");
+    const journal = new FilePublicationJournal(join(root, "bridge-state.json"));
+    const observedTokens: string[] = [];
+    const fetch = vi.fn<typeof globalThis.fetch>(async (_input, init) => {
+      const form = init?.body;
+      if (!(form instanceof FormData)) throw new Error("Expected a multipart upload");
+      const shareToken = String(form.get("share_token"));
+      observedTokens.push(shareToken);
+      return new Response(JSON.stringify({
+        protocol_version: 1,
+        manifest: {
+          protocol_version: 1,
+          artifact_id: crypto.randomUUID(),
+          filename: "reconnected.md",
+          mime_type: "text/markdown",
+          byte_size: 22,
+          sha256: "a".repeat(64),
+          created_at: new Date().toISOString(),
+          expires_at: new Date(Date.now() + 900_000).toISOString(),
+          extraction: { status: "not_applicable" },
+        },
+        share_url: `https://artifacts.example.test/a/${shareToken}`,
+      }), { status: 201, headers: { "content-type": "application/json" } });
+    });
+    const common = {
+      baseUrl: new URL("https://artifacts.example.test"),
+      fetch,
+      workspaceRoots: [root],
+      journal,
+    };
+
+    await publishArtifact({ path, expiresInSeconds: 900 }, {
+      ...common,
+      token: `as_${"a".repeat(43)}`,
+    });
+    await publishArtifact({ path, expiresInSeconds: 900 }, {
+      ...common,
+      token: `as_${"b".repeat(43)}`,
+    });
+
+    expect(observedTokens).toHaveLength(2);
+    expect(observedTokens[1]).not.toBe(observedTokens[0]);
+  });
+
   it("recovers the original publication after a committed response is lost and the bridge restarts", async () => {
     const root = await workspace();
     const path = join(root, "final.md");

@@ -127,7 +127,7 @@ describe("portable behavior scenario runner", () => {
       hostRestartVerified: true,
       candidateArchiveSha256: "b".repeat(64),
       receipt: {
-        receipt_version: 2,
+        receipt_version: 3,
         product: "ArtifactPass",
         product_version: "test",
         operation_id: "operation",
@@ -142,7 +142,7 @@ describe("portable behavior scenario runner", () => {
           mcp_config: join(root, "mcp.json"),
           skills_directory: join(root, "skills"),
         },
-        mcp: { negotiated: true, tools: ["publish_artifact", "read_artifact"], representative_invocation: true },
+        mcp: { negotiated: true, tools: ["connect_artifactpass", "connection_status", "publish_artifact", "read_artifact"], representative_invocation: true },
         skills: { verified: true, names: ["read-shared-artifact", "share-artifact"] },
         credential: "none",
         migration: { actions: [], legacy_preserved: false },
@@ -156,7 +156,9 @@ describe("portable behavior scenario runner", () => {
     const shareUrl = `${environment.baseUrl.origin}/a/${"a".repeat(43)}`;
     const producer: GenericMcpHost = {
       events: [],
-      listTools: async () => ["publish_artifact", "read_artifact"],
+      listTools: async () => [
+        "connect_artifactpass", "connection_status", "publish_artifact", "read_artifact",
+      ],
       callTool: vi.fn(async () => ({ isError: false, value: { share_url: shareUrl } })),
       close: vi.fn(async () => undefined),
     };

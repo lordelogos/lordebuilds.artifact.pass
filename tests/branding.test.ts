@@ -46,7 +46,7 @@ describe("ArtifactPass active identity", () => {
     }
     expect(documents[0]).toContain("pnpm dlx artifactpass");
     expect(documents[1]?.indexOf("pnpm dlx artifactpass"))
-      .toBeLessThan(documents[1]?.indexOf("connect https://artifacts.example.com") ?? 0);
+      .toBeLessThan(documents[1]?.indexOf("--base-url https://artifacts.example.com") ?? 0);
   });
 
   it("retains only declared compatibility identifiers", async () => {

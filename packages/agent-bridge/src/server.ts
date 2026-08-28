@@ -13,6 +13,10 @@ import {
   type CredentialStore,
 } from "./auth/credential-store";
 import {
+  createConnectionController,
+  type ConnectionController,
+} from "./connection/connection-controller";
+import {
   defaultLocalConfigPath,
   legacyLocalConfigPath,
   publicationStatePathForProfile,
@@ -34,6 +38,8 @@ import {
   type PublicationJournal,
 } from "./state/publication-journal";
 import {
+  connectionInputSchema,
+  connectionOutputSchema,
   publishArtifactInputSchema,
   publishArtifactOutputSchema,
   readArtifactInputSchema,
@@ -53,6 +59,7 @@ export interface BridgeConfiguration {
   readonly logger?: RedactingLogger;
   readonly publicationJournal?: PublicationJournal;
   readonly publicationStatePath?: string;
+  readonly connectionController?: ConnectionController;
   readonly pdfProvenance?: {
     readonly keyId: string;
     readonly privateKeyPkcs8Base64: string;
@@ -87,6 +94,51 @@ const errorResult = (error: unknown) => ({
   }],
 });
 
+const createConfiguredConnectionController = (
+  configuration: BridgeConfiguration,
+  profileName: string,
+): ConnectionController => {
+  const base = () => ({
+    profile: profileName,
+    origin: configuration.baseUrl.origin,
+  });
+  if (configuration.openDevelopment === true) {
+    return {
+      status: async () => ({ status: "connected" as const, ...base() }),
+      connect: async () => ({ status: "connected" as const, ...base() }),
+    };
+  }
+  if (configuration.headless || configuration.osStore === undefined) {
+    return {
+      status: async () => {
+        try {
+          await resolveCredential({
+            headless: configuration.headless,
+            environmentStore: configuration.environmentStore,
+            ...(configuration.osStore === undefined ? {} : { osStore: configuration.osStore }),
+            expectedOrigin: configuration.baseUrl,
+            requireOriginBinding: configuration.requireOriginBoundCredential === true,
+          });
+          return { status: "connected" as const, ...base() };
+        } catch {
+          return { status: "disconnected" as const, ...base() };
+        }
+      },
+      connect: async () => ({
+        status: "failed" as const,
+        ...base(),
+        message: "This headless ArtifactPass connection must be managed by its secret manager.",
+      }),
+    };
+  }
+  return createConnectionController({
+    origin: configuration.baseUrl,
+    profileName,
+    credentialStore: configuration.osStore,
+    ...(configuration.fetch === undefined ? {} : { fetch: configuration.fetch }),
+  });
+};
+
 export const createBridgeServer = (configuration: BridgeConfiguration): McpServer => {
   const server = new McpServer(
     { name: "lordebuilds.artifacts.share", version: "0.0.0" },
@@ -94,16 +146,49 @@ export const createBridgeServer = (configuration: BridgeConfiguration): McpServe
   );
   const logger = configuration.logger ?? createRedactingLogger();
   const profileName = configuration.profileName ?? "environment";
-  const connectionContext = ` Active connection: profile ${profileName} at ${configuration.baseUrl.origin} (${configuration.openDevelopment === true ? "open local development" : "authenticated deployment"}).`;
+  const connectionContext = ` Configured deployment: profile ${profileName} at ${configuration.baseUrl.origin} (${configuration.openDevelopment === true ? "open local development" : "authentication required for publishing"}).`;
   const publicationJournal = configuration.publicationJournal ?? (
     configuration.publicationStatePath === undefined
       ? new MemoryPublicationJournal()
       : new FilePublicationJournal(configuration.publicationStatePath)
   );
+  const connectionController = configuration.connectionController ??
+    createConfiguredConnectionController(configuration, profileName);
+
+  const connectionResult = (state: Awaited<ReturnType<ConnectionController["status"]>>) => ({
+    content: [{ type: "text" as const, text: JSON.stringify(state) }],
+    structuredContent: state,
+  });
+
+  server.registerTool("connection_status", {
+    title: "ArtifactPass Connection Status",
+    description: "Report whether ArtifactPass publishing is disconnected, connecting, connected, or failed for this workspace." + connectionContext,
+    inputSchema: connectionInputSchema,
+    outputSchema: connectionOutputSchema,
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  }, async () => connectionResult(await connectionController.status()));
+
+  server.registerTool("connect_artifactpass", {
+    title: "Connect ArtifactPass",
+    description: "Start ArtifactPass browser sign-in for this workspace. Use this when connection_status reports disconnected. No terminal command or agent restart is required." + connectionContext,
+    inputSchema: connectionInputSchema,
+    outputSchema: connectionOutputSchema,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+  }, async () => connectionResult(await connectionController.connect()));
 
   server.registerTool("publish_artifact", {
     title: "Publish Artifact",
-    description: "Publish one approved local Markdown, HTML, or PDF file without placing its bytes in model context." + connectionContext,
+    description: "Publish one approved local Markdown, HTML, or PDF file without placing its bytes in model context. If ArtifactPass is disconnected, call connect_artifactpass, complete browser approval, confirm connection_status is connected, and retry once in the same session." + connectionContext,
     inputSchema: publishArtifactInputSchema,
     outputSchema: publishArtifactOutputSchema,
     annotations: {

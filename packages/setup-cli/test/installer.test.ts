@@ -51,7 +51,7 @@ describe("one-command ArtifactPass installer", () => {
       installPortable: vi.fn().mockResolvedValue(portable),
       smoke: vi.fn().mockResolvedValue({
         negotiated: true,
-        tools: ["publish_artifact", "read_artifact"],
+        tools: ["connect_artifactpass", "connection_status", "publish_artifact", "read_artifact"],
         representativeInvocation: true,
       }),
       operationId: () => "disconnected-operation",
@@ -76,7 +76,7 @@ describe("one-command ArtifactPass installer", () => {
     });
     expect(renderInstallReceipt(receipt)).toContain("installed");
     expect(renderInstallReceipt(receipt)).toContain("not connected");
-    expect(renderInstallReceipt(receipt)).toContain("pnpm dlx artifactpass connect");
+    expect(renderInstallReceipt(receipt)).toContain("choose Connect ArtifactPass");
   });
 
   it("preserves publication and PDF settings when reinstalling without authentication", async () => {
@@ -115,7 +115,7 @@ describe("one-command ArtifactPass installer", () => {
       installPortable: vi.fn().mockResolvedValue(portable),
       smoke: vi.fn().mockResolvedValue({
         negotiated: true,
-        tools: ["publish_artifact", "read_artifact"],
+        tools: ["connect_artifactpass", "connection_status", "publish_artifact", "read_artifact"],
         representativeInvocation: true,
       }),
       operationId: () => "preserve-profile-operation",
@@ -168,7 +168,7 @@ describe("one-command ArtifactPass installer", () => {
       installPortable: vi.fn().mockResolvedValue(portable),
       smoke: vi.fn().mockResolvedValue({
         negotiated: true,
-        tools: ["publish_artifact", "read_artifact"],
+        tools: ["connect_artifactpass", "connection_status", "publish_artifact", "read_artifact"],
         representativeInvocation: true,
       }),
       operationId: () => "active-profile-operation",
@@ -262,7 +262,7 @@ describe("one-command ArtifactPass installer", () => {
       installPortable: vi.fn().mockResolvedValue(portable),
       smoke: vi.fn().mockResolvedValue({
         negotiated: true,
-        tools: ["publish_artifact", "read_artifact"],
+        tools: ["connect_artifactpass", "connection_status", "publish_artifact", "read_artifact"],
         representativeInvocation: true,
       }),
       skipCredentialStorePreflight: true,
@@ -270,7 +270,7 @@ describe("one-command ArtifactPass installer", () => {
     });
 
     expect(receipt).toMatchObject({
-      receipt_version: 2,
+      receipt_version: 3,
       product: "ArtifactPass",
       operation_id: "install-operation",
       status: "success",
@@ -284,7 +284,7 @@ describe("one-command ArtifactPass installer", () => {
       },
       mcp: {
         negotiated: true,
-        tools: ["publish_artifact", "read_artifact"],
+        tools: ["connect_artifactpass", "connection_status", "publish_artifact", "read_artifact"],
         representative_invocation: true,
       },
       skills: {
@@ -298,17 +298,15 @@ describe("one-command ArtifactPass installer", () => {
     });
     expect(receipt.portable_bundle).not.toHaveProperty("mcp_config");
     expect(connect).toHaveBeenCalledWith(
-      expect.objectContaining({
-        hostBridgePath: resolve(portable.rootDirectory, "plugin/dist/cli.mjs"),
-      }),
+      expect.not.objectContaining({ hostBridgePath: expect.anything() }),
       expect.anything(),
     );
     expect(parseArtifactpassInstallReceipt(receipt)).toEqual(receipt);
     expect(() => parseArtifactpassInstallReceipt({ ...receipt, receipt_version: 1 })).toThrow(
-      "ArtifactPass install receipt v2 is invalid",
+      "ArtifactPass install receipt v3 is invalid",
     );
     expect(() => parseArtifactpassInstallReceipt({ ...receipt, unexpected: true })).toThrow(
-      "ArtifactPass install receipt v2 is invalid",
+      "ArtifactPass install receipt v3 is invalid",
     );
     expect(renderInstallReceipt(receipt)).toContain("Start a new agent session");
     const persisted = await readFile(receipt.receipt_path, "utf8");
@@ -316,6 +314,25 @@ describe("one-command ArtifactPass installer", () => {
     expect((await stat(receipt.receipt_path)).mode & 0o777).toBe(0o600);
     expect(persisted).not.toMatch(/as_[A-Za-z0-9_-]{43}/u);
     expect(persisted).not.toContain("private-key-material");
+  });
+
+  it("keeps old receipt inventories immutable and versions connection tools as v3", async () => {
+    const [v1, v2, current] = await Promise.all([
+      readFile(new URL("../install-receipt-v1.schema.json", import.meta.url), "utf8").then(JSON.parse),
+      readFile(new URL("../install-receipt-v2.schema.json", import.meta.url), "utf8").then(JSON.parse),
+      readFile(new URL("../install-receipt.schema.json", import.meta.url), "utf8").then(JSON.parse),
+    ]);
+    const tools = (schema: { properties: { mcp: { properties: { tools: { items: { enum: string[] } } } } } }) =>
+      schema.properties.mcp.properties.tools.items.enum;
+
+    expect(v1.properties.receipt_version.const).toBe(1);
+    expect(v2.properties.receipt_version.const).toBe(2);
+    expect(tools(v1)).toEqual(["publish_artifact", "read_artifact"]);
+    expect(tools(v2)).toEqual(["publish_artifact", "read_artifact"]);
+    expect(current.properties.receipt_version.const).toBe(3);
+    expect(tools(current)).toEqual([
+      "connect_artifactpass", "connection_status", "publish_artifact", "read_artifact",
+    ]);
   });
 
   it("reports exact portable registration paths when no adapter is available", async () => {
@@ -350,7 +367,7 @@ describe("one-command ArtifactPass installer", () => {
       installPortable: vi.fn().mockResolvedValue(portable),
       smoke: vi.fn().mockResolvedValue({
         negotiated: true,
-        tools: ["publish_artifact", "read_artifact"],
+        tools: ["connect_artifactpass", "connection_status", "publish_artifact", "read_artifact"],
         representativeInvocation: true,
       }),
       skipCredentialStorePreflight: true,
@@ -448,7 +465,7 @@ describe("one-command ArtifactPass installer", () => {
         portableWasCreated: () => false,
         smoke: vi.fn().mockResolvedValue({
           negotiated: true,
-          tools: ["publish_artifact", "read_artifact"],
+          tools: ["connect_artifactpass", "connection_status", "publish_artifact", "read_artifact"],
           representativeInvocation: true,
         }),
         skipCredentialStorePreflight: true,
@@ -493,7 +510,7 @@ describe("one-command ArtifactPass installer", () => {
     }
 
     expect(failure?.receipt).toMatchObject({
-      receipt_version: 2,
+      receipt_version: 3,
       status: "failed",
       failed_stage: "preflight",
       rollback: "complete",
@@ -568,7 +585,7 @@ describe("one-command ArtifactPass installer", () => {
       installPortable: vi.fn().mockResolvedValue(portable),
       smoke: vi.fn().mockResolvedValue({
         negotiated: true,
-        tools: ["publish_artifact", "read_artifact"],
+        tools: ["connect_artifactpass", "connection_status", "publish_artifact", "read_artifact"],
         representativeInvocation: true,
       }),
       skipCredentialStorePreflight: true,

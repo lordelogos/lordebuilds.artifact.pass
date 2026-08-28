@@ -235,9 +235,6 @@ const main = async (): Promise<void> => {
       ...(hosts === undefined ? {} : { hosts }),
       installKnownHostAdapters,
       marketplaceSource,
-      ...(installKnownHostAdapters
-        ? { hostBridgePath: resolve(portableIntegration.rootDirectory, "plugin/dist/cli.mjs") }
-        : {}),
       openDevelopment: booleanFlag(args, "--open-development"),
     }, {
       deviceFlowDependencies: {

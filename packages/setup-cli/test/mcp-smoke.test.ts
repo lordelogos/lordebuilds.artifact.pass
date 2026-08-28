@@ -37,7 +37,7 @@ it("negotiates and invokes the installed portable ArtifactPass MCP", async () =>
       localConfigPath: configPath,
     })).resolves.toEqual({
       negotiated: true,
-      tools: ["publish_artifact", "read_artifact"],
+      tools: ["connect_artifactpass", "connection_status", "publish_artifact", "read_artifact"],
       representativeInvocation: true,
     });
   } finally {

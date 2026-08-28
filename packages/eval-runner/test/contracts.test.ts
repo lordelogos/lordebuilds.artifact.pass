@@ -103,7 +103,7 @@ describe("eval contracts", () => {
       version: 1,
       run_id: runId,
       candidate: { sha256: "a".repeat(64) },
-      receipt_version: 2,
+      receipt_version: 3,
       scenario: { id: "publish-markdown", version: 1, sha256: "b".repeat(64) },
       scorer_version: "1.0.0",
       host: { agent_a: "generic", runtime: "node-test" },

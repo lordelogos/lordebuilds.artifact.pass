@@ -98,19 +98,29 @@ const parseInteger = (value: FormDataEntryValue | null, field: string): number =
 const optionalString = (value: FormDataEntryValue | null): string | undefined =>
   typeof value === "string" && value.length > 0 ? value : undefined;
 
-const publicationPublisher = async (
+interface PublicationPublishers {
+  readonly current: string;
+  readonly legacy?: string;
+}
+
+const publicationPublishers = async (
   context: Context<ArtifactHonoEnvironment>,
-): Promise<string | undefined> => {
+): Promise<PublicationPublishers | undefined> => {
   const principal = context.get("agentPrincipal");
-  if (principal !== undefined) return `agent:${await sha256(principal.id)}`;
+  if (principal !== undefined) {
+    return {
+      current: `agent:${await sha256(principal.subject)}`,
+      legacy: `agent:${await sha256(principal.id)}`,
+    };
+  }
   const identity = context.get("accessIdentity");
-  if (identity !== undefined) return `access:${await sha256(identity.subject)}`;
+  if (identity !== undefined) return { current: `access:${await sha256(identity.subject)}` };
   const localPublisher = context.req.header("x-artifact-publisher");
   if (localPublisher === undefined) return undefined;
   if (!/^[A-Za-z0-9_-]{16,128}$/u.test(localPublisher)) {
     throw new ArtifactError("malformed_upload", "Local publisher identity is malformed", 400);
   }
-  return `local:${await sha256(localPublisher)}`;
+  return { current: `local:${await sha256(localPublisher)}` };
 };
 
 const parseExtraction = (form: FormData, isPdf: boolean): ExtractionMetadata => {
@@ -215,14 +225,26 @@ export const createArtifactsRouter = (
     const payloadCommitment = optionalString(form.get("payload_commitment"));
     const hasPublicationFields =
       publicationAttempt !== undefined || shareToken !== undefined || payloadCommitment !== undefined;
-    const publisherId = hasPublicationFields ? await publicationPublisher(context) : undefined;
+    const publishers = hasPublicationFields ? await publicationPublishers(context) : undefined;
     const service = createService(context.env);
-    const isPublicationRetry =
-      publisherId !== undefined &&
+    let retryPublisherId: string | undefined;
+    if (
+      publishers !== undefined &&
       publicationAttempt !== undefined &&
       shareToken !== undefined &&
-      payloadCommitment !== undefined &&
-      await service.publicationExists(publisherId, publicationAttempt);
+      payloadCommitment !== undefined
+    ) {
+      if (await service.publicationExists(publishers.current, publicationAttempt)) {
+        retryPublisherId = publishers.current;
+      } else if (
+        publishers.legacy !== undefined &&
+        await service.publicationExists(publishers.legacy, publicationAttempt)
+      ) {
+        retryPublisherId = publishers.legacy;
+      }
+    }
+    const isPublicationRetry = retryPublisherId !== undefined;
+    const publisherId = retryPublisherId ?? publishers?.current;
     if (!isPublicationRetry) {
       await consumePublicUpload?.({
         units: uploadByteLength,

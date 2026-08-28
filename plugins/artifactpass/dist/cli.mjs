@@ -22979,7 +22979,7 @@ async function JBig2(e2 = {}) {
   };
   if (n2.noExitRuntime && n2.noExitRuntime, n2.print && n2.print, n2.printErr && n2.printErr, n2.wasmBinary && n2.wasmBinary, n2.arguments && n2.arguments, n2.thisProgram && n2.thisProgram, n2.preInit) for (typeof n2.preInit == `function` && (n2.preInit = [n2.preInit]); n2.preInit.length > 0; ) n2.preInit.shift()();
   n2.writeArrayToMemory = writeArrayToMemory;
-  function run() {
+  function run2() {
     preRun();
     function doRun() {
       n2.calledRun = true, initRuntime(), a2?.(n2), n2.onRuntimeInitialized?.(), postRun();
@@ -22989,7 +22989,7 @@ async function JBig2(e2 = {}) {
     }, 1)) : doRun();
   }
   var u2 = {}();
-  return run(), t2 = s2 ? n2 : new Promise((e3, t3) => {
+  return run2(), t2 = s2 ? n2 : new Promise((e3, t3) => {
     a2 = e3;
   }), t2;
 }
@@ -23034,7 +23034,7 @@ async function OpenJPEG(e2 = {}) {
   };
   if (n2.noExitRuntime && n2.noExitRuntime, n2.print && n2.print, n2.printErr && n2.printErr, n2.wasmBinary && n2.wasmBinary, n2.arguments && n2.arguments, n2.thisProgram && (i2 = n2.thisProgram), n2.preInit) for (typeof n2.preInit == `function` && (n2.preInit = [n2.preInit]); n2.preInit.length > 0; ) n2.preInit.shift()();
   n2.writeArrayToMemory = writeArrayToMemory;
-  function run() {
+  function run2() {
     preRun();
     function doRun() {
       n2.calledRun = true, initRuntime(), o2?.(n2), n2.onRuntimeInitialized?.(), postRun();
@@ -23044,7 +23044,7 @@ async function OpenJPEG(e2 = {}) {
     }, 1)) : doRun();
   }
   var f2 = {}();
-  return run(), t2 = s2 ? n2 : new Promise((e3, t3) => {
+  return run2(), t2 = s2 ? n2 : new Promise((e3, t3) => {
     o2 = e3;
   }), t2;
 }
@@ -91068,6 +91068,10 @@ var ARTIFACTPASS_CREDENTIAL_SERVICE = "artifactpass";
 var LEGACY_ARTIFACT_SHARE_CREDENTIAL_SERVICE = "lordebuilds.artifacts.share";
 var agentCredentialAccountForProfile = (profileName) => profileName === "production" ? "agent-token" : `agent-token:${profileName}`;
 var agentTokenPattern = /^as_[A-Za-z0-9_-]{43}$/u;
+var bindAgentCredential = (originValue, token) => {
+  if (!agentTokenPattern.test(token)) throw new Error("ArtifactPass agent credential is malformed");
+  return JSON.stringify({ version: 1, origin: new URL(originValue).origin, token });
+};
 var resolveAgentCredential = (storedValue, expectedOriginValue, requireOriginBinding = false) => {
   if (agentTokenPattern.test(storedValue)) {
     if (requireOriginBinding) {
@@ -91268,187 +91272,9 @@ var resolveCredential = async (options) => {
   }
   const value = await options.osStore.get();
   if (value === null) {
-    throw new Error("ArtifactPass is installed but not connected. Run `pnpm dlx artifactpass connect` in this workspace, then restart the agent session");
+    throw new Error("ArtifactPass is disconnected. Use the Connect ArtifactPass tool, approve the browser sign-in, then retry this action");
   }
   return options.expectedOrigin === void 0 ? value : resolveAgentCredential(value, options.expectedOrigin, options.requireOriginBinding === true);
-};
-
-// src/config/local-config.ts
-import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { dirname, resolve } from "node:path";
-var profileNamePattern = /^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/u;
-var isRecord = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
-var canonicalize = (value) => {
-  if (Array.isArray(value)) return value.map(canonicalize);
-  if (isRecord(value)) {
-    return Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right)).map(([key, item]) => [key, canonicalize(item)]));
-  }
-  return value;
-};
-var validateProfileName = (name) => {
-  if (!profileNamePattern.test(name)) {
-    throw new Error("ArtifactPass profile names use 1-32 lowercase letters, numbers, or hyphens");
-  }
-  return name;
-};
-var validateProfile = (value) => {
-  if (!isRecord(value)) {
-    throw new Error("ArtifactPass profile must contain a JSON object");
-  }
-  const candidate = value;
-  if (typeof candidate.base_url !== "string") {
-    throw new Error("ArtifactPass profile requires a base URL");
-  }
-  if (!Array.isArray(candidate.workspace_roots) || candidate.workspace_roots.length === 0 || !candidate.workspace_roots.every((root) => typeof root === "string" && resolve(root) === root)) {
-    throw new Error("ArtifactPass config requires absolute workspace roots");
-  }
-  if (candidate.credential_namespace !== void 0 && candidate.credential_namespace !== "artifactpass") {
-    throw new Error("ArtifactPass config contains an invalid credential namespace");
-  }
-  if (candidate.credential_binding !== void 0 && candidate.credential_binding !== "origin") {
-    throw new Error("ArtifactPass config contains an invalid credential binding");
-  }
-  if (candidate.open_development !== void 0 && candidate.open_development !== true) {
-    throw new Error("ArtifactPass config open_development must be true when enabled");
-  }
-  if (candidate.pdf_key_id !== void 0 && (typeof candidate.pdf_key_id !== "string" || !/^[A-Za-z0-9._-]{1,64}$/u.test(candidate.pdf_key_id))) {
-    throw new Error("ArtifactPass config contains an invalid PDF signing key ID");
-  }
-  if (candidate.publication_state !== void 0 && candidate.publication_state !== "legacy") {
-    throw new Error("ArtifactPass config contains an invalid publication state mode");
-  }
-  if (candidate.publication_state_path !== void 0 && (typeof candidate.publication_state_path !== "string" || resolve(candidate.publication_state_path) !== candidate.publication_state_path)) {
-    throw new Error("ArtifactPass config contains an invalid publication state path");
-  }
-  return {
-    base_url: candidate.base_url,
-    workspace_roots: candidate.workspace_roots,
-    ...candidate.open_development === true ? { open_development: true } : {},
-    ...typeof candidate.pdf_key_id === "string" ? { pdf_key_id: candidate.pdf_key_id } : {},
-    ...candidate.publication_state === "legacy" ? { publication_state: "legacy" } : {},
-    ...typeof candidate.publication_state_path === "string" ? { publication_state_path: candidate.publication_state_path } : {},
-    ...candidate.credential_namespace === "artifactpass" ? { credential_namespace: "artifactpass" } : {},
-    ...candidate.credential_binding === "origin" ? { credential_binding: "origin" } : {}
-  };
-};
-var validateSettings = (value) => {
-  if (!isRecord(value)) throw new Error("ArtifactPass config must contain a JSON object");
-  if (value.version === 1) {
-    const profile = validateProfile(value);
-    const name = profile.open_development === true ? "local" : "production";
-    return {
-      version: 2,
-      active_profile: name,
-      profiles: { [name]: { ...profile, publication_state: "legacy" } }
-    };
-  }
-  if (value.version !== 2 || typeof value.active_profile !== "string" || !isRecord(value.profiles)) {
-    throw new Error("ArtifactPass config has an unsupported format");
-  }
-  const entries = Object.entries(value.profiles);
-  if (entries.length === 0) throw new Error("ArtifactPass config requires at least one profile");
-  const profiles = Object.fromEntries(entries.map(([name, profile]) => [
-    validateProfileName(name),
-    validateProfile(profile)
-  ]));
-  validateProfileName(value.active_profile);
-  if (!Object.hasOwn(profiles, value.active_profile)) {
-    throw new Error(`Unknown ArtifactPass profile: ${value.active_profile}`);
-  }
-  return { version: 2, active_profile: value.active_profile, profiles };
-};
-var selectLocalBridgeProfile = (settings, requestedProfile) => {
-  const name = validateProfileName(requestedProfile ?? settings.active_profile);
-  if (!Object.hasOwn(settings.profiles, name)) throw new Error(`Unknown ArtifactPass profile: ${name}`);
-  const profile = settings.profiles[name];
-  if (profile === void 0) throw new Error(`Unknown ArtifactPass profile: ${name}`);
-  return { name, settings: profile };
-};
-var publicationStatePathForProfile = (configPath, profileName) => `${configPath}.${validateProfileName(profileName)}.publication-state`;
-var defaultLocalConfigPath = (environment = process.env, platform = process.platform) => {
-  const explicit = environment.ARTIFACTPASS_CONFIG_PATH;
-  if (explicit !== void 0 && explicit.length > 0) return resolve(explicit);
-  if (platform === "win32") {
-    const applicationData = environment.APPDATA;
-    if (applicationData === void 0 || applicationData.length === 0) {
-      throw new Error("APPDATA is required to locate ArtifactPass config");
-    }
-    return resolve(applicationData, "artifactpass", "config.json");
-  }
-  const configurationHome = environment.XDG_CONFIG_HOME;
-  return resolve(
-    configurationHome === void 0 || configurationHome.length === 0 ? resolve(homedir(), ".config") : configurationHome,
-    "artifactpass",
-    "config.json"
-  );
-};
-var legacyLocalConfigPath = (environment = process.env, platform = process.platform) => {
-  const explicit = environment.ARTIFACT_SHARE_CONFIG_PATH;
-  if (explicit !== void 0 && explicit.length > 0) return resolve(explicit);
-  if (platform === "win32") {
-    const applicationData = environment.APPDATA;
-    if (applicationData === void 0 || applicationData.length === 0) {
-      throw new Error("APPDATA is required to locate ArtifactPass config");
-    }
-    return resolve(applicationData, "lordebuilds.artifacts.share", "config.json");
-  }
-  const configurationHome = environment.XDG_CONFIG_HOME;
-  return resolve(
-    configurationHome === void 0 || configurationHome.length === 0 ? resolve(homedir(), ".config") : configurationHome,
-    "lordebuilds.artifacts.share",
-    "config.json"
-  );
-};
-var parseSettings = (contents) => {
-  if (Buffer.byteLength(contents) > 16 * 1024) throw new Error("ArtifactPass config is too large");
-  return validateSettings(JSON.parse(contents));
-};
-var readLocalBridgeSettingsSync = (path) => parseSettings(readFileSync(path, "utf8"));
-var readCompatibleLocalBridgeSettingsSync = (environment = process.env, platform = process.platform) => {
-  const artifactpassPath = defaultLocalConfigPath(environment, platform);
-  const legacyPath = legacyLocalConfigPath(environment, platform);
-  if (environment.ARTIFACTPASS_CONFIG_PATH === void 0 && environment.ARTIFACT_SHARE_CONFIG_PATH !== void 0) {
-    return {
-      path: legacyPath,
-      source: "legacy",
-      settings: readLocalBridgeSettingsSync(legacyPath)
-    };
-  }
-  const artifactpassExists = existsSync(artifactpassPath);
-  const shouldReadLegacy = environment.ARTIFACTPASS_CONFIG_PATH === void 0 || environment.ARTIFACT_SHARE_CONFIG_PATH !== void 0;
-  const legacyExists = shouldReadLegacy && artifactpassPath !== legacyPath && existsSync(legacyPath);
-  if (artifactpassExists) {
-    const settings = readLocalBridgeSettingsSync(artifactpassPath);
-    if (legacyExists) {
-      const legacySettings = readLocalBridgeSettingsSync(legacyPath);
-      const migrationCommitted = (() => {
-        try {
-          const journal = JSON.parse(readFileSync(`${artifactpassPath}.migration.json`, "utf8"));
-          return isRecord(journal) && journal.status === "committed" && journal.artifactpass_config_path === artifactpassPath;
-        } catch (error51) {
-          if (error51 instanceof Error && "code" in error51 && error51.code === "ENOENT") return false;
-          throw error51;
-        }
-      })();
-      if (!migrationCommitted && JSON.stringify(canonicalize(settings)) !== JSON.stringify(canonicalize(legacySettings))) {
-        throw new Error("ArtifactPass and legacy Artifact Share configs conflict; no state was changed");
-      }
-    }
-    return { path: artifactpassPath, source: "artifactpass", settings };
-  }
-  if (legacyExists || artifactpassPath === legacyPath) {
-    return {
-      path: legacyPath,
-      source: "legacy",
-      settings: readLocalBridgeSettingsSync(legacyPath)
-    };
-  }
-  return {
-    path: artifactpassPath,
-    source: "artifactpass",
-    settings: readLocalBridgeSettingsSync(artifactpassPath)
-  };
 };
 
 // ../artifact-protocol/src/index.ts
@@ -91738,6 +91564,7 @@ var assertDeploymentOrigin = (url2, options = {}) => {
   }
   return new URL(url2.origin);
 };
+var assertSafeDeploymentOrigin = (url2) => assertDeploymentOrigin(url2);
 var fetchWithoutRedirects = async (fetchImplementation, input, init = {}, options = {}) => {
   const timeoutMs = options.timeoutMs ?? defaultFetchTimeoutMs;
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) {
@@ -91759,6 +91586,418 @@ var responseError = async (response) => {
     return new Error(`ArtifactPass request failed: ${parsed.data.error.code}${detail}`);
   }
   return new Error(`ArtifactPass request failed with status ${response.status}`);
+};
+
+// src/connection/device-authorization.ts
+import { createHash, randomBytes } from "node:crypto";
+var base64Url = (value) => Buffer.from(value).toString("base64url");
+var wait = (milliseconds) => new Promise((resolve4) => setTimeout(resolve4, milliseconds));
+var startDeviceAuthorization = async (baseUrl, dependencies = {}) => {
+  const origin = assertSafeDeploymentOrigin(new URL(baseUrl));
+  const verifier = base64Url(randomBytes(32));
+  const challenge = createHash("sha256").update(verifier).digest("base64url");
+  const fetchImplementation = dependencies.fetch ?? globalThis.fetch;
+  const now = dependencies.now ?? Date.now;
+  const deviceResponse = await fetchWithoutRedirects(
+    fetchImplementation,
+    new URL("/connect/device", origin),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code_challenge: challenge, code_challenge_method: "S256" })
+    }
+  );
+  if (!deviceResponse.ok) throw await responseError(deviceResponse);
+  const device = await deviceResponse.json();
+  const approval = new URL(device.verification_uri);
+  const approvalOrigin = assertSafeDeploymentOrigin(new URL(approval.origin));
+  if (approvalOrigin.origin !== origin.origin || approval.username !== "" || approval.password !== "" || approval.pathname !== "/connect/approve" || approval.hash !== "") {
+    throw new Error("ArtifactPass approval URL must use the configured deployment origin");
+  }
+  approval.searchParams.set("user_code", device.user_code);
+  approval.searchParams.set("format", "html");
+  const expiresAt = now() + device.expires_in * 1e3;
+  const tokenUrl = new URL("/connect/token", origin);
+  const tokenRequestBody = JSON.stringify({
+    device_code: device.device_code,
+    code_verifier: verifier
+  });
+  const assertNotAborted = () => {
+    if (dependencies.signal?.aborted === true) throw new Error("Connection was interrupted");
+  };
+  return {
+    approvalUrl: approval.toString(),
+    userCode: device.user_code,
+    expiresAt,
+    waitForApproval: async () => {
+      let interval = device.interval;
+      while (now() < expiresAt) {
+        assertNotAborted();
+        await (dependencies.wait ?? wait)(interval * 1e3);
+        assertNotAborted();
+        let tokenResponse;
+        try {
+          tokenResponse = await fetchWithoutRedirects(
+            fetchImplementation,
+            tokenUrl,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: tokenRequestBody,
+              ...dependencies.signal === void 0 ? {} : { signal: dependencies.signal }
+            }
+          );
+        } catch (error51) {
+          if (!(error51 instanceof TypeError)) throw error51;
+          continue;
+        }
+        if (tokenResponse.status === 202) {
+          const pending = await tokenResponse.json();
+          interval = pending.interval ?? interval;
+          continue;
+        }
+        if (tokenResponse.status === 429) {
+          interval += 5;
+          continue;
+        }
+        if (!tokenResponse.ok) throw await responseError(tokenResponse);
+        const token = await tokenResponse.json();
+        return { accessToken: token.access_token, expiresIn: token.expires_in };
+      }
+      throw new Error("Device authorization expired before approval");
+    }
+  };
+};
+
+// src/connection/open-browser.ts
+import { spawn as spawn2 } from "node:child_process";
+var run = async (command, args) => new Promise((resolve4, reject) => {
+  const child = spawn2(command, [...args], {
+    stdio: "ignore",
+    windowsHide: true
+  });
+  child.once("error", reject);
+  child.once("close", (code) => {
+    if (code === 0) resolve4();
+    else reject(new Error(`Could not open the browser (${code ?? "unknown"})`));
+  });
+});
+var openBrowser = async (url2, runner = run, platform = process.platform) => {
+  if (platform === "darwin") {
+    await runner("/usr/bin/open", [url2]);
+    return;
+  }
+  if (platform === "win32") {
+    await runner("cmd", ["/c", "start", "", url2]);
+    return;
+  }
+  await runner("xdg-open", [url2]);
+};
+
+// src/connection/connection-controller.ts
+var safeMessage = (error51) => error51 instanceof Error ? error51.message : "ArtifactPass connection failed";
+var createConnectionController = (options) => {
+  const origin = options.origin.origin;
+  const now = options.now ?? Date.now;
+  let current;
+  let connectStart;
+  let backgroundFailurePending = false;
+  const base = () => ({ profile: options.profileName, origin });
+  const inspectCredential = options.inspectCredential ?? (async (token) => {
+    const response = await fetchWithoutRedirects(
+      options.fetch ?? globalThis.fetch,
+      new URL("/api/connection", options.origin),
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (response.status === 401 || response.status === 404) return null;
+    if (!response.ok) throw await responseError(response);
+    const body = await response.json();
+    if (body.status !== "active" || body.scope !== "artifact:create" || typeof body.expires_at !== "number") {
+      throw new Error("ArtifactPass returned an invalid connection status");
+    }
+    return { expiresAt: body.expires_at };
+  });
+  const revokeCredential = options.revokeCredential ?? (async (token) => {
+    const response = await fetchWithoutRedirects(
+      options.fetch ?? globalThis.fetch,
+      new URL("/api/connection", options.origin),
+      { method: "DELETE", headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!response.ok && response.status !== 404) throw await responseError(response);
+  });
+  const status = async () => {
+    if (current?.status === "connecting") return current;
+    if (current?.status === "failed" && backgroundFailurePending) {
+      backgroundFailurePending = false;
+      return current;
+    }
+    let stored;
+    try {
+      stored = await options.credentialStore.get();
+    } catch (error51) {
+      current = { status: "failed", ...base(), message: safeMessage(error51) };
+      return current;
+    }
+    if (stored === null) {
+      current = { status: "disconnected", ...base() };
+      return current;
+    }
+    try {
+      const token = resolveAgentCredential(stored, options.origin);
+      const inspected = await inspectCredential(token);
+      current = inspected === null || inspected.expiresAt <= now() ? { status: "disconnected", ...base() } : { status: "connected", ...base(), expires_at: inspected.expiresAt };
+    } catch (error51) {
+      current = { status: "failed", ...base(), message: safeMessage(error51) };
+    }
+    return current;
+  };
+  const beginConnect = async () => {
+    const existing = await status();
+    if (existing.status === "connected" || existing.status === "connecting") return existing;
+    current = void 0;
+    let authorization;
+    try {
+      authorization = await (options.startDeviceAuthorization ?? (() => startDeviceAuthorization(options.origin, {
+        ...options.fetch === void 0 ? {} : { fetch: options.fetch },
+        now
+      })))();
+    } catch (error51) {
+      current = { status: "failed", ...base(), message: safeMessage(error51) };
+      return current;
+    }
+    let browserOpened = true;
+    try {
+      await (options.openBrowser ?? openBrowser)(authorization.approvalUrl);
+    } catch {
+      browserOpened = false;
+    }
+    current = {
+      status: "connecting",
+      ...base(),
+      expires_at: authorization.expiresAt,
+      user_code: authorization.userCode,
+      approval_url: authorization.approvalUrl,
+      browser_opened: browserOpened
+    };
+    void authorization.waitForApproval().then(async ({ accessToken, expiresIn }) => {
+      try {
+        await options.credentialStore.set(bindAgentCredential(options.origin, accessToken));
+      } catch (persistenceError) {
+        try {
+          await revokeCredential(accessToken);
+        } catch (revocationError) {
+          throw new AggregateError(
+            [persistenceError, revocationError],
+            "ArtifactPass credential could not be saved and the issued token could not be revoked"
+          );
+        }
+        throw persistenceError;
+      }
+      current = {
+        status: "connected",
+        ...base(),
+        expires_at: now() + expiresIn * 1e3
+      };
+    }).catch((error51) => {
+      current = { status: "failed", ...base(), message: safeMessage(error51) };
+      backgroundFailurePending = true;
+    });
+    return current;
+  };
+  const connect = () => {
+    if (current?.status === "connecting") return Promise.resolve(current);
+    if (connectStart !== void 0) return connectStart;
+    const started = beginConnect();
+    connectStart = started;
+    void started.then(
+      () => {
+        if (connectStart === started) connectStart = void 0;
+      },
+      () => {
+        if (connectStart === started) connectStart = void 0;
+      }
+    );
+    return started;
+  };
+  return { status, connect };
+};
+
+// src/config/local-config.ts
+import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, resolve } from "node:path";
+var profileNamePattern = /^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/u;
+var isRecord = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+var canonicalize = (value) => {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (isRecord(value)) {
+    return Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right)).map(([key, item]) => [key, canonicalize(item)]));
+  }
+  return value;
+};
+var validateProfileName = (name) => {
+  if (!profileNamePattern.test(name)) {
+    throw new Error("ArtifactPass profile names use 1-32 lowercase letters, numbers, or hyphens");
+  }
+  return name;
+};
+var validateProfile = (value) => {
+  if (!isRecord(value)) {
+    throw new Error("ArtifactPass profile must contain a JSON object");
+  }
+  const candidate = value;
+  if (typeof candidate.base_url !== "string") {
+    throw new Error("ArtifactPass profile requires a base URL");
+  }
+  if (!Array.isArray(candidate.workspace_roots) || candidate.workspace_roots.length === 0 || !candidate.workspace_roots.every((root) => typeof root === "string" && resolve(root) === root)) {
+    throw new Error("ArtifactPass config requires absolute workspace roots");
+  }
+  if (candidate.credential_namespace !== void 0 && candidate.credential_namespace !== "artifactpass") {
+    throw new Error("ArtifactPass config contains an invalid credential namespace");
+  }
+  if (candidate.credential_binding !== void 0 && candidate.credential_binding !== "origin") {
+    throw new Error("ArtifactPass config contains an invalid credential binding");
+  }
+  if (candidate.open_development !== void 0 && candidate.open_development !== true) {
+    throw new Error("ArtifactPass config open_development must be true when enabled");
+  }
+  if (candidate.pdf_key_id !== void 0 && (typeof candidate.pdf_key_id !== "string" || !/^[A-Za-z0-9._-]{1,64}$/u.test(candidate.pdf_key_id))) {
+    throw new Error("ArtifactPass config contains an invalid PDF signing key ID");
+  }
+  if (candidate.publication_state !== void 0 && candidate.publication_state !== "legacy") {
+    throw new Error("ArtifactPass config contains an invalid publication state mode");
+  }
+  if (candidate.publication_state_path !== void 0 && (typeof candidate.publication_state_path !== "string" || resolve(candidate.publication_state_path) !== candidate.publication_state_path)) {
+    throw new Error("ArtifactPass config contains an invalid publication state path");
+  }
+  return {
+    base_url: candidate.base_url,
+    workspace_roots: candidate.workspace_roots,
+    ...candidate.open_development === true ? { open_development: true } : {},
+    ...typeof candidate.pdf_key_id === "string" ? { pdf_key_id: candidate.pdf_key_id } : {},
+    ...candidate.publication_state === "legacy" ? { publication_state: "legacy" } : {},
+    ...typeof candidate.publication_state_path === "string" ? { publication_state_path: candidate.publication_state_path } : {},
+    ...candidate.credential_namespace === "artifactpass" ? { credential_namespace: "artifactpass" } : {},
+    ...candidate.credential_binding === "origin" ? { credential_binding: "origin" } : {}
+  };
+};
+var validateSettings = (value) => {
+  if (!isRecord(value)) throw new Error("ArtifactPass config must contain a JSON object");
+  if (value.version === 1) {
+    const profile = validateProfile(value);
+    const name = profile.open_development === true ? "local" : "production";
+    return {
+      version: 2,
+      active_profile: name,
+      profiles: { [name]: { ...profile, publication_state: "legacy" } }
+    };
+  }
+  if (value.version !== 2 || typeof value.active_profile !== "string" || !isRecord(value.profiles)) {
+    throw new Error("ArtifactPass config has an unsupported format");
+  }
+  const entries = Object.entries(value.profiles);
+  if (entries.length === 0) throw new Error("ArtifactPass config requires at least one profile");
+  const profiles = Object.fromEntries(entries.map(([name, profile]) => [
+    validateProfileName(name),
+    validateProfile(profile)
+  ]));
+  validateProfileName(value.active_profile);
+  if (!Object.hasOwn(profiles, value.active_profile)) {
+    throw new Error(`Unknown ArtifactPass profile: ${value.active_profile}`);
+  }
+  return { version: 2, active_profile: value.active_profile, profiles };
+};
+var selectLocalBridgeProfile = (settings, requestedProfile) => {
+  const name = validateProfileName(requestedProfile ?? settings.active_profile);
+  if (!Object.hasOwn(settings.profiles, name)) throw new Error(`Unknown ArtifactPass profile: ${name}`);
+  const profile = settings.profiles[name];
+  if (profile === void 0) throw new Error(`Unknown ArtifactPass profile: ${name}`);
+  return { name, settings: profile };
+};
+var publicationStatePathForProfile = (configPath, profileName) => `${configPath}.${validateProfileName(profileName)}.publication-state`;
+var defaultLocalConfigPath = (environment = process.env, platform = process.platform) => {
+  const explicit = environment.ARTIFACTPASS_CONFIG_PATH;
+  if (explicit !== void 0 && explicit.length > 0) return resolve(explicit);
+  if (platform === "win32") {
+    const applicationData = environment.APPDATA;
+    if (applicationData === void 0 || applicationData.length === 0) {
+      throw new Error("APPDATA is required to locate ArtifactPass config");
+    }
+    return resolve(applicationData, "artifactpass", "config.json");
+  }
+  const configurationHome = environment.XDG_CONFIG_HOME;
+  return resolve(
+    configurationHome === void 0 || configurationHome.length === 0 ? resolve(homedir(), ".config") : configurationHome,
+    "artifactpass",
+    "config.json"
+  );
+};
+var legacyLocalConfigPath = (environment = process.env, platform = process.platform) => {
+  const explicit = environment.ARTIFACT_SHARE_CONFIG_PATH;
+  if (explicit !== void 0 && explicit.length > 0) return resolve(explicit);
+  if (platform === "win32") {
+    const applicationData = environment.APPDATA;
+    if (applicationData === void 0 || applicationData.length === 0) {
+      throw new Error("APPDATA is required to locate ArtifactPass config");
+    }
+    return resolve(applicationData, "lordebuilds.artifacts.share", "config.json");
+  }
+  const configurationHome = environment.XDG_CONFIG_HOME;
+  return resolve(
+    configurationHome === void 0 || configurationHome.length === 0 ? resolve(homedir(), ".config") : configurationHome,
+    "lordebuilds.artifacts.share",
+    "config.json"
+  );
+};
+var parseSettings = (contents) => {
+  if (Buffer.byteLength(contents) > 16 * 1024) throw new Error("ArtifactPass config is too large");
+  return validateSettings(JSON.parse(contents));
+};
+var readLocalBridgeSettingsSync = (path) => parseSettings(readFileSync(path, "utf8"));
+var readCompatibleLocalBridgeSettingsSync = (environment = process.env, platform = process.platform) => {
+  const artifactpassPath = defaultLocalConfigPath(environment, platform);
+  const legacyPath = legacyLocalConfigPath(environment, platform);
+  if (environment.ARTIFACTPASS_CONFIG_PATH === void 0 && environment.ARTIFACT_SHARE_CONFIG_PATH !== void 0) {
+    return {
+      path: legacyPath,
+      source: "legacy",
+      settings: readLocalBridgeSettingsSync(legacyPath)
+    };
+  }
+  const artifactpassExists = existsSync(artifactpassPath);
+  const shouldReadLegacy = environment.ARTIFACTPASS_CONFIG_PATH === void 0 || environment.ARTIFACT_SHARE_CONFIG_PATH !== void 0;
+  const legacyExists = shouldReadLegacy && artifactpassPath !== legacyPath && existsSync(legacyPath);
+  if (artifactpassExists) {
+    const settings = readLocalBridgeSettingsSync(artifactpassPath);
+    if (legacyExists) {
+      const legacySettings = readLocalBridgeSettingsSync(legacyPath);
+      const migrationCommitted = (() => {
+        try {
+          const journal = JSON.parse(readFileSync(`${artifactpassPath}.migration.json`, "utf8"));
+          return isRecord(journal) && journal.status === "committed" && journal.artifactpass_config_path === artifactpassPath;
+        } catch (error51) {
+          if (error51 instanceof Error && "code" in error51 && error51.code === "ENOENT") return false;
+          throw error51;
+        }
+      })();
+      if (!migrationCommitted && JSON.stringify(canonicalize(settings)) !== JSON.stringify(canonicalize(legacySettings))) {
+        throw new Error("ArtifactPass and legacy Artifact Share configs conflict; no state was changed");
+      }
+    }
+    return { path: artifactpassPath, source: "artifactpass", settings };
+  }
+  if (legacyExists || artifactpassPath === legacyPath) {
+    return {
+      path: legacyPath,
+      source: "legacy",
+      settings: readLocalBridgeSettingsSync(legacyPath)
+    };
+  }
+  return {
+    path: artifactpassPath,
+    source: "artifactpass",
+    settings: readLocalBridgeSettingsSync(artifactpassPath)
+  };
 };
 
 // src/logging/redacting-logger.ts
@@ -91791,6 +92030,7 @@ var createRedactingLogger = (write = (line) => process.stderr.write(`${line}
 });
 
 // src/tools/publish-artifact.ts
+import { createHash as createHash2 } from "node:crypto";
 import { open as open2, realpath } from "node:fs/promises";
 import { basename, extname, isAbsolute, relative, resolve as resolve2, sep } from "node:path";
 
@@ -92115,7 +92355,7 @@ var findSensitivePath = (path) => {
 };
 
 // src/state/publication-journal.ts
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomBytes as randomBytes2, randomUUID } from "node:crypto";
 import { chmod, mkdir, open, readFile } from "node:fs/promises";
 import { dirname as dirname2 } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -92145,8 +92385,8 @@ var pruneExpired = (entries, now) => {
     if (entry.expires_at <= now) entries.delete(commitment);
   }
 };
-var opaqueToken = () => randomBytes(32).toString("base64url");
-var publisherId = () => `local_${randomBytes(18).toString("base64url")}`;
+var opaqueToken = () => randomBytes2(32).toString("base64url");
+var publisherId = () => `local_${randomBytes2(18).toString("base64url")}`;
 var validateEntryMap = (value, legacy) => {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("ArtifactPass publication state is malformed");
@@ -92828,8 +93068,9 @@ var publishArtifact = async (input, dependencies) => {
       mimeType
     });
     const journal = authorizedDependencies.journal ?? new MemoryPublicationJournal();
+    const journalCommitment = authorizedDependencies.token === void 0 ? payloadCommitment : createHash2("sha256").update("artifactpass-publication-v1\0").update(authorizedDependencies.token).update("\0").update(payloadCommitment).digest("hex");
     const publication = await journal.prepare(
-      payloadCommitment,
+      journalCommitment,
       Date.now() + input.expiresInSeconds * 1e3
     );
     form.set("publication_attempt", publication.attemptId);
@@ -92860,7 +93101,7 @@ var publishArtifact = async (input, dependencies) => {
       throw new Error("ArtifactPass returned a foreign share origin");
     }
     await journal.acknowledge(
-      payloadCommitment,
+      journalCommitment,
       publication.attemptId,
       Date.parse(result.manifest.expires_at)
     );
@@ -92874,6 +93115,17 @@ var publishArtifact = async (input, dependencies) => {
 var webUrlSchema = external_exports.url({ protocol: /^https?$/u });
 var sha256Schema2 = external_exports.string().regex(/^[a-f0-9]{64}$/u);
 var opaqueCursorSchema = external_exports.string().regex(/^[A-Za-z0-9_-]{16,256}$/u);
+var connectionInputSchema = external_exports.object({}).strict();
+var connectionOutputSchema = external_exports.object({
+  status: external_exports.enum(["disconnected", "connecting", "connected", "failed"]),
+  profile: external_exports.string().min(1),
+  origin: external_exports.string().url(),
+  expires_at: external_exports.number().int().positive().optional(),
+  user_code: external_exports.string().min(1).optional(),
+  approval_url: external_exports.string().url().optional(),
+  browser_opened: external_exports.boolean().optional(),
+  message: external_exports.string().min(1).optional()
+}).strict();
 var publishArtifactInputSchema = external_exports.object({
   path: external_exports.string().min(1).describe("Absolute or workspace-relative local file path"),
   canonical_source_path: external_exports.string().min(1).optional().describe(
@@ -92956,6 +93208,47 @@ var errorResult = (error51) => ({
     text: error51 instanceof Error ? redactSensitiveText(error51.message) : "ArtifactPass bridge failed"
   }]
 });
+var createConfiguredConnectionController = (configuration, profileName) => {
+  const base = () => ({
+    profile: profileName,
+    origin: configuration.baseUrl.origin
+  });
+  if (configuration.openDevelopment === true) {
+    return {
+      status: async () => ({ status: "connected", ...base() }),
+      connect: async () => ({ status: "connected", ...base() })
+    };
+  }
+  if (configuration.headless || configuration.osStore === void 0) {
+    return {
+      status: async () => {
+        try {
+          await resolveCredential({
+            headless: configuration.headless,
+            environmentStore: configuration.environmentStore,
+            ...configuration.osStore === void 0 ? {} : { osStore: configuration.osStore },
+            expectedOrigin: configuration.baseUrl,
+            requireOriginBinding: configuration.requireOriginBoundCredential === true
+          });
+          return { status: "connected", ...base() };
+        } catch {
+          return { status: "disconnected", ...base() };
+        }
+      },
+      connect: async () => ({
+        status: "failed",
+        ...base(),
+        message: "This headless ArtifactPass connection must be managed by its secret manager."
+      })
+    };
+  }
+  return createConnectionController({
+    origin: configuration.baseUrl,
+    profileName,
+    credentialStore: configuration.osStore,
+    ...configuration.fetch === void 0 ? {} : { fetch: configuration.fetch }
+  });
+};
 var createBridgeServer = (configuration) => {
   const server = new McpServer(
     { name: "lordebuilds.artifacts.share", version: "0.0.0" },
@@ -92963,11 +93256,40 @@ var createBridgeServer = (configuration) => {
   );
   const logger = configuration.logger ?? createRedactingLogger();
   const profileName = configuration.profileName ?? "environment";
-  const connectionContext = ` Active connection: profile ${profileName} at ${configuration.baseUrl.origin} (${configuration.openDevelopment === true ? "open local development" : "authenticated deployment"}).`;
+  const connectionContext = ` Configured deployment: profile ${profileName} at ${configuration.baseUrl.origin} (${configuration.openDevelopment === true ? "open local development" : "authentication required for publishing"}).`;
   const publicationJournal = configuration.publicationJournal ?? (configuration.publicationStatePath === void 0 ? new MemoryPublicationJournal() : new FilePublicationJournal(configuration.publicationStatePath));
+  const connectionController = configuration.connectionController ?? createConfiguredConnectionController(configuration, profileName);
+  const connectionResult = (state) => ({
+    content: [{ type: "text", text: JSON.stringify(state) }],
+    structuredContent: state
+  });
+  server.registerTool("connection_status", {
+    title: "ArtifactPass Connection Status",
+    description: "Report whether ArtifactPass publishing is disconnected, connecting, connected, or failed for this workspace." + connectionContext,
+    inputSchema: connectionInputSchema,
+    outputSchema: connectionOutputSchema,
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false
+    }
+  }, async () => connectionResult(await connectionController.status()));
+  server.registerTool("connect_artifactpass", {
+    title: "Connect ArtifactPass",
+    description: "Start ArtifactPass browser sign-in for this workspace. Use this when connection_status reports disconnected. No terminal command or agent restart is required." + connectionContext,
+    inputSchema: connectionInputSchema,
+    outputSchema: connectionOutputSchema,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true
+    }
+  }, async () => connectionResult(await connectionController.connect()));
   server.registerTool("publish_artifact", {
     title: "Publish Artifact",
-    description: "Publish one approved local Markdown, HTML, or PDF file without placing its bytes in model context." + connectionContext,
+    description: "Publish one approved local Markdown, HTML, or PDF file without placing its bytes in model context. If ArtifactPass is disconnected, call connect_artifactpass, complete browser approval, confirm connection_status is connected, and retry once in the same session." + connectionContext,
     inputSchema: publishArtifactInputSchema,
     outputSchema: publishArtifactOutputSchema,
     annotations: {

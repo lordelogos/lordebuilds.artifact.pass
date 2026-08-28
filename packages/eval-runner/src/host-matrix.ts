@@ -113,8 +113,12 @@ export const assessHostPair = (options: {
     status = "bundle_mismatch";
     reasons.push("Agent A and Agent B did not receive the same portable bundle digest");
   } else if (
-    JSON.stringify([...options.agentA.mcpTools].sort()) !== JSON.stringify(["publish_artifact", "read_artifact"]) ||
-    JSON.stringify([...options.agentB.mcpTools].sort()) !== JSON.stringify(["publish_artifact", "read_artifact"])
+    JSON.stringify([...options.agentA.mcpTools].sort()) !== JSON.stringify([
+      "connect_artifactpass", "connection_status", "publish_artifact", "read_artifact",
+    ]) ||
+    JSON.stringify([...options.agentB.mcpTools].sort()) !== JSON.stringify([
+      "connect_artifactpass", "connection_status", "publish_artifact", "read_artifact",
+    ])
   ) {
     status = "mcp_contract_blocked";
     reasons.push("A host did not expose the exact portable ArtifactPass MCP tool contract");
@@ -196,7 +200,7 @@ export const buildMatrixPreflight = (options: {
       filesystemContainment: "unproven",
       networkContainment: "unproven",
       approvalMode: "normal",
-      mcpTools: ["publish_artifact", "read_artifact"],
+      mcpTools: ["connect_artifactpass", "connection_status", "publish_artifact", "read_artifact"],
       principalId: `generic-${agent}`,
       principalIsolation: "unproven",
       skillSelectionEvidence: "explicit",
@@ -211,7 +215,7 @@ export const buildMatrixPreflight = (options: {
       filesystemContainment: "unproven",
       networkContainment: "unproven",
       approvalMode: "normal",
-      mcpTools: ["publish_artifact", "read_artifact"],
+      mcpTools: ["connect_artifactpass", "connection_status", "publish_artifact", "read_artifact"],
       principalId: "openai-api-key",
       principalIsolation: "unproven",
       skillSelectionEvidence: "unavailable",
@@ -226,7 +230,7 @@ export const buildMatrixPreflight = (options: {
       filesystemContainment: "unproven",
       networkContainment: "unproven",
       approvalMode: "normal",
-      mcpTools: ["publish_artifact", "read_artifact"],
+      mcpTools: ["connect_artifactpass", "connection_status", "publish_artifact", "read_artifact"],
       principalId: "anthropic-api-key",
       principalIsolation: "unproven",
       skillSelectionEvidence: "explicit",

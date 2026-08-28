@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import { dirname, join, parse, resolve } from "node:path";
 
 import {
+  ARTIFACTPASS_MCP_TOOL_NAMES,
   defaultLocalConfigPath,
   readLocalBridgeSettings,
   setActiveLocalBridgeProfile,
@@ -24,7 +25,7 @@ import {
 } from "./portable-integration";
 import { runProcess, type ProcessRunner } from "./process";
 
-export const installReceiptVersion = 2 as const;
+export const installReceiptVersion = 3 as const;
 
 type InstallStage = "preflight" | "bundle" | "connection" | "verified" | "receipt" | "committed";
 
@@ -98,7 +99,7 @@ export const parseArtifactpassInstallReceipt = (value: unknown): ArtifactpassIns
   const skills = receiptRecord(receipt?.skills);
   const migration = receiptRecord(receipt?.migration);
   const adapters = new Set(["codex", "claude"]);
-  const tools = new Set(["publish_artifact", "read_artifact"]);
+  const tools = new Set<string>(ARTIFACTPASS_MCP_TOOL_NAMES);
   const skillNames = new Set(["read-shared-artifact", "share-artifact"]);
   const valid = receipt !== undefined &&
     hasOnlyKeys(receipt, [
@@ -274,7 +275,7 @@ export const renderInstallReceipt = (receipt: ArtifactpassInstallReceipt): strin
     ? `Manual host registration required. MCP: ${receipt.portable_bundle.mcp_config ?? "unavailable"}; skills: ${receipt.portable_bundle.skills_directory ?? "unavailable"}.`
     : `Installed for ${receipt.adapters.join(" and ")}.`;
   const connection = receipt.credential === "none"
-    ? `ArtifactPass is installed for ${receipt.profile} but not connected. Run \`pnpm dlx artifactpass connect ${receipt.origin} --profile ${receipt.profile}\` when you want to publish.`
+    ? `ArtifactPass is installed for ${receipt.profile} and is not connected. Open it in your agent and choose Connect ArtifactPass when you want to publish.`
     : `ArtifactPass is connected to ${receipt.origin} for ${receipt.profile}.`;
   return `${connection} ${registration} Start a new agent session before using it.`;
 };
@@ -360,7 +361,6 @@ export const runArtifactpassInstall = async (
         profileName,
         workspaceRoots: [workspaceRoot],
         marketplaceSource: input.marketplaceSource,
-        hostBridgePath: resolve(portable.rootDirectory, "plugin/dist/cli.mjs"),
         openDevelopment: input.openDevelopment === true,
         installKnownHostAdapters: input.installKnownHostAdapters !== false,
         ...(input.configPath === undefined ? {} : { configPath }),
@@ -417,11 +417,7 @@ export const runArtifactpassInstall = async (
       const hosts = input.installKnownHostAdapters === false ? [] : await detectHosts(runner);
       hostInstallation = hosts.length === 0
         ? undefined
-        : await installPluginForHosts(hosts, input.marketplaceSource, {
-            configPath,
-            profileName,
-            bridgePath: resolve(portable.rootDirectory, "plugin/dist/cli.mjs"),
-          }, runner);
+        : await installPluginForHosts(hosts, input.marketplaceSource, runner);
       [smoke, skills] = await Promise.all([
         (dependencies.smoke ?? smokeArtifactpassMcp)({
           mcpConfigPath: portable.mcpConfig,

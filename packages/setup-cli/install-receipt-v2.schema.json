@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://artifactpass.com/schemas/install-receipt-v3.json",
-  "title": "ArtifactPass install receipt v3",
+  "$id": "https://artifactpass.com/schemas/install-receipt-v2.json",
+  "title": "ArtifactPass install receipt v2",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -25,7 +25,7 @@
     "receipt_path"
   ],
   "properties": {
-    "receipt_version": { "const": 3 },
+    "receipt_version": { "const": 2 },
     "product": { "const": "ArtifactPass" },
     "product_version": { "type": "string", "minLength": 1 },
     "operation_id": { "type": "string", "minLength": 1 },
@@ -63,7 +63,7 @@
         "tools": {
           "type": "array",
           "uniqueItems": true,
-          "items": { "enum": ["connect_artifactpass", "connection_status", "publish_artifact", "read_artifact"] }
+          "items": { "enum": ["publish_artifact", "read_artifact"] }
         },
         "representative_invocation": { "type": "boolean" }
       }

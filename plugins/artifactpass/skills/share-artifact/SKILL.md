@@ -5,7 +5,16 @@ description: Publish one declared final durable artifact when a compatible lifec
 
 # Share an artifact
 
-Use the `publish_artifact` MCP tool for the file itself. Never paste the file contents into the model prompt.
+Use the ArtifactPass MCP tools for connection and publishing. Never paste the file contents into the model prompt.
+
+Before the first publication attempt in a workspace, call `connection_status`.
+
+- If it reports `connected`, continue to `publish_artifact`.
+- If it reports `disconnected`, call `connect_artifactpass`. That tool opens the configured ArtifactPass deployment in the user's browser. Tell the user which deployment is requesting access and show the returned approval URL only when `browser_opened` is false.
+- If it reports `connecting`, wait for browser approval and check `connection_status` again. Do not run a terminal command, reinstall the plugin, register another MCP server, or ask for an agent restart.
+- If it reports `failed`, report the tool's message. Never claim that ArtifactPass is connected.
+
+After approval, confirm `connection_status` is `connected`, then continue the original publication request in the same agent session. The user should not have to repeat the request.
 
 Apply this portable lifecycle policy once per session. A final candidate exists only when the agent has produced one durable Markdown, HTML, or PDF artifact as the completed work product and can name its exact path. Ordinary chat, code changes, logs, tests, configuration, scratch files, and intermediate output are not final candidates. If there is no declared artifact, remain quiet: do not call the tool and produce no visible sharing message. An explicit opt-out remains quiet and prevents tool calls for the rest of that task unless the user explicitly opts back in.
 
@@ -28,5 +37,5 @@ The handoff must include the artifact format, byte size, SHA-256 checksum, exact
 
 For PDF, distinguish `controlled` from `human_only`. A controlled PDF exposes the signed canonical source to agents; a human-only PDF exposes only bounded metadata and its browser/download link. A controlled request fails when visible-content verification is incomplete or the source differs from the PDF. Do not claim perfect visual equivalence, permanent history, public access, paid features, or support for formats outside the tool schema.
 
-If the tool reports a path, authorization, size, or network error, report that error without trying to bypass workspace roots, redirects, access controls, or file-size limits.
+If `publish_artifact` reports that ArtifactPass is disconnected, follow the connection flow above once, then retry the same publication once after the status becomes `connected`. For any other path, authorization, size, or network error, report that error without trying to bypass workspace roots, redirects, access controls, or file-size limits.
 Never invent a URL or imply publication succeeded after an error. Keep the local artifact available as the truthful fallback.

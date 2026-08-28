@@ -16,7 +16,7 @@ Public ArtifactPass runs at `artifactpass.com`. Sign in with Google or GitHub, c
 
 There is no dashboard, history, billing, entitlement layer, or artifact listing. Identity exists only to authorize browser uploads and workspace connections.
 
-## Install, then connect
+## Install, then connect inside your agent
 
 Install from the workspace the agent may share:
 
@@ -26,18 +26,12 @@ pnpm dlx artifactpass
 
 This installs the ArtifactPass plugin, MCP server, and both Agent Skills. It does not open a browser or create a connection.
 
-Connect only when you want that workspace to publish:
+Start a new agent session once so it loads the newly installed plugin. ArtifactPass will be present but disconnected. Ask the agent to share an artifact or say **Connect ArtifactPass**. The plugin opens `artifactpass.com`; sign in with Google or GitHub and approve the code you just requested. The plugin stores only the resulting scoped agent token in the operating-system credential store, becomes connected in that same session, and continues the pending publication. There is no terminal connection command, reinstall, or post-login restart.
+
+Install against an explicit deployment URL for staging, development, or a future organization-owned deployment:
 
 ```sh
-pnpm dlx artifactpass connect
-```
-
-The browser opens `artifactpass.com`. Sign in with Google or GitHub and approve the agent code you just requested. The CLI stores only the resulting scoped agent token in the operating-system credential store. Restart the agent session, then ask it to share or read an artifact.
-
-An explicit deployment URL remains available for development and future organization-owned deployments:
-
-```sh
-pnpm dlx artifactpass connect https://artifacts.example.com \
+pnpm dlx artifactpass --base-url https://artifacts.example.com \
   --profile production \
   --workspace-root /absolute/path/to/approved/workspace
 ```
@@ -45,7 +39,7 @@ pnpm dlx artifactpass connect https://artifacts.example.com \
 For any other MCP and Agent Skills compatible system, configure the same package without running a vendor installer:
 
 ```sh
-pnpm dlx artifactpass connect https://artifacts.example.com \
+pnpm dlx artifactpass --base-url https://artifacts.example.com \
   --profile production \
   --no-host-install \
   --workspace-root /absolute/path/to/approved/workspace
@@ -71,12 +65,13 @@ open in this separate development Worker so the complete share/read behavior can
 be tested before authentication is configured; the production Worker and its
 ArtifactPass authentication boundary are unchanged.
 
-Build the setup CLI, then connect the installed plugin to the open demo without
-device authorization or a token:
+Build the setup CLI, then install the open local profile without device
+authorization or a token:
 
 ```sh
 pnpm --dir packages/setup-cli build
-node packages/setup-cli/dist/cli.mjs connect http://127.0.0.1:8787 \
+node packages/setup-cli/dist/cli.mjs install \
+  --base-url http://127.0.0.1:8787 \
   --profile local \
   --open-development \
   --workspace-root /absolute/path/to/approved/workspace
@@ -97,7 +92,7 @@ node packages/setup-cli/dist/cli.mjs profile use production
 without changing the saved active profile. Production continues to require HTTPS
 and device authorization.
 
-Use the printed network URL as the `connect` base URL to test from another
+Use the printed network URL as the install `--base-url` to test from another
 machine; ordinary loopback and LAN demo uploads stay open. To expose the running
 demo temporarily, install `cloudflared` and explicitly start the guarded Quick
 Tunnel in a second terminal:

@@ -18,10 +18,10 @@ vi.mock("../src/handoff-runner", () => ({
 }));
 
 vi.mock("../src/install-lifecycle", () => ({
-  installReceiptVersion: 2,
+  installReceiptVersion: 3,
   installCandidateIntoLocalEval: async () => ({
     receipt: {
-      receipt_version: 2,
+      receipt_version: 3,
       portable_bundle: { mcp_config: "/tmp/mock-mcp-config.json" },
     },
     profileCount: 1,
@@ -66,7 +66,9 @@ vi.mock("../src/hosts/generic", () => {
   let publishIndex = 0;
   const host = {
     events: [],
-    listTools: async () => ["publish_artifact", "read_artifact"],
+    listTools: async () => [
+      "connect_artifactpass", "connection_status", "publish_artifact", "read_artifact",
+    ],
     callTool: async (name: string, arguments_: Readonly<Record<string, unknown>>) => {
       if (name === "publish_artifact") {
         const shareUrl = `http://127.0.0.1:8787/a/${++publishIndex}`;

@@ -153,7 +153,7 @@ describe("Cloudflare deployment", () => {
     expect(result.plan[5]).toContain("deploy the Worker");
     expect(result.changed).toEqual([]);
     expect(client.requests).toEqual([]);
-    expect(result.teamCommand).toContain("connect https://artifacts.example.com");
+    expect(result.teamCommand).toContain("--base-url https://artifacts.example.com");
   });
 
   it("runs the command-level dry-run without credentials, processes, or network calls", async () => {

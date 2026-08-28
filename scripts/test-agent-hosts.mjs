@@ -52,6 +52,11 @@ const assertObjectSchema = (host, tool, direction, schema, expected) => {
       throw new Error(`${host} negotiated the wrong ${direction} type for ${tool}.${property}`);
     }
   }
+  for (const [property, values] of Object.entries(expected.enums ?? {})) {
+    if (JSON.stringify(properties[property]?.enum) !== JSON.stringify(values)) {
+      throw new Error(`${host} negotiated the wrong ${direction} values for ${tool}.${property}`);
+    }
+  }
 };
 
 const portableFiles = async () => {
@@ -112,11 +117,31 @@ const assertRuntimeConformance = async (host, installedRoot, resolvedServer) => 
   try {
     await client.connect(transport);
     const listed = await client.listTools();
-    const tools = listed.tools.map((tool) => tool.name).sort();
-    if (JSON.stringify(tools) !== JSON.stringify(["publish_artifact", "read_artifact"])) {
-      throw new Error(`${host} did not negotiate the portable ArtifactPass MCP tools`);
-    }
     const expectedSchemas = {
+      connect_artifactpass: {
+        input: { required: [], properties: {} },
+        output: {
+          required: ["status", "profile", "origin"],
+          enums: { status: ["disconnected", "connecting", "connected", "failed"] },
+          properties: {
+            status: ["string"], profile: ["string"], origin: ["string"],
+            expires_at: ["integer"], user_code: ["string"], approval_url: ["string"],
+            browser_opened: ["boolean"], message: ["string"],
+          },
+        },
+      },
+      connection_status: {
+        input: { required: [], properties: {} },
+        output: {
+          required: ["status", "profile", "origin"],
+          enums: { status: ["disconnected", "connecting", "connected", "failed"] },
+          properties: {
+            status: ["string"], profile: ["string"], origin: ["string"],
+            expires_at: ["integer"], user_code: ["string"], approval_url: ["string"],
+            browser_opened: ["boolean"], message: ["string"],
+          },
+        },
+      },
       publish_artifact: {
         input: {
           required: ["path"],
@@ -156,6 +181,11 @@ const assertRuntimeConformance = async (host, installedRoot, resolvedServer) => 
         },
       },
     };
+    const tools = listed.tools.map((tool) => tool.name).sort();
+    const expectedToolNames = Object.keys(expectedSchemas).sort();
+    if (JSON.stringify(tools) !== JSON.stringify(expectedToolNames)) {
+      throw new Error(`${host} did not negotiate the portable ArtifactPass MCP tools`);
+    }
     for (const tool of listed.tools) {
       const expected = expectedSchemas[tool.name];
       if (expected === undefined) throw new Error(`${host} negotiated an unexpected tool`);

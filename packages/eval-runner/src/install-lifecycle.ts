@@ -356,7 +356,7 @@ export const installCandidateIntoLocalEval = async (options: {
   let hostRestartVerified = false;
   try {
     hostRestartVerified = JSON.stringify(await restartedHost.listTools()) ===
-      JSON.stringify(["publish_artifact", "read_artifact"]);
+      JSON.stringify(["connect_artifactpass", "connection_status", "publish_artifact", "read_artifact"]);
   } finally {
     await restartedHost.close();
   }

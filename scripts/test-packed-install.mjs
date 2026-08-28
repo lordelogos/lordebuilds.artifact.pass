@@ -95,13 +95,15 @@ try {
   const second = await runInstall();
   for (const receipt of [first, second]) {
     if (
-      receipt.receipt_version !== 2 ||
+      receipt.receipt_version !== 3 ||
       receipt.product !== "ArtifactPass" ||
       receipt.status !== "success" ||
       receipt.profile !== "local" ||
       receipt.portable_bundle?.host_registration !== "manual-required" ||
       receipt.mcp?.negotiated !== true ||
-      JSON.stringify(receipt.mcp.tools) !== JSON.stringify(["publish_artifact", "read_artifact"]) ||
+      JSON.stringify(receipt.mcp.tools) !== JSON.stringify([
+        "connect_artifactpass", "connection_status", "publish_artifact", "read_artifact",
+      ]) ||
       receipt.skills?.verified !== true
     ) {
       throw new Error(`Packed install returned an invalid receipt: ${JSON.stringify(receipt)}`);

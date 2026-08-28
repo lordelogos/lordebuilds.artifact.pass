@@ -60,7 +60,7 @@ const generated = new Map([
     plugins: [{
       name: metadata.name,
       source: { source: "local", path: `./plugins/${metadata.name}` },
-      policy: { installation: "AVAILABLE", authentication: "ON_INSTALL" },
+      policy: { installation: "AVAILABLE" },
       category: "Productivity",
     }],
   })],

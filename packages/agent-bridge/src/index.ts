@@ -56,6 +56,21 @@ export {
   type BridgeConfiguration,
 } from "./server";
 export {
+  createConnectionController,
+  type ConnectionController,
+  type ConnectionControllerOptions,
+  type ConnectionState,
+} from "./connection/connection-controller";
+export {
+  completeDeviceFlow,
+  startDeviceAuthorization,
+  type DeviceAuthorizationDependencies,
+  type DeviceFlowResult,
+  type PendingDeviceAuthorization,
+} from "./connection/device-authorization";
+export { openBrowser, type BrowserOpener, type BrowserProcessRunner } from "./connection/open-browser";
+export { ARTIFACTPASS_MCP_TOOL_NAMES } from "./tool-contract";
+export {
   publishArtifact,
   type FileOperations,
   type PublishArtifactDependencies,

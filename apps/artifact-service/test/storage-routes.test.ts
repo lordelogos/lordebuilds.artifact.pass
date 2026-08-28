@@ -420,7 +420,103 @@ describe("private artifact routes", () => {
 
     expect(response.status).toBe(201);
     expect(await env.ARTIFACT_DB.prepare("SELECT publisher_id FROM artifacts").first("publisher_id"))
-      .toBe(`agent:${await digest("00000000-0000-4000-8000-000000000001")}`);
+      .toBe(`agent:${await digest("storage-test-user")}`);
+  });
+
+  it("retries a publication created with the legacy token-id publisher binding", async () => {
+    await authorizeStorageTestAgent();
+    const attempt = crypto.randomUUID();
+    const shareToken = "L".repeat(43);
+    const source = "# Legacy retry\n";
+    const commitment = await createPayloadCommitment({
+      bytes: new TextEncoder().encode(source),
+      expiresInSeconds: 3600,
+      filename: "handoff.md",
+      mimeType: "text/markdown",
+    });
+    const request = () => {
+      const form = new FormData();
+      form.set("file", new File([source], "handoff.md", { type: "text/markdown" }));
+      form.set("expires_in_seconds", "3600");
+      form.set("publication_attempt", attempt);
+      form.set("share_token", shareToken);
+      form.set("payload_commitment", commitment);
+      return createArtifactApplication().fetch(
+        new Request("https://artifacts.example/api/artifacts", {
+          method: "POST",
+          headers: { authorization: `Bearer ${storageTestAgentToken}` },
+          body: form,
+        }),
+        testBindings(),
+      );
+    };
+
+    expect((await request()).status).toBe(201);
+    await env.ARTIFACT_DB.prepare("UPDATE artifacts SET publisher_id = ?")
+      .bind(`agent:${await digest("00000000-0000-4000-8000-000000000001")}`)
+      .run();
+
+    const retry = await request();
+    expect(retry.status).toBe(200);
+    await expect(retry.json()).resolves.toMatchObject({
+      share_url: `https://artifacts.example/a/${shareToken}`,
+    });
+    expect(await env.ARTIFACT_DB.prepare("SELECT COUNT(*) AS count FROM artifacts").first("count"))
+      .toBe(1);
+  });
+
+  it("preserves publication idempotency when the same person reconnects with a new agent token", async () => {
+    await authorizeStorageTestAgent();
+    const replacementToken = `as_${"B".repeat(43)}`;
+    await env.ARTIFACT_DB.prepare(
+      `INSERT INTO agent_tokens (
+        id, token_hash, identity_subject, identity_email, scope, created_at, expires_at
+      ) VALUES (?, ?, ?, ?, 'artifact:create', ?, ?)`,
+    )
+      .bind(
+        "00000000-0000-4000-8000-000000000002",
+        await digest(replacementToken),
+        "storage-test-user",
+        "storage-test@example.com",
+        Date.now(),
+        Date.now() + 60 * 60 * 1000,
+      )
+      .run();
+    const attempt = crypto.randomUUID();
+    const shareToken = "R".repeat(43);
+    const source = "# Reconnected\n";
+    const request = (token: string) => {
+      const form = new FormData();
+      form.set("file", new File([source], "handoff.md", { type: "text/markdown" }));
+      form.set("expires_in_seconds", "3600");
+      form.set("publication_attempt", attempt);
+      form.set("share_token", shareToken);
+      return createPayloadCommitment({
+        bytes: new TextEncoder().encode(source),
+        expiresInSeconds: 3600,
+        filename: "handoff.md",
+        mimeType: "text/markdown",
+      }).then((commitment) => {
+        form.set("payload_commitment", commitment);
+        return createArtifactApplication().fetch(
+          new Request("https://artifacts.example/api/artifacts", {
+            method: "POST",
+            headers: { authorization: `Bearer ${token}` },
+            body: form,
+          }),
+          testBindings(),
+        );
+      });
+    };
+
+    expect((await request(storageTestAgentToken)).status).toBe(201);
+    const retry = await request(replacementToken);
+    expect(retry.status).toBe(200);
+    await expect(retry.json()).resolves.toMatchObject({
+      share_url: `https://artifacts.example/a/${shareToken}`,
+    });
+    expect(await env.ARTIFACT_DB.prepare("SELECT COUNT(*) AS count FROM artifacts").first("count"))
+      .toBe(1);
   });
 
   it("rejects attempt reuse with a different payload or share token without another write", async () => {

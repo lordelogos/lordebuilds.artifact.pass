@@ -6,7 +6,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { describe, expect, it } from "vitest";
 
 describe("built stdio bridge", () => {
-  it("negotiates MCP v2, exposes exactly two tools, and invokes a safety boundary", async () => {
+  it("negotiates MCP v2, exposes plugin-native connection tools, and invokes a safety boundary", async () => {
     const bridgePath = fileURLToPath(new URL("../dist/cli.mjs", import.meta.url));
     const agentToken = `as_${"t".repeat(43)}`;
     const shareToken = "s".repeat(32);
@@ -29,6 +29,8 @@ describe("built stdio bridge", () => {
       await client.connect(transport);
       const listed = await client.listTools();
       expect(listed.tools.map((tool) => tool.name).sort()).toEqual([
+        "connect_artifactpass",
+        "connection_status",
         "publish_artifact",
         "read_artifact",
       ]);
@@ -48,6 +50,17 @@ describe("built stdio bridge", () => {
         expect(tool.description).toContain("profile production");
         expect(tool.description).toContain("https://artifacts.example.test");
       }
+
+      const connection = await client.callTool({
+        name: "connection_status",
+        arguments: {},
+      });
+      expect(connection.isError).not.toBe(true);
+      expect(connection.structuredContent).toMatchObject({
+        status: "connected",
+        profile: "production",
+        origin: "https://artifacts.example.test",
+      });
 
       const result = await client.callTool({
         name: "read_artifact",
