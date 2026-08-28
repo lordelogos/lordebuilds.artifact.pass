@@ -146,11 +146,8 @@ export const resolveWorkspaceConfiguration = async (
   }
   if (answer !== "2") throw new Error("Choose 1 or 2");
 
-  const currentOrganizationUrl = currentIsOrganization ? current.baseUrl : undefined;
-  const organizationUrl = (await options.prompt(
-    `Organization deployment URL${currentOrganizationUrl === undefined ? "" : ` [${currentOrganizationUrl}]`}: `,
-  )).trim() || currentOrganizationUrl;
-  if (organizationUrl === undefined) throw new Error("Organization deployment URL is required");
+  const organizationUrl = (await options.prompt("Organization deployment URL: ")).trim();
+  if (organizationUrl.length === 0) throw new Error("Organization deployment URL is required");
   const baseUrl = normalizeOrigin(organizationUrl, false);
   return {
     baseUrl,
