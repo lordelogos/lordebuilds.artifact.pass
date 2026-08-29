@@ -119,7 +119,7 @@ const assertRuntimeConformance = async (host, installedRoot, resolvedServer) => 
     const listed = await client.listTools();
     const expectedSchemas = {
       connect_artifactpass: {
-        input: { required: [], properties: {} },
+        input: { required: [], properties: { workspace_path: ["string"] } },
         output: {
           required: ["status", "profile", "origin"],
           enums: { status: ["disconnected", "connecting", "connected", "failed"] },
@@ -131,7 +131,7 @@ const assertRuntimeConformance = async (host, installedRoot, resolvedServer) => 
         },
       },
       connection_status: {
-        input: { required: [], properties: {} },
+        input: { required: [], properties: { workspace_path: ["string"] } },
         output: {
           required: ["status", "profile", "origin"],
           enums: { status: ["disconnected", "connecting", "connected", "failed"] },

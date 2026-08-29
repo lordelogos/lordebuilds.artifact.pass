@@ -7,7 +7,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createConnectionController } from "../src/connection/connection-controller";
 import type { PendingDeviceAuthorization } from "../src/connection/device-authorization";
-import { createBridgeServer } from "../src/server";
+import {
+  createBridgeServer,
+  type BridgeConfiguration,
+  type BridgeConfigurationSource,
+} from "../src/server";
 
 describe("plugin-native connection through MCP", () => {
   const temporaryRoots: string[] = [];
@@ -46,7 +50,7 @@ describe("plugin-native connection through MCP", () => {
       inspectCredential: vi.fn().mockResolvedValue({ expiresAt: Date.now() + 3_600_000 }),
     });
     const shareUrl = `https://staging.artifactpass.com/a/${"s".repeat(43)}`;
-    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response(JSON.stringify({
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(Response.json({
       protocol_version: 1,
       manifest: {
         protocol_version: 1,
@@ -61,7 +65,7 @@ describe("plugin-native connection through MCP", () => {
         pdf_trust: { status: "not_applicable" },
       },
       share_url: shareUrl,
-    }), { status: 201, headers: { "content-type": "application/json" } }));
+    }, { status: 201 }));
     const server = createBridgeServer({
       profileName: "staging",
       baseUrl: new URL("https://staging.artifactpass.com"),
@@ -103,6 +107,124 @@ describe("plugin-native connection through MCP", () => {
       expect(published.isError).not.toBe(true);
       expect(published.structuredContent).toMatchObject({ share_url: shareUrl });
       expect(fetch).toHaveBeenCalledTimes(1);
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it("passes the artifact path into workspace-aware connection tools", async () => {
+    const root = await mkdtemp(join(tmpdir(), "artifactpass-server-workspace-route-"));
+    temporaryRoots.push(root);
+    const path = join(root, "handoff.md");
+    const contents = "# Routed\n";
+    await writeFile(path, contents);
+    const shareUrl = `https://artifacts.company.example/a/${"r".repeat(43)}`;
+    const manifest = {
+      protocol_version: 1 as const,
+      artifact_id: "018f1f52-cbf1-7a5e-b66e-9ac829614b53",
+      filename: "handoff.md",
+      mime_type: "text/markdown",
+      byte_size: Buffer.byteLength(contents),
+      sha256: "b".repeat(64),
+      created_at: "2026-08-29T12:00:00.000Z",
+      expires_at: "2026-08-29T13:00:00.000Z",
+      extraction: { status: "not_applicable" },
+      pdf_trust: { status: "not_applicable" },
+    };
+    const fetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
+      const url = new URL(String(input));
+      if (init?.method === "POST") return Response.json({
+        protocol_version: 1,
+        manifest,
+        share_url: shareUrl,
+      }, { status: 201 });
+      if (url.pathname.endsWith("/manifest")) return Response.json(manifest);
+      return Response.json({
+        protocol_version: 1,
+        artifact_id: manifest.artifact_id,
+        encoding: "base64",
+        byte_offset: 0,
+        byte_length: Buffer.byteLength(contents),
+        total_size: Buffer.byteLength(contents),
+        sha256: manifest.sha256,
+        data: Buffer.from(contents).toString("base64"),
+        next_cursor: null,
+      });
+    });
+    const companyConnectionController = {
+      status: vi.fn().mockResolvedValue({
+        status: "connected" as const,
+        profile: "company",
+        origin: "https://artifacts.company.example",
+      }),
+      connect: vi.fn().mockResolvedValue({
+        status: "connected" as const,
+        profile: "company",
+        origin: "https://artifacts.company.example",
+      }),
+    };
+    const configuration: BridgeConfiguration = {
+      profileName: "company",
+      baseUrl: new URL("https://artifacts.company.example"),
+      workspaceRoots: [root],
+      headless: true,
+      environmentStore: {
+        get: vi.fn().mockResolvedValue(`as_${"a".repeat(43)}`),
+        set: vi.fn(),
+        delete: vi.fn(),
+      },
+      connectionController: companyConnectionController,
+      fetch,
+    };
+    const source: BridgeConfigurationSource = {
+      defaultConfiguration: () => ({ ...configuration, profileName: "production" }),
+      forWorkspacePath: vi.fn().mockReturnValue(configuration),
+      forShareUrl: vi.fn().mockReturnValue(configuration),
+      runtimeKey: vi.fn().mockReturnValue("company"),
+    };
+    const server = createBridgeServer(source);
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: "artifactpass-workspace-route-test", version: "0.0.0" });
+
+    try {
+      await server.connect(serverTransport);
+      await client.connect(clientTransport);
+
+      await expect(client.callTool({
+        name: "connection_status",
+        arguments: { workspace_path: path },
+      })).resolves.toMatchObject({
+        structuredContent: {
+          status: "connected",
+          profile: "company",
+          origin: "https://artifacts.company.example",
+        },
+      });
+      expect(source.forWorkspacePath).toHaveBeenCalledWith(path);
+
+      await expect(client.callTool({
+        name: "connect_artifactpass",
+        arguments: { workspace_path: path },
+      })).resolves.toMatchObject({
+        structuredContent: { status: "connected", profile: "company" },
+      });
+      expect(companyConnectionController.connect).toHaveBeenCalledTimes(1);
+
+      await expect(client.callTool({
+        name: "publish_artifact",
+        arguments: { path },
+      })).resolves.toMatchObject({
+        structuredContent: { share_url: shareUrl },
+      });
+      await expect(client.callTool({
+        name: "read_artifact",
+        arguments: { share_url: shareUrl },
+      })).resolves.toMatchObject({
+        structuredContent: { text: contents },
+      });
+      expect(source.forShareUrl).toHaveBeenCalledWith(shareUrl);
+      expect(fetch).toHaveBeenCalledTimes(3);
     } finally {
       await client.close();
       await server.close();

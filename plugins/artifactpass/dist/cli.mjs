@@ -61904,7 +61904,7 @@ var init_dist = __esm({
 });
 
 // src/server.ts
-import { delimiter, resolve as resolve3 } from "node:path";
+import { delimiter, isAbsolute as isAbsolute3, resolve as resolve3 } from "node:path";
 
 // ../../node_modules/.pnpm/@modelcontextprotocol+server@2.0.0/node_modules/@modelcontextprotocol/server/dist/chunk-Br0eD_fh.mjs
 var __create2 = Object.create;
@@ -93152,7 +93152,11 @@ var publishArtifact = async (input, dependencies) => {
 var webUrlSchema = external_exports.url({ protocol: /^https?$/u });
 var sha256Schema2 = external_exports.string().regex(/^[a-f0-9]{64}$/u);
 var opaqueCursorSchema = external_exports.string().regex(/^[A-Za-z0-9_-]{16,256}$/u);
-var connectionInputSchema = external_exports.object({}).strict();
+var connectionInputSchema = external_exports.object({
+  workspace_path: external_exports.string().min(1).optional().describe(
+    "Absolute artifact or workspace path used to select the deployment configured for this workspace."
+  )
+}).strict();
 var connectionOutputSchema = external_exports.object({
   status: external_exports.enum(["disconnected", "connecting", "connected", "failed"]),
   profile: external_exports.string().min(1),
@@ -93286,16 +93290,47 @@ var createConfiguredConnectionController = (configuration, profileName) => {
     ...configuration.fetch === void 0 ? {} : { fetch: configuration.fetch }
   });
 };
-var createBridgeServer = (configuration) => {
+var maximumCachedRuntimes = 32;
+var isConfigurationSource = (value) => "defaultConfiguration" in value;
+var fixedConfigurationSource = (configuration) => ({
+  defaultConfiguration: () => configuration,
+  forWorkspacePath: () => configuration,
+  forShareUrl: () => configuration,
+  runtimeKey: () => "fixed"
+});
+var createBridgeServer = (configurationOrSource) => {
+  const dynamic = isConfigurationSource(configurationOrSource);
+  const source = dynamic ? configurationOrSource : fixedConfigurationSource(configurationOrSource);
+  const defaultConfiguration = source.defaultConfiguration();
   const server = new McpServer(
     { name: "lordebuilds.artifacts.share", version: "0.0.0" },
     { capabilities: { tools: {} } }
   );
-  const logger = configuration.logger ?? createRedactingLogger();
-  const profileName = configuration.profileName ?? "environment";
-  const connectionContext = ` Configured deployment: profile ${profileName} at ${configuration.baseUrl.origin} (${configuration.openDevelopment === true ? "open local development" : "authentication required for publishing"}).`;
-  const publicationJournal = configuration.publicationJournal ?? (configuration.publicationStatePath === void 0 ? new MemoryPublicationJournal() : new FilePublicationJournal(configuration.publicationStatePath));
-  const connectionController = configuration.connectionController ?? createConfiguredConnectionController(configuration, profileName);
+  const logger = defaultConfiguration.logger ?? createRedactingLogger();
+  const connectionContext = dynamic ? ` Default deployment: profile ${defaultConfiguration.profileName ?? "environment"} at ${defaultConfiguration.baseUrl.origin}. ArtifactPass selects a more specific configured deployment from workspace_path or the artifact/link being used.` : ` Configured deployment: profile ${defaultConfiguration.profileName ?? "environment"} at ${defaultConfiguration.baseUrl.origin} (${defaultConfiguration.openDevelopment === true ? "open local development" : "authentication required for publishing"}).`;
+  const runtimes = /* @__PURE__ */ new Map();
+  const runtimeFor = (configuration) => {
+    const key = source.runtimeKey(configuration);
+    const existing = runtimes.get(key);
+    if (existing !== void 0) {
+      runtimes.delete(key);
+      runtimes.set(key, existing);
+      return { configuration, ...existing };
+    }
+    const profileName = configuration.profileName ?? "environment";
+    const resources = {
+      publicationJournal: configuration.publicationJournal ?? (configuration.publicationStatePath === void 0 ? new MemoryPublicationJournal() : new FilePublicationJournal(configuration.publicationStatePath)),
+      connectionController: configuration.connectionController ?? createConfiguredConnectionController(configuration, profileName)
+    };
+    runtimes.set(key, resources);
+    while (runtimes.size > maximumCachedRuntimes) {
+      const oldest = runtimes.keys().next().value;
+      if (oldest === void 0) break;
+      runtimes.delete(oldest);
+    }
+    return { configuration, ...resources };
+  };
+  const runtimeForWorkspacePath = (workspacePath) => runtimeFor(workspacePath === void 0 ? source.defaultConfiguration() : source.forWorkspacePath(workspacePath));
   const connectionResult = (state) => ({
     content: [{ type: "text", text: JSON.stringify(state) }],
     structuredContent: state
@@ -93311,7 +93346,14 @@ var createBridgeServer = (configuration) => {
       idempotentHint: true,
       openWorldHint: false
     }
-  }, async () => connectionResult(await connectionController.status()));
+  }, async ({ workspace_path: workspacePath }) => {
+    try {
+      const runtime = runtimeForWorkspacePath(workspacePath);
+      return connectionResult(await runtime.connectionController.status());
+    } catch (error51) {
+      return errorResult(error51);
+    }
+  });
   server.registerTool("connect_artifactpass", {
     title: "Connect ArtifactPass",
     description: "Start ArtifactPass browser sign-in for this workspace. Use this when connection_status reports disconnected. No terminal command or agent restart is required." + connectionContext,
@@ -93323,7 +93365,14 @@ var createBridgeServer = (configuration) => {
       idempotentHint: true,
       openWorldHint: true
     }
-  }, async () => connectionResult(await connectionController.connect()));
+  }, async ({ workspace_path: workspacePath }) => {
+    try {
+      const runtime = runtimeForWorkspacePath(workspacePath);
+      return connectionResult(await runtime.connectionController.connect());
+    } catch (error51) {
+      return errorResult(error51);
+    }
+  });
   server.registerTool("publish_artifact", {
     title: "Publish Artifact",
     description: "Publish one approved local Markdown, HTML, or PDF file without placing its bytes in model context. If ArtifactPass is disconnected, call connect_artifactpass, complete browser approval, confirm connection_status is connected, and retry once in the same session." + connectionContext,
@@ -93336,14 +93385,18 @@ var createBridgeServer = (configuration) => {
     }
   }, async ({ path, canonical_source_path: canonicalSourcePath, expires_in_seconds: expiresInSeconds }) => {
     try {
-      const token = configuration.openDevelopment === true ? void 0 : await resolveCredential({
-        headless: configuration.headless,
-        environmentStore: configuration.environmentStore,
-        ...configuration.osStore === void 0 ? {} : { osStore: configuration.osStore },
-        expectedOrigin: configuration.baseUrl,
-        requireOriginBinding: configuration.requireOriginBoundCredential === true
-      });
-      const pdfProvenance = canonicalSourcePath === void 0 ? void 0 : await resolvePdfProvenance(configuration);
+      const runtime = runtimeFor(source.forWorkspacePath(path));
+      const { configuration, publicationJournal } = runtime;
+      const [token, pdfProvenance] = await Promise.all([
+        configuration.openDevelopment === true ? void 0 : resolveCredential({
+          headless: configuration.headless,
+          environmentStore: configuration.environmentStore,
+          ...configuration.osStore === void 0 ? {} : { osStore: configuration.osStore },
+          expectedOrigin: configuration.baseUrl,
+          requireOriginBinding: configuration.requireOriginBoundCredential === true
+        }),
+        canonicalSourcePath === void 0 ? void 0 : resolvePdfProvenance(configuration)
+      ]);
       const result = await publishArtifact({
         path,
         expiresInSeconds,
@@ -93379,6 +93432,7 @@ var createBridgeServer = (configuration) => {
     }
   }, async ({ share_url: shareUrl, cursor, max_bytes: maxBytes, representation }) => {
     try {
+      const configuration = source.forShareUrl(shareUrl);
       const result = await readArtifact({
         shareUrl,
         ...cursor === void 0 ? {} : { cursor },
@@ -93400,15 +93454,28 @@ var createBridgeServer = (configuration) => {
   });
   return server;
 };
-var configurationFromEnvironment = (environment = process.env, currentWorkspace = process.cwd()) => {
-  const compatibleValue = (artifactpassName, legacyName) => {
-    const artifactpassValue = environment[artifactpassName];
-    const legacyValue = environment[legacyName];
-    if (artifactpassValue !== void 0 && legacyValue !== void 0 && artifactpassValue !== legacyValue) {
-      throw new Error(`${artifactpassName} conflicts with legacy ${legacyName}`);
+var compatibleEnvironmentValue = (environment, artifactpassName, legacyName) => {
+  const artifactpassValue = environment[artifactpassName];
+  const legacyValue = environment[legacyName];
+  if (artifactpassValue !== void 0 && legacyValue !== void 0 && artifactpassValue !== legacyValue) {
+    throw new Error(`${artifactpassName} conflicts with legacy ${legacyName}`);
+  }
+  return artifactpassValue ?? legacyValue;
+};
+var readEnvironmentLocalState = (environment, baseUrlEnvironment, rootsEnvironment) => {
+  if (baseUrlEnvironment !== void 0 && rootsEnvironment !== void 0) return void 0;
+  const mayUseUnconfiguredPublicPlugin = environment.ARTIFACTPASS_CONFIG_PATH === void 0 && environment.ARTIFACT_SHARE_CONFIG_PATH === void 0;
+  try {
+    return readCompatibleLocalBridgeSettingsSync(environment);
+  } catch (error51) {
+    if (mayUseUnconfiguredPublicPlugin && error51 instanceof Error && "code" in error51 && error51.code === "ENOENT") {
+      return void 0;
     }
-    return artifactpassValue ?? legacyValue;
-  };
+    throw error51;
+  }
+};
+var configurationFromEnvironmentAndState = (environment, currentWorkspace, localState) => {
+  const compatibleValue = (artifactpassName, legacyName) => compatibleEnvironmentValue(environment, artifactpassName, legacyName);
   const baseUrlEnvironment = compatibleValue("ARTIFACTPASS_BASE_URL", "ARTIFACT_SHARE_BASE_URL");
   const rootsEnvironment = compatibleValue("ARTIFACTPASS_WORKSPACE_ROOTS", "ARTIFACT_SHARE_WORKSPACE_ROOTS");
   const profileEnvironment = compatibleValue("ARTIFACTPASS_PROFILE", "ARTIFACT_SHARE_PROFILE");
@@ -93416,17 +93483,6 @@ var configurationFromEnvironment = (environment = process.env, currentWorkspace 
     "ARTIFACTPASS_OPEN_DEVELOPMENT",
     "ARTIFACT_SHARE_OPEN_DEVELOPMENT"
   );
-  const mayUseUnconfiguredPublicPlugin = environment.ARTIFACTPASS_CONFIG_PATH === void 0 && environment.ARTIFACT_SHARE_CONFIG_PATH === void 0;
-  const localState = baseUrlEnvironment === void 0 || rootsEnvironment === void 0 ? (() => {
-    try {
-      return readCompatibleLocalBridgeSettingsSync(environment);
-    } catch (error51) {
-      if (mayUseUnconfiguredPublicPlugin && error51 instanceof Error && "code" in error51 && error51.code === "ENOENT") {
-        return void 0;
-      }
-      throw error51;
-    }
-  })() : void 0;
   const localConfigPath = localState?.path ?? (environment.ARTIFACTPASS_CONFIG_PATH === void 0 && environment.ARTIFACT_SHARE_CONFIG_PATH !== void 0 ? legacyLocalConfigPath(environment) : defaultLocalConfigPath(environment));
   const localConfiguration = localState?.settings;
   const selectedProfile = localConfiguration === void 0 ? void 0 : selectLocalBridgeProfile(localConfiguration, profileEnvironment, currentWorkspace);
@@ -93506,10 +93562,89 @@ var configurationFromEnvironment = (environment = process.env, currentWorkspace 
     }
   };
 };
-var serveBridgeStdio = (configuration = configurationFromEnvironment()) => serveStdio(() => createBridgeServer(configuration), {
-  onerror: (error51) => (configuration.logger ?? createRedactingLogger()).error("stdio transport failed", {
-    error: error51.message
-  })
+var createBridgeConfigurationSource = (environment = process.env, processWorkspace = process.cwd()) => {
+  const configurationFor = (selectedEnvironment, workspace, localState2) => configurationFromEnvironmentAndState(
+    selectedEnvironment,
+    workspace,
+    localState2
+  );
+  const localState = () => readEnvironmentLocalState(
+    environment,
+    compatibleEnvironmentValue(environment, "ARTIFACTPASS_BASE_URL", "ARTIFACT_SHARE_BASE_URL"),
+    compatibleEnvironmentValue(
+      environment,
+      "ARTIFACTPASS_WORKSPACE_ROOTS",
+      "ARTIFACT_SHARE_WORKSPACE_ROOTS"
+    )
+  );
+  const defaultConfiguration = () => configurationFor(environment, processWorkspace, localState());
+  const explicitDeployment = [
+    "ARTIFACTPASS_BASE_URL",
+    "ARTIFACT_SHARE_BASE_URL",
+    "ARTIFACTPASS_PROFILE",
+    "ARTIFACT_SHARE_PROFILE"
+  ].some((name) => environment[name] !== void 0);
+  const headlessToken = compatibleEnvironmentValue(
+    environment,
+    "ARTIFACTPASS_TOKEN",
+    "ARTIFACT_SHARE_TOKEN"
+  );
+  if (headlessToken !== void 0 && !explicitDeployment) {
+    throw new Error(
+      "Headless ArtifactPass tokens require an explicit ARTIFACTPASS_BASE_URL or ARTIFACTPASS_PROFILE"
+    );
+  }
+  return {
+    defaultConfiguration,
+    forWorkspacePath: (path) => {
+      if (!isAbsolute3(path)) {
+        throw new Error("ArtifactPass requires an absolute artifact or workspace path");
+      }
+      const state = localState();
+      return configurationFor(
+        environment,
+        state === void 0 ? processWorkspace : path,
+        state
+      );
+    },
+    forShareUrl: (url2) => {
+      const state = localState();
+      const fallback = configurationFor(environment, processWorkspace, state);
+      const origin = new URL(url2).origin;
+      if (fallback.baseUrl.origin === origin || explicitDeployment) return fallback;
+      if (state === void 0) return fallback;
+      const candidates = Object.entries(state.settings.profiles).filter(([, profile]) => {
+        try {
+          return new URL(profile.base_url).origin === origin;
+        } catch {
+          return false;
+        }
+      }).map(([name]) => name).sort((left, right) => left.localeCompare(right));
+      if (candidates.length === 0) return fallback;
+      const profileName = candidates.includes(state.settings.active_profile) ? state.settings.active_profile : candidates[0];
+      if (profileName === void 0) return fallback;
+      return configurationFor({
+        ...environment,
+        ARTIFACTPASS_PROFILE: profileName
+      }, processWorkspace, state);
+    },
+    runtimeKey: (configuration) => JSON.stringify([
+      configuration.profileName ?? "environment",
+      configuration.baseUrl.origin,
+      configuration.openDevelopment === true,
+      configuration.headless,
+      configuration.requireOriginBoundCredential === true,
+      configuration.publicationStatePath ?? "memory"
+    ])
+  };
+};
+var serveBridgeStdio = (configurationOrSource = createBridgeConfigurationSource()) => serveStdio(() => createBridgeServer(configurationOrSource), {
+  onerror: (error51) => {
+    const configuredLogger = isConfigurationSource(configurationOrSource) ? configurationOrSource.defaultConfiguration().logger : configurationOrSource.logger;
+    (configuredLogger ?? createRedactingLogger()).error("stdio transport failed", {
+      error: error51.message
+    });
+  }
 });
 
 // src/cli.ts
