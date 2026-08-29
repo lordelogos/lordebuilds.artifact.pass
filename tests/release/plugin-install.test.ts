@@ -1,6 +1,11 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+
+import { Client } from "@modelcontextprotocol/client";
+import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { describe, expect, test } from "vitest";
 
 const repositoryRoot = resolve(import.meta.dirname, "../..");
@@ -53,6 +58,39 @@ describe("dual-host plugin package", () => {
         artifactpass: server,
       },
     });
+  });
+
+  test("bundled bridge does not approve an arbitrary no-config path", async () => {
+    const root = await mkdtemp(join(tmpdir(), "artifactpass-plugin-root-guard-"));
+    const artifactPath = join(root, "outside.md");
+    await writeFile(artifactPath, "# Outside\n");
+    const transport = new StdioClientTransport({
+      command: process.execPath,
+      args: [resolve(pluginRoot, "dist/cli.mjs")],
+      cwd: pluginRoot,
+      env: {
+        XDG_CONFIG_HOME: join(root, "empty-config"),
+        ARTIFACTPASS_BASE_URL: "http://127.0.0.1:8787",
+        ARTIFACTPASS_OPEN_DEVELOPMENT: "1",
+      },
+      stderr: "pipe",
+    });
+    const client = new Client({ name: "artifactpass-bundle-root-guard", version: "0.0.0" });
+
+    try {
+      await client.connect(transport);
+      const result = await client.callTool({
+        name: "publish_artifact",
+        arguments: { path: artifactPath },
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content).toEqual(expect.arrayContaining([
+        expect.objectContaining({ text: expect.stringContaining("outside the approved workspace roots") }),
+      ]));
+    } finally {
+      await client.close();
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   test("skills stay within the supported product contract", () => {

@@ -17,7 +17,11 @@ export const ARTIFACTPASS_MCP_TOOL_NAMES = [
   "read_artifact",
 ] as const;
 
-export const connectionInputSchema = z.object({}).strict();
+export const connectionInputSchema = z.object({
+  workspace_path: z.string().min(1).optional().describe(
+    "Absolute artifact or workspace path used to select the deployment configured for this workspace.",
+  ),
+}).strict();
 
 export const connectionOutputSchema = z.object({
   status: z.enum(["disconnected", "connecting", "connected", "failed"]),

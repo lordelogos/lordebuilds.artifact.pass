@@ -14,7 +14,10 @@ import {
   upsertLocalBridgeProfile,
   writeLocalBridgeSettings,
 } from "../src/config/local-config";
-import { configurationFromEnvironment } from "../src/server";
+import {
+  configurationFromEnvironment,
+  createBridgeConfigurationSource,
+} from "../src/server";
 import { FilePublicationJournal } from "../src/state/publication-journal";
 
 describe("local bridge config", () => {
@@ -132,6 +135,82 @@ describe("local bridge config", () => {
       profileName: "company",
       baseUrl: new URL("https://artifacts.company.example"),
     });
+  });
+
+  it("selects a bound workspace from the artifact path when the plugin launches from its cache", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifactpass-plugin-cache-routing-test-"));
+    const path = resolve(root, "config.json");
+    const pluginCache = resolve(root, "plugin-cache", "artifactpass");
+    const workspace = resolve(root, "workspace");
+    await Promise.all([mkdir(pluginCache, { recursive: true }), mkdir(workspace)]);
+    await writeLocalBridgeSettings(path, {
+      version: 2,
+      active_profile: "production",
+      workspace_profiles: { [workspace]: "company" },
+      profiles: {
+        production: {
+          base_url: "https://artifactpass.com/",
+          workspace_roots: [resolve(root, "personal")],
+        },
+        company: {
+          base_url: "https://artifacts.company.example/",
+          workspace_roots: [workspace],
+        },
+        broken: {
+          base_url: "not a URL",
+          workspace_roots: [resolve(root, "broken")],
+        },
+      },
+    });
+
+    const source = createBridgeConfigurationSource(
+      { ARTIFACTPASS_CONFIG_PATH: path },
+      pluginCache,
+    );
+    const configuration = source.forWorkspacePath(resolve(workspace, "handoff.md"));
+
+    expect(configuration.profileName).toBe("company");
+    expect(configuration.baseUrl.origin).toBe("https://artifacts.company.example");
+    expect(configuration.workspaceRoots).toEqual([workspace]);
+    expect(source.forShareUrl(`https://artifacts.company.example/a/${"a".repeat(43)}`))
+      .toMatchObject({ profileName: "company" });
+    expect(source.forShareUrl(`https://artifactpass.com/a/${"b".repeat(43)}`))
+      .toMatchObject({ profileName: "production" });
+  });
+
+  it("does not approve an arbitrary path when no local deployment is configured", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifactpass-unconfigured-root-test-"));
+    const pluginCache = resolve(root, "plugin-cache", "artifactpass");
+    const unrelatedArtifact = resolve(root, "private", "handoff.md");
+    await mkdir(pluginCache, { recursive: true });
+
+    const source = createBridgeConfigurationSource(
+      { XDG_CONFIG_HOME: resolve(root, "empty-config") },
+      pluginCache,
+    );
+    const configuration = source.forWorkspacePath(unrelatedArtifact);
+
+    expect(configuration.profileName).toBe("production");
+    expect(configuration.workspaceRoots).toEqual([pluginCache]);
+    expect(configuration.workspaceRoots).not.toContain(unrelatedArtifact);
+  });
+
+  it("requires headless tokens to name their deployment", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifactpass-headless-deployment-test-"));
+
+    expect(() => createBridgeConfigurationSource({
+      XDG_CONFIG_HOME: resolve(root, "empty-config"),
+      ARTIFACTPASS_TOKEN: `as_${"t".repeat(43)}`,
+    }, root)).toThrow(
+      "Headless ArtifactPass tokens require an explicit ARTIFACTPASS_BASE_URL or ARTIFACTPASS_PROFILE",
+    );
+
+    expect(() => createBridgeConfigurationSource({
+      XDG_CONFIG_HOME: resolve(root, "empty-config"),
+      ARTIFACTPASS_TOKEN: `as_${"t".repeat(43)}`,
+      ARTIFACTPASS_BASE_URL: "https://artifactpass.com",
+      ARTIFACTPASS_WORKSPACE_ROOTS: root,
+    }, root)).not.toThrow();
   });
 
   it("rejects an inherited property as the active profile", async () => {

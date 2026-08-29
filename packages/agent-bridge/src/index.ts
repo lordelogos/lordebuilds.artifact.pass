@@ -53,9 +53,11 @@ export {
 } from "./logging/redacting-logger";
 export {
   configurationFromEnvironment,
+  createBridgeConfigurationSource,
   createBridgeServer,
   serveBridgeStdio,
   type BridgeConfiguration,
+  type BridgeConfigurationSource,
 } from "./server";
 export {
   createConnectionController,

@@ -7,11 +7,11 @@ description: Publish one declared final durable artifact when a compatible lifec
 
 Use the ArtifactPass MCP tools for connection and publishing. Never paste the file contents into the model prompt.
 
-Before the first publication attempt in a workspace, call `connection_status`.
+Resolve the exact absolute local path the user named before checking the connection. Do not substitute a similarly named file. Before the first publication attempt in a workspace, call `connection_status` with that exact path as `workspace_path` so ArtifactPass selects the deployment configured for the file's workspace.
 
 - If it reports `connected`, continue to `publish_artifact`.
-- If it reports `disconnected`, call `connect_artifactpass`. That tool opens the configured ArtifactPass deployment in the user's browser. Tell the user which deployment is requesting access and show the returned approval URL only when `browser_opened` is false.
-- If it reports `connecting`, wait for browser approval and check `connection_status` again. Do not run a terminal command, reinstall the plugin, register another MCP server, or ask for an agent restart.
+- If it reports `disconnected`, call `connect_artifactpass` with the same `workspace_path`. That tool opens the configured ArtifactPass deployment in the user's browser. Tell the user which deployment is requesting access and show the returned approval URL only when `browser_opened` is false.
+- If it reports `connecting`, wait for browser approval and check `connection_status` again with the same `workspace_path`. Do not run a terminal command, reinstall the plugin, register another MCP server, or ask for an agent restart.
 - If it reports `failed`, report the tool's message. Never claim that ArtifactPass is connected.
 
 After approval, confirm `connection_status` is `connected`, then continue the original publication request in the same agent session. The user should not have to repeat the request.
@@ -20,12 +20,11 @@ Apply this portable lifecycle policy once per session. A final candidate exists 
 
 When the environment exposes a trusted completion event, it may use that event to apply this same policy automatically. If no such capability exists, automatic triggering is unavailable but sharing is not: use this skill manually when the user asks to publish the final artifact. Do not require ecosystem-specific commands or syntax.
 
-Before calling the tool:
+Before calling the publishing tool:
 
-1. Resolve the exact local path the user named. Do not substitute a similarly named file.
-2. Prefer Markdown for text-first work, HTML for self-contained interactive output, and PDF only when fixed layout is important.
-3. Confirm the file type is Markdown, HTML, or PDF. Explain that other formats are not supported instead of implying they will work.
-4. Use the user's requested expiry when it is one of the tool's supported values. When no expiry is requested, use one hour (3600 seconds). Otherwise ask them to choose a supported duration.
+1. Prefer Markdown for text-first work, HTML for self-contained interactive output, and PDF only when fixed layout is important.
+2. Confirm the file type is Markdown, HTML, or PDF. Explain that other formats are not supported instead of implying they will work.
+3. Use the user's requested expiry when it is one of the tool's supported values. When no expiry is requested, use one hour (3600 seconds). Otherwise ask them to choose a supported duration.
 
 Call `publish_artifact` with the exact path and a deployment expiry preset. Public ArtifactPass supports 900, 1800, or 3600 seconds. If another deployment rejects a requested value, use the allowed values in its error. The bridge infers and validates the content type from the filename.
 
