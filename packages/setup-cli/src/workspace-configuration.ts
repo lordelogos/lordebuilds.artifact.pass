@@ -133,18 +133,18 @@ export const resolveWorkspaceConfiguration = async (
     };
   }
 
-  const currentIsOrganization = current !== null && current.baseUrl !== PUBLIC_ARTIFACTPASS_URL;
-  const defaultChoice = currentIsOrganization ? "2" : "1";
-  const answer = (await options.prompt(
-    `Configure ArtifactPass for ${workspaceRoot}\n` +
-    `  1. Public ArtifactPass (${PUBLIC_ARTIFACTPASS_URL})\n` +
-    "  2. Organization deployment\n" +
-    `Choose [${defaultChoice}]: `,
-  )).trim() || defaultChoice;
-  if (answer === "1") {
+  const deploymentType = (await options.prompt(
+    "Public or organization deployment?\n" +
+    "  1. Public\n" +
+    "  2. Organization\n" +
+    "Answer: ",
+  )).trim();
+  if (deploymentType === "1") {
     return { baseUrl: PUBLIC_ARTIFACTPASS_URL, profileName: "production", workspaceRoot };
   }
-  if (answer !== "2") throw new Error("Choose 1 or 2");
+  if (deploymentType !== "2") {
+    throw new Error("Enter 1 or 2");
+  }
 
   const organizationUrl = (await options.prompt("Organization deployment URL: ")).trim();
   if (organizationUrl.length === 0) throw new Error("Organization deployment URL is required");

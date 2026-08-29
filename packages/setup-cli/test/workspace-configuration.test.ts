@@ -71,8 +71,8 @@ describe("workspace deployment configuration", () => {
     });
   });
 
-  it("defaults an unconfigured workspace to public even when another profile is active", async () => {
-    const prompt = vi.fn().mockResolvedValue("");
+  it("asks an unconfigured workspace whether its deployment is public or organization-owned", async () => {
+    const prompt = vi.fn().mockResolvedValue("1");
     const companyActive = { ...settings, active_profile: "company" };
 
     await expect(resolveWorkspaceConfiguration({
@@ -84,6 +84,13 @@ describe("workspace deployment configuration", () => {
       baseUrl: "https://artifactpass.com",
       profileName: "production",
     });
+    expect(prompt).toHaveBeenCalledOnce();
+    expect(prompt).toHaveBeenCalledWith(
+      "Public or organization deployment?\n" +
+      "  1. Public\n" +
+      "  2. Organization\n" +
+      "Answer: ",
+    );
   });
 
   it("lets a workspace select an organization deployment", async () => {
@@ -116,16 +123,23 @@ describe("workspace deployment configuration", () => {
       interactive: true,
       prompt,
     })).rejects.toThrow("Organization deployment URL is required");
+    expect(prompt).toHaveBeenNthCalledWith(
+      1,
+      "Public or organization deployment?\n" +
+      "  1. Public\n" +
+      "  2. Organization\n" +
+      "Answer: ",
+    );
     expect(prompt).toHaveBeenNthCalledWith(2, "Organization deployment URL: ");
   });
 
-  it("rejects invalid choices and deployment URLs without looping", async () => {
+  it("rejects invalid deployment types and URLs without looping", async () => {
     await expect(resolveWorkspaceConfiguration({
       workspaceRoot: "/work/new",
       settings: null,
       interactive: true,
-      prompt: vi.fn().mockResolvedValue("3"),
-    })).rejects.toThrow("Choose 1 or 2");
+      prompt: vi.fn().mockResolvedValue("staging"),
+    })).rejects.toThrow("Enter 1 or 2");
 
     await expect(resolveWorkspaceConfiguration({
       workspaceRoot: "/work/new",
