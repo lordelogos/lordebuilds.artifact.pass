@@ -65,6 +65,10 @@ const marketplaceSourceIsReadable = async (
   return access(manifest).then(() => true).catch(() => false);
 };
 
+const codexMarketplaceIsNotConfigured = (error: unknown): boolean =>
+  error instanceof Error &&
+  error.message.includes(`marketplace \`${artifactpassMarketplaceId}\` is not configured or installed`);
+
 const marketplaceEntries = (
   value: unknown,
   label: string,
@@ -185,25 +189,33 @@ export const installPluginForHosts = async (
       (existingMarketplace.localSource !== undefined &&
         existingMarketplace.localSource !== marketplaceSource)
     ) {
+      let removedConfiguredMarketplace = false;
       if (existingMarketplace !== undefined) {
         const previousMarketplaceSource = existingMarketplace.localSource as string;
-        const previousMarketplaceIsReadable = await marketplaceSourceIsReadable(
-          previousMarketplaceSource,
-          "codex",
-        );
-        await runner("codex", ["plugin", "marketplace", "remove", artifactpassMarketplaceId]);
-        marketplaceRollbackActions.push(async () => {
-          await runner("codex", ["plugin", "marketplace", "remove", artifactpassMarketplaceId])
-            .catch(() => undefined);
-          await runner("codex", [
-            "plugin", "marketplace", "add",
-            previousMarketplaceIsReadable ? previousMarketplaceSource : marketplaceSource,
-            "--json",
-          ]);
-        });
+        try {
+          await runner("codex", ["plugin", "marketplace", "remove", artifactpassMarketplaceId]);
+          removedConfiguredMarketplace = true;
+        } catch (error) {
+          if (!codexMarketplaceIsNotConfigured(error)) throw error;
+        }
+        if (removedConfiguredMarketplace) {
+          const previousMarketplaceIsReadable = await marketplaceSourceIsReadable(
+            previousMarketplaceSource,
+            "codex",
+          );
+          marketplaceRollbackActions.push(async () => {
+            await runner("codex", ["plugin", "marketplace", "remove", artifactpassMarketplaceId])
+              .catch(() => undefined);
+            await runner("codex", [
+              "plugin", "marketplace", "add",
+              previousMarketplaceIsReadable ? previousMarketplaceSource : marketplaceSource,
+              "--json",
+            ]);
+          });
+        }
       }
       await runner("codex", ["plugin", "marketplace", "add", marketplaceSource, "--json"]);
-      if (existingMarketplace === undefined) {
+      if (existingMarketplace === undefined || !removedConfiguredMarketplace) {
         marketplaceRollbackActions.push(async () => {
           await runner("codex", ["plugin", "marketplace", "remove", artifactpassMarketplaceId]);
         });

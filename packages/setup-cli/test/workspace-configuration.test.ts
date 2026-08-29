@@ -105,7 +105,7 @@ describe("workspace deployment configuration", () => {
     expect(resolved.profileName).toMatch(/^org-sharing-example-com-[a-f0-9]{6}$/u);
   });
 
-  it("keeps the current organization URL when its URL prompt is left blank", async () => {
+  it("asks for an organization URL without suggesting the current deployment", async () => {
     const prompt = vi.fn()
       .mockResolvedValueOnce("2")
       .mockResolvedValueOnce("");
@@ -115,11 +115,8 @@ describe("workspace deployment configuration", () => {
       settings,
       interactive: true,
       prompt,
-    })).resolves.toEqual({
-      baseUrl: "https://artifacts.company.example",
-      profileName: "company",
-      workspaceRoot: "/work/company",
-    });
+    })).rejects.toThrow("Organization deployment URL is required");
+    expect(prompt).toHaveBeenNthCalledWith(2, "Organization deployment URL: ");
   });
 
   it("rejects invalid choices and deployment URLs without looping", async () => {

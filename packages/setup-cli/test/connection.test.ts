@@ -199,6 +199,94 @@ describe("host connection", () => {
     ]);
   });
 
+  it("installs a Codex marketplace that is visible but not persistently configured", async () => {
+    const runner: ProcessRunner = vi.fn(async (command, args) => {
+      const joined = `${command} ${args.join(" ")}`;
+      if (joined === "codex plugin marketplace list --json") {
+        return { stdout: JSON.stringify({ marketplaces: [{
+          name: "artifactpass",
+          marketplaceSource: { sourceType: "local", source: "/work/development-marketplace" },
+        }] }), stderr: "" };
+      }
+      if (joined === "codex plugin marketplace remove artifactpass") {
+        throw new Error("codex failed with status 1: Error: marketplace `artifactpass` is not configured or installed");
+      }
+      if (joined === "codex plugin list --json") {
+        return { stdout: JSON.stringify({ installed: [] }), stderr: "" };
+      }
+      if (joined === "codex mcp list --json") return { stdout: "[]", stderr: "" };
+      return { stdout: "{}", stderr: "" };
+    });
+
+    await installPluginForHosts(["codex"], "/work/durable-marketplace", runner);
+
+    expect(runner).toHaveBeenCalledWith("codex", [
+      "plugin", "marketplace", "add", "/work/durable-marketplace", "--json",
+    ]);
+    expect(runner).toHaveBeenCalledWith("codex", [
+      "plugin", "add", "artifactpass@artifactpass", "--json",
+    ]);
+  });
+
+  it("removes the durable Codex marketplace if plugin installation later fails", async () => {
+    const calls: string[] = [];
+    const runner: ProcessRunner = vi.fn(async (command, args) => {
+      const joined = `${command} ${args.join(" ")}`;
+      calls.push(joined);
+      if (joined === "codex plugin marketplace list --json") {
+        return { stdout: JSON.stringify({ marketplaces: [{
+          name: "artifactpass",
+          marketplaceSource: { sourceType: "local", source: "/work/development-marketplace" },
+        }] }), stderr: "" };
+      }
+      if (joined === "codex plugin marketplace remove artifactpass" && calls.length === 2) {
+        throw new Error("codex failed with status 1: Error: marketplace `artifactpass` is not configured or installed");
+      }
+      if (joined === "codex plugin list --json") {
+        return { stdout: JSON.stringify({ installed: [] }), stderr: "" };
+      }
+      if (joined === "codex mcp list --json") return { stdout: "[]", stderr: "" };
+      if (joined === "codex plugin add artifactpass@artifactpass --json") {
+        throw new Error("injected plugin failure");
+      }
+      return { stdout: "{}", stderr: "" };
+    });
+
+    await expect(installPluginForHosts(["codex"], "/work/durable-marketplace", runner))
+      .rejects.toThrow("injected plugin failure");
+
+    const failedPluginInstall = calls.indexOf(
+      "codex plugin add artifactpass@artifactpass --json",
+    );
+    const rollbackRemove = calls.lastIndexOf("codex plugin marketplace remove artifactpass");
+    expect(rollbackRemove).toBeGreaterThan(failedPluginInstall);
+    expect(calls).not.toContain(
+      "codex plugin marketplace add /work/development-marketplace --json",
+    );
+  });
+
+  it("does not hide unexpected Codex marketplace removal failures", async () => {
+    const runner: ProcessRunner = vi.fn(async (command, args) => {
+      const joined = `${command} ${args.join(" ")}`;
+      if (joined === "codex plugin marketplace list --json") {
+        return { stdout: JSON.stringify({ marketplaces: [{
+          name: "artifactpass",
+          marketplaceSource: { sourceType: "local", source: "/work/development-marketplace" },
+        }] }), stderr: "" };
+      }
+      if (joined === "codex plugin marketplace remove artifactpass") {
+        throw new Error("codex failed with status 1: permission denied");
+      }
+      return { stdout: "{}", stderr: "" };
+    });
+
+    await expect(installPluginForHosts(["codex"], "/work/durable-marketplace", runner))
+      .rejects.toThrow("permission denied");
+    expect(runner).not.toHaveBeenCalledWith("codex", [
+      "plugin", "marketplace", "add", "/work/durable-marketplace", "--json",
+    ]);
+  });
+
   it("restores a stale marketplace when the replacement plugin fails", async () => {
     const root = await mkdtemp(resolve(tmpdir(), "artifactpass-claude-marketplace-rollback-"));
     const oldMarketplace = resolve(root, "old-marketplace");
