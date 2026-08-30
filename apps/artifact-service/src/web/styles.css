@@ -163,6 +163,46 @@ h1 {
   transform: scale(0.995);
 }
 
+.file-drop--selected {
+  min-height: 0;
+  grid-template-columns: 40px minmax(0, 1fr);
+  place-items: initial;
+  align-items: center;
+  gap: 2px 14px;
+  border-style: solid;
+  text-align: left;
+}
+
+.file-drop--selected .file-drop__mark {
+  grid-row: 1 / span 3;
+  margin: 0;
+  border-radius: 9px;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 0.72rem;
+}
+
+.file-drop--selected .file-drop__state,
+.file-drop--selected .file-drop__title,
+.file-drop--selected .file-drop__detail {
+  grid-column: 2;
+}
+
+.file-drop--selected .text-button {
+  grid-column: 2;
+  grid-row: 4;
+  justify-self: start;
+  margin-top: 10px;
+}
+
+.file-drop__state {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .file-drop__mark {
   width: 34px;
   height: 34px;
@@ -272,6 +312,17 @@ h1 {
   background: var(--error-bg);
 }
 
+.confirmation-note {
+  margin: -6px 0 0;
+  padding: 11px 13px;
+  color: #36553a;
+  background: #edf3ec;
+  border: 1px solid #c9d8c8;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
 .progress {
   display: grid;
   gap: 8px;
@@ -311,6 +362,10 @@ progress {
   font-size: 2.15rem;
   font-weight: 400;
   letter-spacing: -0.04em;
+}
+
+.start-over-button {
+  justify-self: start;
 }
 
 .share-link-row {

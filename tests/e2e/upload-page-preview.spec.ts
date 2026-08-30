@@ -69,6 +69,53 @@ const createTextPdf = (text: string | null): Buffer => {
 };
 
 test.describe("local upload page preview", () => {
+  test("restores a homepage document after sign-in without publishing it", async ({ page }) => {
+    let uploadCount = 0;
+    await mockUploadService(page, () => {
+      uploadCount += 1;
+    });
+    await page.goto(new URL("/", previewUrl).href);
+    await page.evaluate(async () => {
+      const database = await new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open("artifactpass-pending-upload", 1);
+        request.addEventListener("upgradeneeded", () => {
+          if (!request.result.objectStoreNames.contains("uploads")) {
+            request.result.createObjectStore("uploads", { keyPath: "key" });
+          }
+        });
+        request.addEventListener("success", () => resolve(request.result));
+        request.addEventListener("error", () => reject(request.error));
+      });
+      await new Promise<void>((resolve, reject) => {
+        const transaction = database.transaction("uploads", "readwrite");
+        transaction.objectStore("uploads").put({
+          key: "homepage",
+          version: 1,
+          name: "handoff.md",
+          type: "text/markdown",
+          lastModified: Date.now(),
+          bytes: new TextEncoder().encode("# Handoff\n\nExact source.").buffer,
+          expiresInSeconds: 1800,
+          createdAt: Date.now(),
+        });
+        transaction.addEventListener("complete", () => resolve());
+        transaction.addEventListener("error", () => reject(transaction.error));
+      });
+      database.close();
+    });
+    await page.evaluate(() => sessionStorage.setItem("artifactpass-pending-upload", "1"));
+
+    await page.goto(uploadUrl);
+    await expect(page.getByText("handoff.md")).toBeVisible();
+    await expect(page.getByText("Drop one artifact here")).toBeHidden();
+    await expect(page.getByText("Selected document")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Replace document" })).toBeVisible();
+    await expect(page.getByText("Signed in. Review the document and expiry, then create the link.")).toBeVisible();
+    await expect(page.getByLabel("Link expires after")).toHaveValue("1800");
+    await page.screenshot({ path: "test-results/u4-upload-restored.png", fullPage: true });
+    expect(uploadCount).toBe(0);
+  });
+
   test("renders the desktop and mobile upload surface", async ({ page }) => {
     await mockUploadService(page);
     await page.goto(uploadUrl);
@@ -93,10 +140,16 @@ test.describe("local upload page preview", () => {
     });
     await page.getByRole("button", { name: "Create temporary link" }).click();
     await expect(page.getByRole("heading", { name: "The link is live." })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText("browser-report.pdf")).toBeHidden();
+    await expect(page.getByRole("button", { name: "Share another document" })).toBeVisible();
+    await page.screenshot({ path: "test-results/u4-upload-success.png", fullPage: true });
     expect(multipartBody).toContain("Born digital report");
     expect(multipartBody).not.toContain('name="derived_text"');
     expect(multipartBody).not.toContain('name="pdf_provenance"');
     expect(multipartBody).not.toContain('name="extraction_status"');
+
+    await page.getByRole("button", { name: "Share another document" }).click();
+    await expect(page.getByText("Drop one artifact here")).toBeVisible();
   });
 
   test("uploads an image-only browser PDF through the same human-only path", async ({ page }) => {

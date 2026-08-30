@@ -169,12 +169,37 @@ describe("public ArtifactPass authentication", () => {
   });
 
   it("offers Google and GitHub without exposing Cloudflare authentication", async () => {
-    const response = await request("/auth/sign-in?return_to=%2Fupload");
+    const response = await request("/auth/sign-in?return_to=%2Fupload&theme=light");
     expect(response.status).toBe(200);
     const markup = await response.text();
     expect(markup).toContain("Continue with Google");
     expect(markup).toContain("Continue with GitHub");
+    expect(markup).toContain('data-provider="google"><svg');
+    expect(markup).toContain('data-provider="github"><svg');
+    expect(markup).not.toContain('aria-hidden="true">G</span>');
+    expect(markup).not.toContain('aria-hidden="true">GH</span>');
+    expect(markup).toContain('data-theme="light"');
+    expect(markup).toContain("Secure sign-in");
+    expect(markup).toContain("--graphite:#121418");
+    expect(markup).not.toContain("Georgia");
     expect(markup).not.toContain("Cloudflare account");
+  });
+
+  it("completes popup authentication without replacing the landing page", async () => {
+    const page = await request("/auth/popup/complete");
+    const script = await request("/auth/popup-complete.js");
+
+    expect(page.status).toBe(200);
+    expect(page.headers.get("cross-origin-opener-policy")).toBe("same-origin-allow-popups");
+    expect(page.headers.get("content-security-policy")).toContain("script-src 'self'");
+    expect(await page.text()).toContain('src="/auth/popup-complete.js"');
+
+    expect(script.status).toBe(200);
+    expect(script.headers.get("content-type")).toContain("application/javascript");
+    const source = await script.text();
+    expect(source).toContain('type: "artifactpass:auth-complete"');
+    expect(source).toContain("window.opener.postMessage");
+    expect(source).toContain('window.location.assign("/upload")');
   });
 
   it("completes Google login, stores only a hashed session, and approves the agent", async () => {

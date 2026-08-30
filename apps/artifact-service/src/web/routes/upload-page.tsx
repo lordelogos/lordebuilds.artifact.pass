@@ -9,6 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { ExpiryPicker } from "../components/expiry-picker";
 import { FileDrop } from "../components/file-drop";
+import { clearPendingUpload, hasPendingUploadIntent, readPendingUpload } from "../pending-upload";
 import { findFirstSensitiveContent } from "../../../../../scripts/security-patterns.mjs";
 
 type UploadStage = "idle" | "validating" | "uploading" | "complete";
@@ -117,6 +118,7 @@ export function UploadPage() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<UploadResult | null>(null);
   const [copiedShareUrl, setCopiedShareUrl] = useState<string | null>(null);
+  const [restoredFromSignIn, setRestoredFromSignIn] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -137,6 +139,37 @@ export function UploadPage() {
     return () => controller.abort();
   }, []);
 
+  useEffect(() => {
+    if (policy === null || !hasPendingUploadIntent()) return;
+    let cancelled = false;
+
+    void readPendingUpload()
+      .then(async (pending) => {
+        if (pending === null || cancelled) return;
+        const validationError = await validateBrowserFile(
+          pending.file,
+          policy.max_artifact_bytes,
+        );
+        if (cancelled) return;
+        setError(validationError);
+        if (validationError === null) {
+          setFile(pending.file);
+          setRestoredFromSignIn(true);
+          if (policy.expiry.allowed_seconds.includes(pending.expiresInSeconds)) {
+            setExpiresInSeconds(pending.expiresInSeconds);
+          }
+        }
+        await clearPendingUpload();
+      })
+      .catch(() => {
+        if (!cancelled) setError("The document selected before sign-in could not be restored. Choose it again.");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [policy]);
+
   const busy = stage !== "idle" && stage !== "complete";
   const cutoff = useMemo(
     () => result === null ? null : new Date(result.manifest.expires_at),
@@ -147,6 +180,7 @@ export function UploadPage() {
     if (policy === null) return;
     setResult(null);
     setCopiedShareUrl(null);
+    setRestoredFromSignIn(false);
     setStage("validating");
     const validationError = await validateBrowserFile(
       nextFile,
@@ -168,6 +202,7 @@ export function UploadPage() {
         expiresInSeconds,
         setProgress,
       ));
+      setRestoredFromSignIn(false);
       setProgress(100);
       setStage("complete");
     } catch (caught) {
@@ -185,6 +220,16 @@ export function UploadPage() {
     } catch {
       setError("Copy was blocked. Select the link and copy it manually.");
     }
+  };
+
+  const startAnotherShare = () => {
+    setFile(null);
+    setResult(null);
+    setError(null);
+    setCopiedShareUrl(null);
+    setProgress(0);
+    setStage("idle");
+    setRestoredFromSignIn(false);
   };
 
   return (
@@ -211,22 +256,32 @@ export function UploadPage() {
             void publish();
           }}
         >
-          <FileDrop disabled={busy || policy === null} file={file} onFile={(nextFile) => void chooseFile(nextFile)} />
+          {result === null && (
+            <>
+              <FileDrop disabled={busy || policy === null} file={file} onFile={(nextFile) => void chooseFile(nextFile)} />
 
-          {policy === null ? (
-            <p className="policy-note">Reading this deployment’s limits…</p>
-          ) : (
-            <div className="form-row">
-              <ExpiryPicker
-                disabled={busy}
-                options={policy.expiry.allowed_seconds}
-                value={expiresInSeconds}
-                onChange={setExpiresInSeconds}
-              />
-              <p className="policy-note">
-                Up to {Math.round(policy.max_artifact_bytes / (1024 * 1024))} MB · exact bytes retained
-              </p>
-            </div>
+              {restoredFromSignIn && (
+                <p className="confirmation-note" role="status">
+                  Signed in. Review the document and expiry, then create the link.
+                </p>
+              )}
+
+              {policy === null ? (
+                <p className="policy-note">Reading this deployment’s limits…</p>
+              ) : (
+                <div className="form-row">
+                  <ExpiryPicker
+                    disabled={busy}
+                    options={policy.expiry.allowed_seconds}
+                    value={expiresInSeconds}
+                    onChange={setExpiresInSeconds}
+                  />
+                  <p className="policy-note">
+                    Up to {Math.round(policy.max_artifact_bytes / (1024 * 1024))} MB · exact bytes retained
+                  </p>
+                </div>
+              )}
+            </>
           )}
 
           {error !== null && <p className="message message--error" role="alert">{error}</p>}
@@ -259,6 +314,9 @@ export function UploadPage() {
                 Available until {cutoff?.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}.
                 Losing this URL means losing access.
               </p>
+              <button className="text-button start-over-button" type="button" onClick={startAnotherShare}>
+                Share another document
+              </button>
             </section>
           )}
         </form>

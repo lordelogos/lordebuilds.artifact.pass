@@ -11,7 +11,7 @@ const request = (path: string): Promise<Response> =>
 
 describe("public service pages", () => {
   it.each([
-    ["/", "ArtifactPass", "Share work with people and agents"],
+    ["/", "ArtifactPass", "Pass work between agents."],
     ["/privacy", "Privacy", "Google and GitHub"],
     ["/terms", "Terms", "temporary bearer link"],
   ])("serves %s without authentication", async (path, title, copy) => {
@@ -33,5 +33,29 @@ describe("public service pages", () => {
     expect(markup).toContain('href="/upload"');
     expect(markup).toContain('href="/privacy"');
     expect(markup).toContain('href="/terms"');
+  });
+
+  it("serves the approved setup-first homepage with nonce-protected interactions", async () => {
+    const response = await request("/");
+    const markup = await response.text();
+    const policy = response.headers.get("content-security-policy") ?? "";
+
+    expect(markup).toContain("MCP + Agent Skills");
+    expect(markup).toContain("pnpm dlx artifactpass");
+    expect(markup).toContain("Exact, temporary artifact handoffs for developers and agentic teams.");
+    expect(markup).toContain('id="theme-toggle"');
+    expect(markup).toContain("theme-symbol");
+    expect(markup).toContain('class="header-divider"');
+    expect(markup).toContain('aria-label="View ArtifactPass on GitHub"');
+    expect(markup).toContain('class="header-action header-action--primary"');
+    expect(markup).toContain('id="upload-dialog"');
+    expect(markup).toContain('id="pending-file-input"');
+    expect(markup).toContain("artifactpass-pending-upload");
+    expect(markup).toContain("window.open");
+    expect(markup).toContain("artifactpass:auth-complete");
+    expect(markup).toContain("/auth/popup/complete");
+    expect(policy).toContain("script-src 'nonce-");
+    expect(policy).toContain("form-action 'self'");
+    expect(response.headers.get("cross-origin-opener-policy")).toBe("same-origin-allow-popups");
   });
 });

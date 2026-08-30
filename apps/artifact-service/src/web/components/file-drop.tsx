@@ -26,7 +26,7 @@ export function FileDrop({ disabled, file, onFile }: FileDropProps) {
 
   return (
     <div
-      className={`file-drop${isDragging ? " file-drop--active" : ""}`}
+      className={`file-drop${file === null ? "" : " file-drop--selected"}${isDragging ? " file-drop--active" : ""}`}
       onDragEnter={(event) => {
         event.preventDefault();
         if (!disabled) setIsDragging(true);
@@ -48,7 +48,7 @@ export function FileDrop({ disabled, file, onFile }: FileDropProps) {
         disabled={disabled}
         onChange={(event) => chooseFirst(event.currentTarget.files)}
       />
-      <div className="file-drop__mark" aria-hidden="true">+</div>
+      <div className="file-drop__mark" aria-hidden="true">{file === null ? "+" : fileKind(file)}</div>
       {file === null ? (
         <>
           <p className="file-drop__title">Drop one artifact here</p>
@@ -56,6 +56,7 @@ export function FileDrop({ disabled, file, onFile }: FileDropProps) {
         </>
       ) : (
         <>
+          <p className="file-drop__state">Selected document</p>
           <p className="file-drop__title">{file.name}</p>
           <p className="file-drop__detail">{formatBytes(file.size)}</p>
         </>
@@ -66,7 +67,7 @@ export function FileDrop({ disabled, file, onFile }: FileDropProps) {
         disabled={disabled}
         onClick={() => input.current?.click()}
       >
-        {file === null ? "Choose a file" : "Choose a different file"}
+        {file === null ? "Choose a file" : "Replace document"}
       </button>
     </div>
   );
@@ -76,4 +77,11 @@ const formatBytes = (bytes: number): string => {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+const fileKind = (file: File): string => {
+  const extension = file.name.split(".").pop()?.toUpperCase() ?? "FILE";
+  if (extension === "MARKDOWN") return "MD";
+  if (extension === "HTM") return "HTML";
+  return extension;
 };
