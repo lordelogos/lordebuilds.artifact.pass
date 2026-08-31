@@ -51,7 +51,16 @@ export class CloudflareClient {
     return envelope.result;
   }
 
-  public verifyToken(): Promise<{ readonly status: string }> {
-    return this.request("/user/tokens/verify");
+  public async verifyToken(): Promise<{ readonly status: string }> {
+    try {
+      return await this.request("/user/tokens/verify");
+    } catch (error) {
+      // Wrangler OAuth credentials are valid Cloudflare bearer credentials, but
+      // Cloudflare's API-token verification endpoint rejects them with code 1000.
+      // A successful authenticated user lookup proves the OAuth session instead.
+      if (!(error instanceof CloudflareApiError) || error.code !== 1000) throw error;
+      await this.request("/user");
+      return { status: "active" };
+    }
   }
 }

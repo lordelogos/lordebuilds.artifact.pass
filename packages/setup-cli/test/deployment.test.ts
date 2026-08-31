@@ -133,6 +133,26 @@ describe("Cloudflare deployment", () => {
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer cloudflare-secret");
   });
 
+  it("accepts a Wrangler OAuth credential after an authenticated user lookup", async () => {
+    const fetch = vi.fn(async (request: string | URL | Request) => {
+      if (String(request).endsWith("/user/tokens/verify")) {
+        return Response.json({
+          success: false,
+          result: null,
+          errors: [{ code: 1000, message: "Invalid API Token" }],
+        }, { status: 400 });
+      }
+      return Response.json({ success: true, result: { id: "user-id" } });
+    });
+    const client = new CloudflareClient({ token: "wrangler-oauth", fetch });
+
+    await expect(client.verifyToken()).resolves.toEqual({ status: "active" });
+    expect(fetch.mock.calls.map(([request]) => String(request))).toEqual([
+      "https://api.cloudflare.com/client/v4/user/tokens/verify",
+      "https://api.cloudflare.com/client/v4/user",
+    ]);
+  });
+
   it("turns permission denials into the least-privilege checklist", () => {
     const message = describeCloudflareFailure(new CloudflareApiError("forbidden", 403));
     expect(message).toContain("Workers Scripts Write");
