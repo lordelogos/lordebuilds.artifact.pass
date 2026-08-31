@@ -83,9 +83,9 @@ export const createArtifactApplication = (options: ArtifactApplicationOptions = 
       : { maximumBytes: options.publicUploadMaximumBytes }),
   };
 
-  const servePublicPage = (page: PublicPage) => {
+  const servePublicPage = (page: PublicPage, requestUrl: string) => {
     const nonce = createNonce();
-    return new Response(renderPublicPage(page, nonce), {
+    return new Response(renderPublicPage(page, nonce, requestUrl), {
       status: 200,
       headers: {
         ...publicPageHeaders(nonce),
@@ -94,9 +94,9 @@ export const createArtifactApplication = (options: ArtifactApplicationOptions = 
     });
   };
 
-  app.get("/", () => servePublicPage("home"));
-  app.get("/privacy", () => servePublicPage("privacy"));
-  app.get("/terms", () => servePublicPage("terms"));
+  app.get("/", (context) => servePublicPage("home", context.req.url));
+  app.get("/privacy", (context) => servePublicPage("privacy", context.req.url));
+  app.get("/terms", (context) => servePublicPage("terms", context.req.url));
 
   app.get("/health", (context) =>
     context.json({

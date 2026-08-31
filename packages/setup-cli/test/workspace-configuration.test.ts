@@ -71,7 +71,7 @@ describe("workspace deployment configuration", () => {
     });
   });
 
-  it("asks an unconfigured workspace whether its deployment is public or organization-owned", async () => {
+  it("asks an unconfigured workspace whether its deployment is public or private", async () => {
     const prompt = vi.fn().mockResolvedValue("1");
     const companyActive = { ...settings, active_profile: "company" };
 
@@ -86,14 +86,14 @@ describe("workspace deployment configuration", () => {
     });
     expect(prompt).toHaveBeenCalledOnce();
     expect(prompt).toHaveBeenCalledWith(
-      "Public or organization deployment?\n" +
+      "Public or private deployment?\n" +
       "  1. Public\n" +
-      "  2. Organization\n" +
+      "  2. Private\n" +
       "Answer: ",
     );
   });
 
-  it("lets a workspace select an organization deployment", async () => {
+  it("lets a workspace select a private deployment", async () => {
     const prompt = vi.fn()
       .mockResolvedValueOnce("2")
       .mockResolvedValueOnce("https://sharing.example.com");
@@ -112,7 +112,7 @@ describe("workspace deployment configuration", () => {
     expect(resolved.profileName).toMatch(/^org-sharing-example-com-[a-f0-9]{6}$/u);
   });
 
-  it("asks for an organization URL without suggesting the current deployment", async () => {
+  it("asks for a private deployment URL without suggesting the current deployment", async () => {
     const prompt = vi.fn()
       .mockResolvedValueOnce("2")
       .mockResolvedValueOnce("");
@@ -122,15 +122,15 @@ describe("workspace deployment configuration", () => {
       settings,
       interactive: true,
       prompt,
-    })).rejects.toThrow("Organization deployment URL is required");
+    })).rejects.toThrow("Private deployment URL is required");
     expect(prompt).toHaveBeenNthCalledWith(
       1,
-      "Public or organization deployment?\n" +
+      "Public or private deployment?\n" +
       "  1. Public\n" +
-      "  2. Organization\n" +
+      "  2. Private\n" +
       "Answer: ",
     );
-    expect(prompt).toHaveBeenNthCalledWith(2, "Organization deployment URL: ");
+    expect(prompt).toHaveBeenNthCalledWith(2, "Private deployment URL: ");
   });
 
   it("rejects invalid deployment types and URLs without looping", async () => {

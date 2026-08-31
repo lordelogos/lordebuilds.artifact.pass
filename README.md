@@ -24,7 +24,7 @@ Install from the workspace the agent may share:
 pnpm dlx artifactpass
 ```
 
-The setup asks whether this workspace uses public ArtifactPass or an organization deployment, then installs the plugin, MCP server, and both Agent Skills. It does not open a browser or create a connection.
+The setup asks whether this workspace uses public ArtifactPass or a private deployment, then installs the plugin, MCP server, and both Agent Skills. It does not open a browser or create a connection.
 
 Start a new agent session once so it loads the newly installed plugin. ArtifactPass will be present but disconnected. Ask the agent to share an artifact or say **Connect ArtifactPass**. The plugin opens `artifactpass.com`; sign in with Google or GitHub and approve the code you just requested. The plugin stores only the resulting scoped agent token in the operating-system credential store, becomes connected in that same session, and continues the pending publication. There is no terminal connection command, reinstall, or post-login restart.
 

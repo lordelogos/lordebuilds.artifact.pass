@@ -134,9 +134,9 @@ export const resolveWorkspaceConfiguration = async (
   }
 
   const deploymentType = (await options.prompt(
-    "Public or organization deployment?\n" +
+    "Public or private deployment?\n" +
     "  1. Public\n" +
-    "  2. Organization\n" +
+    "  2. Private\n" +
     "Answer: ",
   )).trim();
   if (deploymentType === "1") {
@@ -146,9 +146,9 @@ export const resolveWorkspaceConfiguration = async (
     throw new Error("Enter 1 or 2");
   }
 
-  const organizationUrl = (await options.prompt("Organization deployment URL: ")).trim();
-  if (organizationUrl.length === 0) throw new Error("Organization deployment URL is required");
-  const baseUrl = normalizeOrigin(organizationUrl, false);
+  const privateUrl = (await options.prompt("Private deployment URL: ")).trim();
+  if (privateUrl.length === 0) throw new Error("Private deployment URL is required");
+  const baseUrl = normalizeOrigin(privateUrl, false);
   return {
     baseUrl,
     profileName: profileForOrigin(baseUrl, options.settings),

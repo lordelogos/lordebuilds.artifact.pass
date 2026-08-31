@@ -10,7 +10,7 @@ From the workspace the agent may share, run:
 pnpm dlx artifactpass
 ```
 
-Choose public ArtifactPass or an organization deployment when prompted. Setup installs or repairs the portable bundle, registers every detected supported host, negotiates the MCP tools, verifies both skills, and writes a private install receipt. It does not open a browser or authenticate.
+Choose public ArtifactPass or a private deployment when prompted. Setup installs or repairs the portable bundle, registers every detected supported host, negotiates the MCP tools, verifies both skills, and writes a private install receipt. It does not open a browser or authenticate.
 
 ## Connect inside the agent
 
@@ -24,7 +24,7 @@ An existing installation is reconfigurable. From the workspace you want to chang
 pnpm dlx artifactpass configure
 ```
 
-Choose public ArtifactPass or enter the organization deployment URL. The choice is bound to the current workspace. Other workspaces keep their own deployment, profile, and credential. Start a new agent session so its MCP process loads the changed workspace configuration. It remains disconnected until the agent invokes **Connect ArtifactPass**.
+Choose public ArtifactPass or enter the private deployment URL. The choice is bound to the current workspace. Other workspaces keep their own deployment, profile, and credential. Start a new agent session so its MCP process loads the changed workspace configuration. It remains disconnected until the agent invokes **Connect ArtifactPass**.
 
 For automation, make the same change without prompts:
 
