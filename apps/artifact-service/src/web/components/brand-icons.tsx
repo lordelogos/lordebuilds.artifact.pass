@@ -1,5 +1,4 @@
 import type { SVGAttributes } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
 
 type BrandIconProps = SVGAttributes<SVGSVGElement>;
 
@@ -20,8 +19,3 @@ export const GoogleIcon = (properties: BrandIconProps) => (
     />
   </svg>
 );
-
-export const providerIconMarkup = {
-  github: renderToStaticMarkup(<GitHubIcon aria-hidden="true" focusable="false" />),
-  google: renderToStaticMarkup(<GoogleIcon aria-hidden="true" focusable="false" />),
-} as const;

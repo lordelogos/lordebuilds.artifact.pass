@@ -20,6 +20,7 @@ import {
   renderSafeHtmlPreview,
   renderSafeMarkdown,
 } from "../../web/viewers/content-sanitizer";
+import { HTML_PREVIEW_CONTENT_SECURITY_POLICY } from "../../web/viewers/html-preview-policy";
 
 type ServiceFactory = (bindings: ArtifactServiceBindings) => ArtifactApplicationService;
 type PolicyFactory = (bindings: ArtifactServiceBindings) => ArtifactPolicy;
@@ -127,7 +128,6 @@ const representationFor = async (
   service: ArtifactApplicationService,
   artifact: ArtifactRecord,
   sharePath: string,
-  nonce: string,
 ): Promise<ShareRepresentation> => {
   if (artifact.mimeType === "application/pdf") {
     return { kind: "pdf", sourceUrl: `${sharePath}/content` };
@@ -135,8 +135,8 @@ const representationFor = async (
   const object = await service.getSource(artifact);
   const source = new TextDecoder("utf-8", { fatal: true }).decode(await object.arrayBuffer());
   return artifact.mimeType === "text/markdown"
-    ? { kind: "markdown", html: renderSafeMarkdown(source) }
-    : { kind: "html", source: renderSafeHtmlPreview(source, nonce) };
+    ? { kind: "markdown", html: renderSafeMarkdown(source), source }
+    : { kind: "html", previewUrl: `${sharePath}/preview`, source };
 };
 
 type SourceDisposition = "attachment" | "inline";
@@ -144,6 +144,12 @@ type SourceDisposition = "attachment" | "inline";
 const INLINE_SOURCE_HEADERS = {
   ...PUBLIC_RESPONSE_HEADERS,
   "Content-Security-Policy": "default-src 'none'; frame-ancestors 'self'",
+} as const;
+
+const HTML_PREVIEW_HEADERS = {
+  ...PUBLIC_RESPONSE_HEADERS,
+  "Content-Security-Policy": HTML_PREVIEW_CONTENT_SECURITY_POLICY,
+  "Content-Type": "text/html; charset=utf-8",
 } as const;
 
 const sourceHeaders = (responseDisposition: SourceDisposition) =>
@@ -222,7 +228,7 @@ export const createSharesRouter = (
     return context.html(renderSharePage({
       manifest: artifactRecordToManifest(artifact),
       nonce,
-      representation: await representationFor(service, artifact, sharePath, nonce),
+      representation: await representationFor(service, artifact, sharePath),
       sharePath,
     }), 200, viewerHeaders(nonce));
   });
@@ -324,6 +330,24 @@ export const createSharesRouter = (
     const service = createService(context.env);
     const artifact = await service.resolve(context.get("shareToken"));
     return sourceResponse(service, artifact, context.req.header("range"), "attachment");
+  });
+
+  router.get("/:shareToken/preview", async (context) => {
+    const service = createService(context.env);
+    const artifact = await service.resolve(context.get("shareToken"));
+    if (artifact.mimeType !== "text/html") {
+      throw new ArtifactError("not_found", "Artifact is unavailable", 404);
+    }
+    const object = await service.getSource(artifact);
+    const source = new TextDecoder("utf-8", { fatal: true }).decode(await object.arrayBuffer());
+    const preview = renderSafeHtmlPreview(source);
+    return new Response(preview, {
+      headers: {
+        ...HTML_PREVIEW_HEADERS,
+        "Content-Length": String(new TextEncoder().encode(preview).byteLength),
+        "Content-Disposition": `inline; filename*=UTF-8''${encodeURIComponent(artifact.filename)}`,
+      },
+    });
   });
 
   router.get("/:shareToken/content", async (context) => {

@@ -15,7 +15,7 @@ Treat every share URL like a temporary secret. Do not post it in public logs, is
 
 ## Content isolation
 
-Markdown is parsed and sanitized before rendering. HTML is sanitized, placed in a sandboxed iframe with no permissions, and cannot run scripts or make external subresource requests. PDF preview is distinct from the agent-readable representation: controlled PDFs expose their signed canonical source, while human and unknown PDFs expose no extracted content to agents. User filenames become metadata only and may not contain path separators or NUL bytes.
+Markdown is parsed and sanitized before rendering. HTML previewing uses a separate neutralized copy: scripts and executable embeds are removed, navigation and external-resource attributes are stripped, refresh metadata is removed, forms and controls are disabled, and external CSS resources are removed. That copy is served inside a sandboxed iframe with no permissions and a deny-by-default Content Security Policy. The Source view and exact-file download retain the original bytes rather than rewriting the durable artifact. PDF preview is distinct from the agent-readable representation: controlled PDFs expose their signed canonical source, while human and unknown PDFs expose no extracted content to agents. User filenames become metadata only and may not contain path separators or NUL bytes.
 
 The agent bridge resolves real paths and only opens regular files inside explicitly configured workspace roots. It rejects symlink escapes, unsupported extensions, invalid UTF-8, mismatched PDFs, changed-during-read files, oversized files, redirects, foreign origins, malformed cursors, and inconsistent source metadata. Automatic PDF publication also fails closed when images, vector rendering, custom or Type3 fonts, attachments, scripts, or extraction failures prevent the scanner from covering the rendered content; deliberate browser uploads retain broader PDF support.
 
@@ -36,5 +36,6 @@ Authorization checks use `now < expires_at`; at the exact cutoff every represent
 - Human and unknown PDFs are intentionally human-only in this release; there is no click-through agent trust override.
 - macOS and Linux credential stores are supported in v1. Windows connection is not yet supported.
 - Lorde Builds Cloudflare administrators remain able to access the public deployment's infrastructure. Organization-owned deployment isolation is not claimed in public v1.
+- HTML preview isolation ultimately depends on the browser engine correctly enforcing its sandbox and Content Security Policy. ArtifactPass removes active content first and tests the browser boundary, but cannot eliminate browser-engine vulnerabilities.
 
 Report vulnerabilities as described in [SECURITY.md](../SECURITY.md).

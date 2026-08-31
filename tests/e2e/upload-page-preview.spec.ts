@@ -121,7 +121,13 @@ test.describe("local upload page preview", () => {
     await page.goto(uploadUrl);
     await expect(page.getByRole("heading", { name: /Share the work/ })).toBeVisible();
     await expect(page.getByText("Drop one artifact here")).toBeVisible();
+    await expect(page.getByRole("link", { name: "View ArtifactPass on GitHub" })).toBeVisible();
     await page.screenshot({ path: "test-results/u4-upload-desktop.png", fullPage: true });
+
+    await page.getByRole("button", { name: "Switch to light mode" }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+    await page.screenshot({ path: "test-results/u4-upload-light.png", fullPage: true });
+    await page.getByRole("button", { name: "Switch to dark mode" }).click();
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.screenshot({ path: "test-results/u4-upload-mobile.png", fullPage: true });

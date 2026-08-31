@@ -9,6 +9,13 @@ import { useEffect, useMemo, useState } from "react";
 
 import { ExpiryPicker } from "../components/expiry-picker";
 import { FileDrop } from "../components/file-drop";
+import {
+  applyPublicTheme,
+  PublicFooter,
+  PublicNavigation,
+  readPublicTheme,
+  type PublicTheme,
+} from "../components/public-chrome";
 import { clearPendingUpload, hasPendingUploadIntent, readPendingUpload } from "../pending-upload";
 import { findFirstSensitiveContent } from "../../../../../scripts/security-patterns.mjs";
 
@@ -110,6 +117,7 @@ const statusCopy: Record<Exclude<UploadStage, "idle" | "complete">, string> = {
 };
 
 export function UploadPage() {
+  const [theme, setTheme] = useState<PublicTheme>(readPublicTheme);
   const [policy, setPolicy] = useState<UploadPolicy | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [expiresInSeconds, setExpiresInSeconds] = useState(0);
@@ -119,6 +127,10 @@ export function UploadPage() {
   const [result, setResult] = useState<UploadResult | null>(null);
   const [copiedShareUrl, setCopiedShareUrl] = useState<string | null>(null);
   const [restoredFromSignIn, setRestoredFromSignIn] = useState(false);
+
+  useEffect(() => {
+    applyPublicTheme(theme);
+  }, [theme]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -233,20 +245,24 @@ export function UploadPage() {
   };
 
   return (
-    <main className="upload-shell">
-      <header className="masthead">
-        <a className="wordmark" href="/upload" aria-label="ArtifactPass upload">ArtifactPass</a>
-        <span className="masthead__note">Temporary handoffs, exact source</span>
-      </header>
-
-      <section className="upload-layout" aria-labelledby="upload-title">
+    <div className="share-shell">
+      <PublicNavigation
+        theme={theme}
+        onThemeToggle={() => setTheme((current) => current === "dark" ? "light" : "dark")}
+      />
+      <main className="upload-main">
+        <section className="upload-layout" aria-labelledby="upload-title">
         <div className="upload-intro">
-          <p className="eyebrow">One file. One expiring URL.</p>
+          <p className="eyebrow">Human share · exact source</p>
           <h1 id="upload-title">Share the work,<br />not a permanent copy.</h1>
           <p className="lede">
-            Publish HTML, Markdown, or PDF for a person or coding agent. Access ends at
-            the selected cutoff; there is no history or recovery screen.
+            Choose one HTML, Markdown, or PDF artifact. You decide the cutoff, then ArtifactPass gives you one temporary URL.
           </p>
+          <div className="share-principles" aria-label="Sharing guarantees">
+            <span><strong>One file</strong>Exact uploaded source</span>
+            <span><strong>One link</strong>15, 30, or 60 minutes</span>
+            <span><strong>No history</strong>Access ends at the cutoff</span>
+          </div>
         </div>
 
         <form
@@ -320,7 +336,9 @@ export function UploadPage() {
             </section>
           )}
         </form>
-      </section>
-    </main>
+        </section>
+      </main>
+      <PublicFooter />
+    </div>
   );
 }

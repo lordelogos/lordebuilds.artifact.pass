@@ -1,4 +1,6 @@
 import { Hono } from "hono";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 
 import type { ArtifactServiceBindings } from "../adapters/cloudflare-bindings";
 import {
@@ -17,10 +19,15 @@ import { consumeRequestRateLimit } from "../auth/rate-limit";
 import type { ArtifactHonoEnvironment } from "../middleware/authorize";
 import { ArtifactError } from "../storage/artifact-error";
 import { sha256 } from "../storage/crypto";
-import { providerIconMarkup } from "../../web/components/brand-icons";
+import { GitHubIcon, GoogleIcon } from "../../web/components/brand-icons";
 
 type OAuthProvider = "google" | "github";
 type AuthPageTheme = "dark" | "light";
+
+const providerIconMarkup = {
+  github: renderToStaticMarkup(createElement(GitHubIcon, { "aria-hidden": true, focusable: "false" })),
+  google: renderToStaticMarkup(createElement(GoogleIcon, { "aria-hidden": true, focusable: "false" })),
+} as const;
 
 export interface AuthRouterOptions {
   readonly now?: () => number;
