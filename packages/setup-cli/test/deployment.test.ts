@@ -518,6 +518,7 @@ describe("Cloudflare deployment", () => {
   it("binds public OAuth secrets by hash without writing them to the approval manifest", async () => {
     const root = await deploymentRoot();
     const manifestPath = resolve(root, "public-approval.json");
+    const client = fakeClient();
     await deployArtifactShare({
       ...input,
       identities: [],
@@ -529,7 +530,7 @@ describe("Cloudflare deployment", () => {
       },
       writeApprovalManifest: manifestPath,
     }, {
-      client: fakeClient({ existing: true }).client,
+      client: client.client,
       deploymentRoot: root,
     });
 
@@ -549,6 +550,9 @@ describe("Cloudflare deployment", () => {
     });
     expect(manifestSource).not.toContain("google-client-secret");
     expect(manifestSource).not.toContain("github-client-secret");
+    expect(client.requests.map(({ path }) => path)).not.toContain(
+      `/accounts/${accountId}/access/organizations`,
+    );
   });
 
   it("rejects missing identity, invalid IDs, and a hostname outside the zone", async () => {

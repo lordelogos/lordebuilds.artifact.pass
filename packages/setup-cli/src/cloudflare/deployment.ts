@@ -231,7 +231,7 @@ const approvalBinding = async (
   serviceName: string,
   dependencies: DeployDependencies,
 ): Promise<ApprovalManifest["binding"]> => {
-  const [workersSubdomain, zone, domains, databases, buckets, organization, applications] = await Promise.all([
+  const [workersSubdomain, zone, domains, databases, buckets, applications] = await Promise.all([
     readWorkersSubdomain(input, dependencies),
     dependencies.client.request<{ readonly name: string; readonly status: string }>(`/zones/${input.zoneId}`),
     dependencies.client.request<readonly WorkerDomain[]>(`/accounts/${input.accountId}/workers/domains`),
@@ -241,10 +241,14 @@ const approvalBinding = async (
     dependencies.client.request<{ readonly buckets: readonly Bucket[] }>(
       `/accounts/${input.accountId}/r2/buckets`,
     ),
-    dependencies.client.request<AccessOrganization>(`/accounts/${input.accountId}/access/organizations`),
     dependencies.client.request<readonly AccessApplication[]>(`/accounts/${input.accountId}/access/apps`),
   ]);
   const application = applications.find((candidate) => candidate.name === serviceName);
+  const organization = input.publicAuth !== undefined && application === undefined
+    ? null
+    : await dependencies.client.request<AccessOrganization>(
+        `/accounts/${input.accountId}/access/organizations`,
+      );
   const policies = application === undefined
     ? []
     : await dependencies.client.request<readonly {
@@ -447,13 +451,15 @@ export const deployArtifactShare = async (
     changed.push("R2 bucket");
   }
 
-  const organization = await dependencies.client.request<AccessOrganization>(
-    `/accounts/${input.accountId}/access/organizations`,
-  );
   const applications = await dependencies.client.request<readonly AccessApplication[]>(
     `/accounts/${input.accountId}/access/apps`,
   );
   let application = applications.find((candidate) => candidate.name === serviceName);
+  const organization = input.publicAuth !== undefined && application === undefined
+    ? null
+    : await dependencies.client.request<AccessOrganization>(
+        `/accounts/${input.accountId}/access/organizations`,
+      );
   const legacyAccessPolicies = input.publicAuth !== undefined && application !== undefined
     ? await dependencies.client.request<readonly AccessPolicy[]>(
         `/accounts/${input.accountId}/access/apps/${application.id}/policies`,
@@ -493,6 +499,7 @@ export const deployArtifactShare = async (
   }
   if (input.publicAuth === undefined) {
     if (application === undefined) throw new Error("Cloudflare Access application is unavailable");
+    if (organization === null) throw new Error("Cloudflare Access organization is unavailable");
     if (typeof application.aud !== "string" || application.aud.length === 0) {
       throw new Error("Cloudflare Access application did not return an audience tag");
     }
@@ -553,6 +560,7 @@ export const deployArtifactShare = async (
   template.preview_urls = false;
   if (input.publicAuth === undefined) {
     if (application === undefined) throw new Error("Cloudflare Access application is unavailable");
+    if (organization === null) throw new Error("Cloudflare Access organization is unavailable");
     delete template.secrets;
     template.vars.HUMAN_AUTH_MODE = "cloudflare-access";
     template.vars.ACCESS_TEAM_DOMAIN = `https://${organization.auth_domain}`;
@@ -681,6 +689,7 @@ export const deployArtifactShare = async (
           if (
             typeof restoredApplication.aud !== "string" ||
             restoredApplication.aud.length === 0 ||
+            organization === null ||
             !/^[a-z0-9-]+\.cloudflareaccess\.com$/u.test(organization.auth_domain)
           ) {
             throw new Error("Restored Cloudflare Access configuration is incomplete");
