@@ -70,6 +70,38 @@ describe("private deployment identity setup", () => {
     expect(JSON.stringify(result.state)).not.toContain("hidden");
   });
 
+  it("reattests a saved email-code plan without asking for the publisher audience again", async () => {
+    const question = vi.fn(async () => {
+      throw new Error("resume must not prompt for an already proven audience");
+    });
+    const result = await runPrivateIdentitySetup({
+      ...state("email-code"),
+      stage: "repair-required",
+      resources: {
+        placement: "automatic",
+        identity_provider_ids: "[]",
+        access_identity_rules: JSON.stringify([{ kind: "email", value: "admin@example.com" }]),
+      },
+      checkpoints: {
+        "identity-ready": {
+          proven_at: now.toISOString(),
+          evidence: { mode: "email-code" },
+        },
+      },
+    }, {
+      client: clientWith([{ id: "otp-created-during-deploy", name: null, type: "onetimepin" }]),
+      prompt: { question, write: vi.fn() },
+      openBrowser: vi.fn(),
+      now: () => now,
+    });
+    expect(question).not.toHaveBeenCalled();
+    expect(result.plan).toMatchObject({
+      providerIds: ["otp-created-during-deploy"],
+      providerAction: "reuse",
+      rules: [{ kind: "email", value: "admin@example.com" }],
+    });
+  });
+
   it("selects one or several existing company providers by stable number", async () => {
     const result = await runPrivateIdentitySetup(state("company-login"), {
       client: clientWith([

@@ -53,6 +53,35 @@ const askMultiple = async (
 const emailPattern = /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/u;
 const domainPattern = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/u;
 
+const storedIdentityRules = (state: PrivateDeploymentState): readonly PrivateAccessIdentityRule[] | null => {
+  if (state.checkpoints["identity-ready"] === undefined) return null;
+  const encoded = state.resources?.access_identity_rules;
+  if (encoded === undefined) return null;
+  try {
+    const value = JSON.parse(encoded) as unknown;
+    if (!Array.isArray(value) || value.length === 0 || !value.every((item) =>
+      item !== null && typeof item === "object" && !Array.isArray(item) &&
+      ((item as { kind?: unknown }).kind === "authenticated" ||
+        (item as { kind?: unknown }).kind === "domain" ||
+        (item as { kind?: unknown }).kind === "email") &&
+      typeof (item as { value?: unknown }).value === "string")) return null;
+    return value as PrivateAccessIdentityRule[];
+  } catch {
+    return null;
+  }
+};
+
+const storedProviderIds = (state: PrivateDeploymentState): readonly string[] => {
+  const encoded = state.resources?.identity_provider_ids;
+  if (encoded === undefined) return [];
+  try {
+    const value = JSON.parse(encoded) as unknown;
+    return Array.isArray(value) && value.every((item) => typeof item === "string") ? value : [];
+  } catch {
+    return [];
+  }
+};
+
 const askRules = async (prompt: BrowserHandoffPrompt): Promise<readonly PrivateAccessIdentityRule[]> => {
   const kind = await askChoice(prompt, "Who may publish through this private deployment?", [
     "People with approved company email domains",
@@ -96,11 +125,12 @@ export const runPrivateIdentitySetup = async (
   let selected: readonly CloudflareIdentityProviderSummary[] = [];
   let providerAction: PrivateIdentityPlan["providerAction"] = "reuse";
   let rules: readonly PrivateAccessIdentityRule[];
+  const storedRules = storedIdentityRules(state);
   if (state.sign_in_mode === "email-code") {
     const otp = providers.find((provider) => provider.type === "onetimepin");
     if (otp !== undefined) selected = [otp];
     else providerAction = "create-after-approval";
-    rules = await askRules(dependencies.prompt);
+    rules = storedRules ?? await askRules(dependencies.prompt);
   } else if (state.sign_in_mode === "company-login") {
     let companyProviders = providers.filter((provider) => provider.type !== "onetimepin");
     if (companyProviders.length === 0) {
@@ -126,8 +156,12 @@ export const runPrivateIdentitySetup = async (
       });
       if (handoff.status !== "ready") return { status: "saved", state, message: handoff.message };
     }
-    selected = await askMultiple(dependencies.prompt, "Which company login providers may be used for ArtifactPass?", companyProviders);
-    rules = [{ kind: "authenticated", value: "selected-providers" }];
+    const recordedProviderIds = storedProviderIds(state);
+    const recordedProviders = recordedProviderIds.map((id) => companyProviders.find((provider) => provider.id === id));
+    selected = storedRules !== null && recordedProviders.length > 0 && recordedProviders.every(Boolean)
+      ? recordedProviders as readonly CloudflareIdentityProviderSummary[]
+      : await askMultiple(dependencies.prompt, "Which company login providers may be used for ArtifactPass?", companyProviders);
+    rules = storedRules ?? [{ kind: "authenticated", value: "selected-providers" }];
   } else {
     throw new Error("Choose how people sign in before identity setup");
   }
