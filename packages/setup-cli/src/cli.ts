@@ -27,6 +27,12 @@ import { openBrowser } from "./open-browser";
 import { installPortableIntegration } from "./portable-integration";
 import { migrateDefaultLocalState } from "./local-state-migration";
 import {
+  parsePrivateDeploymentWizardArguments,
+  renderPrivateDeploymentWizardResult,
+  runPrivateDeploymentWizard,
+  type PrivateDeploymentPrompt,
+} from "./private-deployment/deploy-wizard";
+import {
   ArtifactpassInstallError,
   renderInstallFailure,
   renderInstallReceipt,
@@ -88,6 +94,7 @@ Commands:
   install [--base-url <url>] [--profile <name>] [--workspace-root <path>] [--open-development] [--no-host-install] [--json]
   configure [--base-url <url>] [--profile <name>] [--workspace-root <path>] [--open-development] [--json]
   deploy-public --account-id <id> --zone-id <id> --hostname <host> [--service-name <name>] --workers-subdomain <name> --pdf-key-id <id> --pdf-public-key <base64> --google-client-id <id> --github-client-id <id> (--dry-run | --write-approval-manifest <path> | --approve-manifest <path>)
+  deploy [--resume <hostname-or-id> | --new] [--status] [--abandon] [--non-interactive] [--json]
   deploy --account-id <id> --zone-id <id> --hostname <host> [--service-name <name>] --workers-subdomain <name> --pdf-key-id <id> --pdf-public-key <base64> (--allow-email <email> | --allow-domain <domain>) (--dry-run | --write-approval-manifest <path> | --approve-manifest <path>)
   connect [base-url] [--profile <name>] [--workspace-root <path>] [--host codex|claude|both] [--no-host-install] [--marketplace <source>] [--open-development]
   profile list
@@ -117,6 +124,30 @@ const workspacePrompt = (): { readonly prompt: WorkspaceConfigurationPrompt; rea
   const reader = createInterface({ input: process.stdin, output: process.stderr });
   return {
     prompt: (question) => reader.question(question),
+    close: () => reader.close(),
+  };
+};
+
+const privateDeploymentPrompt = (): { readonly prompt: PrivateDeploymentPrompt; readonly close: () => void } => {
+  const reader = createInterface({ input: process.stdin, output: process.stderr });
+  return {
+    prompt: {
+      interactive: process.stdin.isTTY === true && process.stderr.isTTY === true,
+      question: async (message) => {
+        const controller = new AbortController();
+        const interrupt = () => controller.abort();
+        process.once("SIGINT", interrupt);
+        try {
+          return await reader.question(message, { signal: controller.signal });
+        } catch (error) {
+          if (error instanceof Error && error.name === "AbortError") return "save";
+          throw error;
+        } finally {
+          process.off("SIGINT", interrupt);
+        }
+      },
+      write: (message) => process.stderr.write(message),
+    },
     close: () => reader.close(),
   };
 };
@@ -253,6 +284,34 @@ const main = async (): Promise<void> => {
     return;
   }
   if (command === "deploy") {
+    const legacyDeploymentFlags = new Set([
+      "--account-id",
+      "--zone-id",
+      "--hostname",
+      "--service-name",
+      "--workers-subdomain",
+      "--pdf-key-id",
+      "--pdf-public-key",
+      "--allow-email",
+      "--allow-domain",
+      "--dry-run",
+      "--write-approval-manifest",
+      "--approve-manifest",
+    ]);
+    if (!args.some((argument) => legacyDeploymentFlags.has(argument))) {
+      const wizardArguments = parsePrivateDeploymentWizardArguments(args);
+      jsonOutputRequested = wizardArguments.json;
+      const promptSession = privateDeploymentPrompt();
+      try {
+        const result = await runPrivateDeploymentWizard(wizardArguments, {
+          prompt: promptSession.prompt,
+        });
+        print(jsonOutputRequested ? result : renderPrivateDeploymentWizardResult(result));
+      } finally {
+        promptSession.close();
+      }
+      return;
+    }
     const dryRun = booleanFlag(args, "--dry-run");
     const writeApprovalManifest = optionalValue(args, "--write-approval-manifest");
     const approveManifest = optionalValue(args, "--approve-manifest");
