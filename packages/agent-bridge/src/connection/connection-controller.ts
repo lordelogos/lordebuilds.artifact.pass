@@ -36,6 +36,8 @@ export interface ConnectionControllerOptions {
   readonly revokeCredential?: (token: string) => Promise<void>;
   readonly fetch?: typeof globalThis.fetch;
   readonly now?: () => number;
+  readonly agentName?: string;
+  readonly workspaceIdentity?: string;
 }
 
 const safeMessage = (error: unknown): string =>
@@ -121,6 +123,8 @@ export const createConnectionController = (
         options.startDeviceAuthorization ?? (() => startDeviceAuthorization(options.origin, {
           ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
           now,
+          ...(options.agentName === undefined ? {} : { agentName: options.agentName }),
+          ...(options.workspaceIdentity === undefined ? {} : { workspaceIdentity: options.workspaceIdentity }),
         }))
       )();
     } catch (error) {
@@ -142,9 +146,9 @@ export const createConnectionController = (
       browser_opened: browserOpened,
     };
     void authorization.waitForApproval()
-      .then(async ({ accessToken, expiresIn }) => {
+      .then(async ({ accessToken, expiresIn, deviceSigning }) => {
         try {
-          await options.credentialStore.set(bindAgentCredential(options.origin, accessToken));
+          await options.credentialStore.set(bindAgentCredential(options.origin, accessToken, deviceSigning));
         } catch (persistenceError) {
           try {
             await revokeCredential(accessToken);

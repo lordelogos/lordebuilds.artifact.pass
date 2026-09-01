@@ -28,6 +28,10 @@ interface DeviceAuthorizationRow {
   identity_subject: string | null;
   identity_email: string | null;
   agent_token_id: string | null;
+  device_key_id: string | null;
+  device_public_key: string | null;
+  agent_name: string | null;
+  workspace_identity: string | null;
 }
 
 const RESPONSE_HEADERS = {
@@ -54,11 +58,24 @@ const parseApprovalBody = async (request: Request): Promise<Record<string, unkno
   return parseJson(request);
 };
 
-const approvalPage = (userCode: string, nonce: string, approved = false): string => `<!doctype html>
+const escapeHtml = (value: string): string => value
+  .replaceAll("&", "&amp;")
+  .replaceAll("<", "&lt;")
+  .replaceAll(">", "&gt;")
+  .replaceAll('"', "&quot;")
+  .replaceAll("'", "&#39;");
+
+const approvalPage = (
+  userCode: string,
+  nonce: string,
+  approved = false,
+  authorization?: DeviceAuthorizationRow,
+  deploymentHostname?: string,
+): string => `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${approved ? "Connection approved" : "Approve ArtifactPass"}</title>
-<style nonce="${nonce}">html{color:#24241f;background:#f7f5ef;font-family:Avenir,"Helvetica Neue",sans-serif}body{margin:0;min-height:100vh;display:grid;place-items:center}.card{width:min(520px,calc(100% - 36px));padding:42px;background:#fffefa;border:1px solid #d8d5ca;border-radius:8px}h1{margin:0 0 14px;font:400 2.8rem/1 Georgia,serif;letter-spacing:-.04em}p{color:#66645e;line-height:1.6}.code{display:block;margin:24px 0;padding:14px;background:#f1efe8;border:1px solid #d8d5ca;font:700 1rem/1.2 ui-monospace,monospace;letter-spacing:.08em;text-align:center}button{width:100%;padding:14px;border:0;border-radius:5px;background:#24241f;color:white;font:700 .9rem Avenir,sans-serif;cursor:pointer}button:focus-visible{outline:3px solid #1f6c9f;outline-offset:3px}</style></head>
-<body><main class="card"><h1>${approved ? "Connected." : "Approve this agent?"}</h1><p>${approved ? "The one-time code has been approved. Return to your terminal; the scoped token will be delivered there once and is never shown in this page." : "Only approve a code you just requested from your own terminal. This grants artifact:create access for 30 days."}</p>${approved ? "" : `<span class="code">${userCode}</span><form method="post" action="/connect/approve"><input type="hidden" name="user_code" value="${userCode}"><button type="submit">Approve connection</button></form>`}</main></body></html>`;
+<style nonce="${nonce}">html{color:#24241f;background:#f7f5ef;font-family:Avenir,"Helvetica Neue",sans-serif}body{margin:0;min-height:100vh;display:grid;place-items:center}.card{width:min(520px,calc(100% - 36px));padding:42px;background:#fffefa;border:1px solid #d8d5ca;border-radius:8px}h1{margin:0 0 14px;font:400 2.8rem/1 Georgia,serif;letter-spacing:-.04em}p{color:#66645e;line-height:1.6}.details{margin:22px 0;padding:16px;border:1px solid #d8d5ca;border-radius:6px;background:#f7f5ef}.details div{display:grid;grid-template-columns:110px 1fr;gap:10px;padding:5px 0;color:#66645e;font-size:.86rem}.details strong{color:#24241f}.code{display:block;margin:24px 0;padding:14px;background:#f1efe8;border:1px solid #d8d5ca;font:700 1rem/1.2 ui-monospace,monospace;letter-spacing:.08em;text-align:center}button{width:100%;padding:14px;border:0;border-radius:5px;background:#24241f;color:white;font:700 .9rem Avenir,sans-serif;cursor:pointer}button:focus-visible{outline:3px solid #1f6c9f;outline-offset:3px}</style></head>
+<body><main class="card"><h1>${approved ? "Connected." : "Approve this agent?"}</h1><p>${approved ? "The one-time code has been approved. Return to your agent; the scoped token and device key will be stored only on that device." : "Only approve a code you just requested from your own agent. This grants artifact:create access for 30 days."}</p>${approved ? "" : `<div class="details"><div><strong>Deployment</strong><span>${escapeHtml(deploymentHostname ?? "ArtifactPass")}</span></div><div><strong>Agent</strong><span>${escapeHtml(authorization?.agent_name ?? "ArtifactPass agent")}</span></div><div><strong>Workspace</strong><span>${escapeHtml(authorization?.workspace_identity ?? "Current workspace")}</span></div><div><strong>Scope</strong><span>artifact:create</span></div>${authorization?.device_key_id === null || authorization?.device_key_id === undefined ? "" : `<div><strong>Device key</strong><span>${escapeHtml(authorization.device_key_id.slice(0, 18))}…</span></div>`}</div><span class="code">${userCode}</span><form method="post" action="/connect/approve"><input type="hidden" name="user_code" value="${userCode}"><button type="submit">Approve connection</button></form>`}</main></body></html>`;
 
 const approvalHeaders = (nonce: string) => ({
   ...RESPONSE_HEADERS,
@@ -144,6 +161,35 @@ export const createConnectRouter = (options: AuthorizationOptions = {}) => {
     if (body.code_challenge_method !== "S256") {
       throw new ArtifactError("malformed_upload", "code_challenge_method must be S256", 400);
     }
+    const deviceFields = [body.device_key_id, body.device_public_key, body.agent_name, body.workspace_identity];
+    const hasDeviceIdentity = deviceFields.some((value) => value !== undefined);
+    if (hasDeviceIdentity && deviceFields.some((value) => value === undefined)) {
+      throw new ArtifactError("malformed_upload", "Device identity fields must be complete", 400);
+    }
+    const deviceKeyId = hasDeviceIdentity
+      ? requiredString(body.device_key_id, "device_key_id", /^dk_[A-Za-z0-9_-]{43}$/u)
+      : null;
+    const devicePublicKey = hasDeviceIdentity
+      ? requiredString(body.device_public_key, "device_public_key", /^[A-Za-z0-9+/]{43}=$/u)
+      : null;
+    const agentName = hasDeviceIdentity
+      ? requiredString(body.agent_name, "agent_name", /^[\p{L}\p{N} ._@/():+-]{1,80}$/u)
+      : null;
+    const workspaceIdentity = hasDeviceIdentity
+      ? requiredString(body.workspace_identity, "workspace_identity", /^[^\r\n\0]{1,200}$/u)
+      : null;
+    if (deviceKeyId !== null) {
+      const existingKey = await context.env.ARTIFACT_DB.prepare(
+        "SELECT key_id FROM device_signing_keys WHERE key_id = ?",
+      ).bind(deviceKeyId).first("key_id");
+      if (existingKey !== null) {
+        throw new ArtifactError(
+          "forbidden",
+          "Device key is already registered; reconnect to create a new key",
+          409,
+        );
+      }
+    }
     const createdAt = now();
     await consumeRequestRateLimit({
       database: context.env.ARTIFACT_DB,
@@ -160,8 +206,9 @@ export const createConnectRouter = (options: AuthorizationOptions = {}) => {
     await context.env.ARTIFACT_DB.prepare(
       `INSERT INTO device_authorizations (
         id, device_code_hash, user_code_hash, code_challenge, status, created_at,
-        expires_at, next_poll_at, poll_attempts
-      ) VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, 0)`,
+        expires_at, next_poll_at, poll_attempts, device_key_id, device_public_key,
+        agent_name, workspace_identity
+      ) VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, 0, ?, ?, ?, ?)`,
     )
       .bind(
         crypto.randomUUID(),
@@ -171,6 +218,10 @@ export const createConnectRouter = (options: AuthorizationOptions = {}) => {
         createdAt,
         expiresAt,
         createdAt,
+        deviceKeyId,
+        devicePublicKey,
+        agentName,
+        workspaceIdentity,
       )
       .run();
 
@@ -200,7 +251,11 @@ export const createConnectRouter = (options: AuthorizationOptions = {}) => {
     }
     if (context.req.query("format") === "html") {
       const nonce = createApprovalNonce();
-      return context.html(approvalPage(userCode, nonce), 200, approvalHeaders(nonce));
+      return context.html(
+        approvalPage(userCode, nonce, false, authorization, new URL(context.req.url).hostname),
+        200,
+        approvalHeaders(nonce),
+      );
     }
     return context.json(
       {
@@ -324,6 +379,25 @@ export const createConnectRouter = (options: AuthorizationOptions = {}) => {
           currentTime,
         ),
     ];
+    if (
+      authorization.device_key_id !== null && authorization.device_public_key !== null &&
+      authorization.workspace_identity !== null
+    ) {
+      statements.push(
+        context.env.ARTIFACT_DB.prepare(
+          `INSERT INTO device_signing_keys (
+            key_id, public_key, agent_token_id, workspace_identity, deployment_origin, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?)`,
+        ).bind(
+          authorization.device_key_id,
+          authorization.device_public_key,
+          tokenId,
+          authorization.workspace_identity,
+          new URL(context.req.url).origin,
+          currentTime,
+        ),
+      );
+    }
     const results = await context.env.ARTIFACT_DB.batch(statements);
     if (results.some((result) => result.meta.changes !== 1)) {
       throw new ArtifactError("forbidden", "Authorization was already consumed", 409);
@@ -335,6 +409,7 @@ export const createConnectRouter = (options: AuthorizationOptions = {}) => {
         token_type: "Bearer",
         scope: AGENT_TOKEN_SCOPE,
         expires_in: Math.floor(AGENT_TOKEN_LIFETIME_MS / 1000),
+        ...(authorization.device_key_id === null ? {} : { device_key_id: authorization.device_key_id }),
       },
       200,
       RESPONSE_HEADERS,

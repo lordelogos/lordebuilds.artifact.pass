@@ -9,6 +9,11 @@ CREATE TABLE deployment_metadata (
   updated_at INTEGER NOT NULL
 );
 
+ALTER TABLE device_authorizations ADD COLUMN device_key_id TEXT;
+ALTER TABLE device_authorizations ADD COLUMN device_public_key TEXT;
+ALTER TABLE device_authorizations ADD COLUMN agent_name TEXT;
+ALTER TABLE device_authorizations ADD COLUMN workspace_identity TEXT;
+
 CREATE TABLE device_signing_keys (
   key_id TEXT PRIMARY KEY NOT NULL,
   public_key TEXT NOT NULL,

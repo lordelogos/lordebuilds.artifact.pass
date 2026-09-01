@@ -29,7 +29,10 @@ export interface ArtifactServiceOptions {
   readonly createToken?: () => string;
   readonly publicationRecoveryAttempts?: number;
   readonly waitForPublication?: () => Promise<void>;
-  readonly provenanceBindings?: Pick<ArtifactServiceBindings, "PDF_PROVENANCE_PUBLIC_KEYS" | "PDF_PROVENANCE_RENDERERS">;
+  readonly provenanceBindings?: Pick<
+    ArtifactServiceBindings,
+    "PDF_PROVENANCE_PUBLIC_KEYS" | "PDF_PROVENANCE_RENDERERS"
+  > & Partial<Pick<ArtifactServiceBindings, "ARTIFACT_DB">>;
 }
 
 export const artifactRecordToManifest = (artifact: ArtifactRecord): ArtifactManifest =>
@@ -131,6 +134,7 @@ export class ArtifactApplicationService {
         derivedSha256,
         checksum,
         this.options.provenanceBindings ?? {},
+        this.now(),
       );
       if (verified === null) {
         throw new ArtifactError("malformed_upload", "PDF provenance could not be verified", 400);
@@ -292,6 +296,7 @@ export class ArtifactApplicationService {
         artifact.pdfTrust.receipt.source_sha256,
         artifact.sha256,
         this.options.provenanceBindings ?? {},
+        this.now(),
       );
       if (verified === null) {
         return { ...artifact, pdfTrust: { status: "human_only", reason: "provenance_invalid" } };

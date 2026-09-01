@@ -28,14 +28,33 @@ export interface AuthorizationOptions {
 const unavailable = (): ArtifactError =>
   new ArtifactError("not_found", "Route is unavailable", 404);
 
-const accessIdentity = async (
-  context: Context<ArtifactHonoEnvironment>,
-  options: AuthorizationOptions,
-): Promise<AccessIdentity> => {
-  const assertion = context.req.header("cf-access-jwt-assertion");
-  const issuer = context.env.ACCESS_TEAM_DOMAIN;
-  const audience = context.env.ACCESS_AUD;
-  if (assertion === undefined || issuer === undefined || audience === undefined) throw unavailable();
+const cookieValue = (request: Request, name: string): string | undefined => {
+  const cookie = request.headers.get("cookie");
+  if (cookie === null) return undefined;
+  for (const part of cookie.split(";")) {
+    const separator = part.indexOf("=");
+    if (separator < 0 || part.slice(0, separator).trim() !== name) continue;
+    const value = part.slice(separator + 1).trim();
+    return value.length === 0 ? undefined : value;
+  }
+  return undefined;
+};
+
+const accessAssertion = (request: Request): string | undefined =>
+  request.headers.get("cf-access-jwt-assertion") ?? cookieValue(request, "CF_Authorization");
+
+export const readOptionalHumanIdentity = async (
+  request: Request,
+  bindings: ArtifactServiceBindings,
+  options: AuthorizationOptions = {},
+): Promise<HumanIdentity | null> => {
+  if (bindings.HUMAN_AUTH_MODE === "artifactpass") {
+    return readPublicSession(request, bindings, (options.now ?? Date.now)());
+  }
+  const assertion = accessAssertion(request);
+  const issuer = bindings.ACCESS_TEAM_DOMAIN;
+  const audience = bindings.ACCESS_AUD;
+  if (assertion === undefined || issuer === undefined || audience === undefined) return null;
   try {
     return await verifyAccessJwt(assertion, {
       issuer,
@@ -43,22 +62,25 @@ const accessIdentity = async (
       ...(options.accessJwks === undefined ? {} : { jwks: options.accessJwks }),
     });
   } catch {
-    throw unavailable();
+    return null;
   }
+};
+
+const accessIdentity = async (
+  context: Context<ArtifactHonoEnvironment>,
+  options: AuthorizationOptions,
+): Promise<AccessIdentity> => {
+  const identity = await readOptionalHumanIdentity(context.req.raw, context.env, options);
+  if (identity === null) throw unavailable();
+  return identity as AccessIdentity;
 };
 
 const humanIdentity = async (
   context: Context<ArtifactHonoEnvironment>,
   options: AuthorizationOptions,
 ): Promise<HumanIdentity> => {
-  if (context.env.HUMAN_AUTH_MODE !== "artifactpass") {
-    return accessIdentity(context, options);
-  }
-  const identity = await readPublicSession(
-    context.req.raw,
-    context.env,
-    (options.now ?? Date.now)(),
-  );
+  if (context.env.HUMAN_AUTH_MODE !== "artifactpass") return accessIdentity(context, options);
+  const identity = await readOptionalHumanIdentity(context.req.raw, context.env, options);
   if (identity === null) throw unavailable();
   return identity;
 };

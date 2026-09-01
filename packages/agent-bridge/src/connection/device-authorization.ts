@@ -1,10 +1,13 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, generateKeyPairSync, randomBytes } from "node:crypto";
+
+import type { DeviceSigningCredential } from "../auth/credential-store";
 
 import { assertSafeDeploymentOrigin, fetchWithoutRedirects, responseError } from "../http/safe-fetch";
 
 export interface DeviceFlowResult {
   readonly accessToken: string;
   readonly expiresIn: number;
+  readonly deviceSigning?: DeviceSigningCredential;
 }
 
 export interface PendingDeviceAuthorization {
@@ -19,6 +22,8 @@ export interface DeviceAuthorizationDependencies {
   readonly wait?: (milliseconds: number) => Promise<void>;
   readonly signal?: AbortSignal;
   readonly now?: () => number;
+  readonly agentName?: string;
+  readonly workspaceIdentity?: string;
 }
 
 interface DeviceResponse {
@@ -33,6 +38,18 @@ const base64Url = (value: Uint8Array): string => Buffer.from(value).toString("ba
 const wait = (milliseconds: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, milliseconds));
 
+const createDeviceSigningCredential = (): DeviceSigningCredential => {
+  const pair = generateKeyPairSync("ed25519");
+  const publicSpki = pair.publicKey.export({ format: "der", type: "spki" });
+  const publicRaw = publicSpki.subarray(publicSpki.byteLength - 32);
+  const publicKeyBase64 = publicRaw.toString("base64");
+  return {
+    keyId: `dk_${createHash("sha256").update(publicRaw).digest("base64url")}`,
+    publicKeyBase64,
+    privateKeyPkcs8Base64: pair.privateKey.export({ format: "der", type: "pkcs8" }).toString("base64"),
+  };
+};
+
 export const startDeviceAuthorization = async (
   baseUrl: URL | string,
   dependencies: DeviceAuthorizationDependencies = {},
@@ -40,6 +57,7 @@ export const startDeviceAuthorization = async (
   const origin = assertSafeDeploymentOrigin(new URL(baseUrl));
   const verifier = base64Url(randomBytes(32));
   const challenge = createHash("sha256").update(verifier).digest("base64url");
+  const deviceSigning = createDeviceSigningCredential();
   const fetchImplementation = dependencies.fetch ?? globalThis.fetch;
   const now = dependencies.now ?? Date.now;
   const deviceResponse = await fetchWithoutRedirects(
@@ -48,7 +66,14 @@ export const startDeviceAuthorization = async (
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code_challenge: challenge, code_challenge_method: "S256" }),
+      body: JSON.stringify({
+        code_challenge: challenge,
+        code_challenge_method: "S256",
+        device_key_id: deviceSigning.keyId,
+        device_public_key: deviceSigning.publicKeyBase64,
+        agent_name: dependencies.agentName ?? "ArtifactPass agent",
+        workspace_identity: dependencies.workspaceIdentity ?? "Current workspace",
+      }),
     },
   );
   if (!deviceResponse.ok) throw await responseError(deviceResponse);
@@ -116,7 +141,7 @@ export const startDeviceAuthorization = async (
           readonly access_token: string;
           readonly expires_in: number;
         };
-        return { accessToken: token.access_token, expiresIn: token.expires_in };
+        return { accessToken: token.access_token, expiresIn: token.expires_in, deviceSigning };
       }
       throw new Error("Device authorization expired before approval");
     },

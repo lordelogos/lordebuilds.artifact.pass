@@ -11,6 +11,7 @@ import {
   OsCredentialStore,
   resolveCredential,
   resolveAgentCredential,
+  resolveAgentCredentialBinding,
 } from "../src/auth/credential-store";
 
 const agentToken = `as_${"t".repeat(43)}`;
@@ -55,6 +56,26 @@ describe("credential and logging boundaries", () => {
       .toThrow("different deployment");
     expect(() => resolveAgentCredential(agentToken, "https://artifactpass.com", true))
       .toThrow("predates origin binding");
+  });
+
+  it("keeps a device private key inside the origin-bound OS credential", () => {
+    const deviceSigning = {
+      keyId: `dk_${"k".repeat(43)}`,
+      publicKeyBase64: `${"A".repeat(43)}=`,
+      privateKeyPkcs8Base64: Buffer.from("private key material").toString("base64"),
+    };
+    const stored = bindAgentCredential(
+      "https://artifacts.company.example",
+      agentToken,
+      deviceSigning,
+    );
+    expect(resolveAgentCredentialBinding(
+      stored,
+      "https://artifacts.company.example",
+      true,
+    )).toEqual({ token: agentToken, deviceSigning });
+    expect(() => resolveAgentCredentialBinding(stored, "https://artifactpass.com", true))
+      .toThrow("different deployment");
   });
 
   it("reads a legacy credential but writes only to ArtifactPass", async () => {

@@ -60,10 +60,17 @@ export class AgentTokenRepository {
   }
 
   public async revoke(principal: AgentPrincipal): Promise<boolean> {
-    const result = await this.database
-      .prepare("UPDATE agent_tokens SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL")
-      .bind(this.now(), principal.id)
-      .run();
-    return result.meta.changes === 1;
+    const revokedAt = this.now();
+    const [tokenResult] = await this.database.batch([
+      this.database
+        .prepare("UPDATE agent_tokens SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL")
+        .bind(revokedAt, principal.id),
+      this.database
+        .prepare(
+          "UPDATE device_signing_keys SET revoked_at = ? WHERE agent_token_id = ? AND revoked_at IS NULL",
+        )
+        .bind(revokedAt, principal.id),
+    ]);
+    return tokenResult?.meta.changes === 1;
   }
 }

@@ -72,13 +72,15 @@ export const prepareBrowserFile = async (file, maximumBytes) => {
 const installHomepageRuntime = async (
   route: Route,
   authenticated: boolean | (() => boolean) = false,
+  deploymentMode: "public" | "private" = "public",
 ): Promise<boolean> => {
   const url = new URL(route.request().url());
-  if (url.pathname === "/upload/preflight") {
+  if (url.pathname === "/session/status") {
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
         authenticated: typeof authenticated === "function" ? authenticated() : authenticated,
+        deployment_mode: deploymentMode,
         policy: {
           protocol_version: 1,
           supported_mime_types: ["text/html", "text/markdown", "application/pdf"],
@@ -129,7 +131,7 @@ test("loads the production validator under the real homepage CSP", async ({ cont
       });
       return;
     }
-    if (url.pathname === "/upload/preflight") {
+    if (url.pathname === "/session/status") {
       preflightRequests += 1;
       await route.fulfill({
         contentType: "application/json",
@@ -198,6 +200,45 @@ test("lets an authenticated browser continue without provider sign-in", async ({
   await page.waitForURL(`${origin}/upload?pending=homepage&publish=1`);
   expect(context.pages()).toHaveLength(1);
   await expect(page.getByRole("heading", { name: "Upload confirmation" })).toBeVisible();
+});
+
+test("sends an anonymous private user through Cloudflare Access without public OAuth", async ({ context, page }) => {
+  let publicSignInRequested = false;
+  await context.route(`${origin}/**`, async (route) => {
+    if (await installHomepageRuntime(route, false, "private")) return;
+    const url = new URL(route.request().url());
+    if (url.pathname === "/") {
+      await route.fulfill({ contentType: "text/html", body: homepage });
+      return;
+    }
+    if (url.pathname === "/auth/sign-in") {
+      publicSignInRequested = true;
+      await route.abort();
+      return;
+    }
+    if (url.pathname === "/upload") {
+      await route.fulfill({ contentType: "text/html", body: "<h1>Cloudflare Access boundary</h1>" });
+      return;
+    }
+    await route.abort();
+  });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${origin}/`);
+  await page.getByRole("button", { name: /Try it with your own document/ }).click();
+  await page.locator("#pending-file-input").setInputFiles({
+    name: "private-handoff.md",
+    mimeType: "text/markdown",
+    buffer: Buffer.from("# Private handoff"),
+  });
+  await page.locator('input[name="expiry"][value="1800"]').check();
+
+  await expect(page.getByRole("button", { name: "Continue to sign in" })).toBeVisible();
+  await page.getByRole("button", { name: "Continue to sign in" }).click();
+  await page.waitForURL(`${origin}/upload?pending=homepage&publish=1`);
+  expect(publicSignInRequested).toBe(false);
+  expect(context.pages()).toHaveLength(1);
+  await expect(page.getByRole("heading", { name: "Cloudflare Access boundary" })).toBeVisible();
 });
 
 test("falls back to sign-in when the browser session expires before continuation", async ({ context, page }) => {

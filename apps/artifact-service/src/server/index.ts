@@ -4,17 +4,17 @@ import {
   SUPPORTED_MIME_TYPES,
   protocolLimitsSchema,
 } from "artifact-protocol";
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import type { JWTVerifyGetKey } from "jose";
 
 import type { ArtifactServiceBindings } from "./adapters/cloudflare-bindings";
 import { AgentTokenRepository } from "./auth/agent-token";
-import { readPublicSession } from "./auth/public-session";
 import { expireArtifacts } from "./jobs/expire-artifacts";
 import { expireIdentityState } from "./jobs/expire-identity-state";
 import {
   requireHuman,
   requireAgent,
+  readOptionalHumanIdentity,
   type ArtifactHonoEnvironment,
 } from "./middleware/authorize";
 import { createArtifactsRouter } from "./routes/artifacts";
@@ -132,20 +132,18 @@ export const createArtifactApplication = (options: ArtifactApplicationOptions = 
     }),
   );
 
-  app.get("/upload/preflight", async (context) => {
-    const authenticated = options.allowUnauthenticatedUploads === true || (
-      context.env.HUMAN_AUTH_MODE === "artifactpass" &&
-      await readPublicSession(
-        context.req.raw,
-        context.env,
-        (options.now ?? Date.now)(),
-      ) !== null
-    );
+  const sessionStatus = async (context: Context<ArtifactHonoEnvironment>) => {
+    const authenticated = options.allowUnauthenticatedUploads === true ||
+      await readOptionalHumanIdentity(context.req.raw, context.env, authorizationOptions) !== null;
     return context.json({
       authenticated,
+      deployment_mode: context.env.HUMAN_AUTH_MODE === "artifactpass" ? "public" : "private",
       policy: protocolLimitsFromBindings(context.env),
     }, 200, { "Cache-Control": "private, no-store, max-age=0" });
-  });
+  };
+
+  app.get("/session/status", sessionStatus);
+  app.get("/upload/preflight", sessionStatus);
 
   app.route("/auth", createAuthRouter({
     ...(options.now === undefined ? {} : { now: options.now }),

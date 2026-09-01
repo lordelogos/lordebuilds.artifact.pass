@@ -69,13 +69,22 @@ const challengeFor = async (verifier: string): Promise<string> => {
   return base64Url(new Uint8Array(digest));
 };
 
-const startDeviceFlow = async (verifier: string) => {
+const startDeviceFlow = async (
+  verifier: string,
+  deviceIdentity?: {
+    device_key_id: string;
+    device_public_key: string;
+    agent_name: string;
+    workspace_identity: string;
+  },
+) => {
   const response = await request("/connect/device", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       code_challenge: await challengeFor(verifier),
       code_challenge_method: "S256",
+      ...deviceIdentity,
     }),
   });
   expect(response.status).toBe(201);
@@ -86,6 +95,24 @@ const startDeviceFlow = async (verifier: string) => {
     expires_in: number;
     interval: number;
   }>();
+};
+
+const createDeviceAgentToken = async () => {
+  const verifier = verifierFor("a device-bound agent authorization verifier for this test");
+  const identity = {
+    device_key_id: `dk_${"k".repeat(43)}`,
+    device_public_key: `${"A".repeat(43)}=`,
+    agent_name: "Claude Code",
+    workspace_identity: "/Users/team/product",
+  };
+  const device = await startDeviceFlow(verifier, identity);
+  expect((await approveDeviceFlow(device.user_code)).status).toBe(204);
+  const response = await exchangeDeviceFlow(device.device_code, verifier);
+  expect(response.status).toBe(200);
+  return {
+    ...await response.json<{ access_token: string; device_key_id: string }>(),
+    identity,
+  };
 };
 
 const approveDeviceFlow = async (userCode: string) =>
@@ -140,6 +167,38 @@ beforeEach(async () => {
 afterEach(() => vi.useRealTimers());
 
 describe("Cloudflare Access assertions", () => {
+  it("reports private session status without redirecting or exposing identity", async () => {
+    const anonymous = await request("/session/status");
+    expect(anonymous.status).toBe(200);
+    await expect(anonymous.json()).resolves.toMatchObject({
+      authenticated: false,
+      deployment_mode: "private",
+    });
+
+    const token = await accessToken();
+    const authenticated = await request("/session/status", {
+      headers: { cookie: `CF_Authorization=${token}` },
+    });
+    expect(authenticated.status).toBe(200);
+    const body = await authenticated.json<Record<string, unknown>>();
+    expect(body).toMatchObject({ authenticated: true, deployment_mode: "private" });
+    expect(body).not.toHaveProperty("email");
+    expect(body).not.toHaveProperty("subject");
+  });
+
+  it("treats forged, expired, and wrong-audience status cookies as anonymous", async () => {
+    for (const token of [
+      `${await accessToken()}.forged`,
+      await accessToken({ exp: nowSeconds - 1 }),
+      await accessToken({ aud: "another-service" }),
+    ]) {
+      const response = await request("/session/status", {
+        headers: { cookie: `CF_Authorization=${token}` },
+      });
+      await expect(response.json()).resolves.toMatchObject({ authenticated: false });
+    }
+  });
+
   it("accepts a signed assertion with the configured issuer, audience, time and identity", async () => {
     const verifier = verifierFor("a valid Access identity can inspect this approval request");
     const device = await startDeviceFlow(verifier);
@@ -185,6 +244,78 @@ describe("Cloudflare Access assertions", () => {
     expect(approval.status).toBe(200);
     expect(await approval.text()).toContain("Connected.");
     expect((await exchangeDeviceFlow(device.device_code, verifier)).status).toBe(200);
+  });
+
+  it("shows the exact agent and workspace before registering its device key", async () => {
+    const verifier = verifierFor("device registration details must be approved by a human");
+    const identity = {
+      device_key_id: `dk_${"d".repeat(43)}`,
+      device_public_key: `${"B".repeat(43)}=`,
+      agent_name: "Codex Desktop",
+      workspace_identity: "/Users/team/private-project",
+    };
+    const device = await startDeviceFlow(verifier, identity);
+    const page = await request(
+      `/connect/approve?user_code=${device.user_code}&format=html`,
+      { headers: await accessHeaders() },
+    );
+    const markup = await page.text();
+    expect(markup).toContain("artifacts.example");
+    expect(markup).toContain("Codex Desktop");
+    expect(markup).toContain("/Users/team/private-project");
+    expect(markup).toContain("artifact:create");
+    expect(markup).not.toContain(identity.device_public_key);
+
+    expect((await approveDeviceFlow(device.user_code)).status).toBe(204);
+    const token = await exchangeDeviceFlow(device.device_code, verifier);
+    expect(token.status).toBe(200);
+    await expect(token.json()).resolves.toMatchObject({ device_key_id: identity.device_key_id });
+    await expect(env.ARTIFACT_DB.prepare(
+      "SELECT public_key, workspace_identity, revoked_at FROM device_signing_keys WHERE key_id = ?",
+    ).bind(identity.device_key_id).first()).resolves.toMatchObject({
+      public_key: identity.device_public_key,
+      workspace_identity: identity.workspace_identity,
+      revoked_at: null,
+    });
+  });
+
+  it("rejects partial device identity before creating an authorization", async () => {
+    const response = await request("/connect/device", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        code_challenge: await challengeFor(
+          verifierFor("partial device identity should not create server state"),
+        ),
+        code_challenge_method: "S256",
+        device_key_id: `dk_${"p".repeat(43)}`,
+      }),
+    });
+    expect(response.status).toBe(400);
+    expect(await env.ARTIFACT_DB.prepare(
+      "SELECT COUNT(*) AS count FROM device_authorizations",
+    ).first("count")).toBe(0);
+  });
+
+  it("rejects a duplicate registered device key before creating another authorization", async () => {
+    const agent = await createDeviceAgentToken();
+    const verifier = verifierFor("a duplicate device key request must not create server state");
+    const response = await request("/connect/device", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        code_challenge: await challengeFor(verifier),
+        code_challenge_method: "S256",
+        ...agent.identity,
+      }),
+    });
+    expect(response.status).toBe(409);
+    expect(await env.ARTIFACT_DB.prepare(
+      "SELECT COUNT(*) AS count FROM device_authorizations",
+    ).first("count")).toBe(1);
+    expect(await env.ARTIFACT_DB.prepare(
+      "SELECT COUNT(*) AS count FROM device_signing_keys",
+    ).first("count")).toBe(1);
   });
 
   it("returns deployment-defined upload limits only to an Access-authenticated browser", async () => {
@@ -576,6 +707,19 @@ describe("route credential matrix", () => {
         })
       ).status,
     ).toBe(201);
+  });
+
+  it("revokes a device signing key with its agent connection", async () => {
+    const agent = await createDeviceAgentToken();
+    const disconnect = await request("/api/connection", {
+      method: "DELETE",
+      headers: { authorization: `Bearer ${agent.access_token}` },
+    });
+    expect(disconnect.status).toBe(204);
+    const row = await env.ARTIFACT_DB.prepare(
+      "SELECT revoked_at FROM device_signing_keys WHERE key_id = ?",
+    ).bind(agent.identity.device_key_id).first<{ revoked_at: number | null }>();
+    expect(row?.revoked_at).toBe(now);
   });
 
   it("reports a valid scoped connection without exposing its identity", async () => {

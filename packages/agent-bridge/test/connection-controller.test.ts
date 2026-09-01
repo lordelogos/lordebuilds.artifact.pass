@@ -83,6 +83,49 @@ describe("plugin-native ArtifactPass connection", () => {
     });
   });
 
+  it("persists the locally generated device key only after approval succeeds", async () => {
+    const deviceSigning = {
+      keyId: `dk_${"d".repeat(43)}`,
+      publicKeyBase64: `${"B".repeat(43)}=`,
+      privateKeyPkcs8Base64: Buffer.from("local private key").toString("base64"),
+    };
+    let approve: ((value: {
+      accessToken: string;
+      expiresIn: number;
+      deviceSigning: typeof deviceSigning;
+    }) => void) | undefined;
+    const credentialStore = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue(undefined),
+      delete: vi.fn().mockResolvedValue(undefined),
+    };
+    const controller = createConnectionController({
+      origin: new URL("https://private.example.com"),
+      profileName: "private",
+      credentialStore,
+      startDeviceAuthorization: vi.fn().mockResolvedValue({
+        approvalUrl: "https://private.example.com/connect/approve?user_code=device-code",
+        userCode: "device-code",
+        expiresAt: 2_000_000,
+        waitForApproval: () => new Promise((resolve) => { approve = resolve; }),
+      } satisfies PendingDeviceAuthorization),
+      openBrowser: vi.fn().mockResolvedValue(undefined),
+      inspectCredential: vi.fn().mockResolvedValue({ expiresAt: 4_600_000 }),
+      now: () => 1_000_000,
+    });
+
+    await expect(controller.connect()).resolves.toMatchObject({ status: "connecting" });
+    expect(credentialStore.set).not.toHaveBeenCalled();
+    approve?.({ accessToken: `as_${"z".repeat(43)}`, expiresIn: 3600, deviceSigning });
+    await vi.waitFor(() => expect(credentialStore.set).toHaveBeenCalledOnce());
+    const stored = JSON.parse(credentialStore.set.mock.calls[0]?.[0] as string) as {
+      version: number;
+      device_signing: { private_key_pkcs8: string };
+    };
+    expect(stored.version).toBe(2);
+    expect(stored.device_signing.private_key_pkcs8).toBe(deviceSigning.privateKeyPkcs8Base64);
+  });
+
   it("re-inspects a cached connection so a revoked token can reconnect", async () => {
     const token = `as_${"r".repeat(43)}`;
     let active = true;

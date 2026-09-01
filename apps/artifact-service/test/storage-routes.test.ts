@@ -247,6 +247,40 @@ describe("private artifact routes", () => {
     expect(derived.status).toBe(206);
     await expect(derived.text()).resolves.toBe("Verified visible text");
 
+    await env.ARTIFACT_DB.prepare(
+      `INSERT INTO device_signing_keys (
+        key_id, public_key, agent_token_id, workspace_identity, deployment_origin, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?)`,
+    ).bind(
+      "test-key",
+      publicKeyBase64,
+      "00000000-0000-4000-8000-000000000001",
+      "/Users/team/product",
+      "https://artifacts.example",
+      Date.now(),
+    ).run();
+    const deviceKeyBindings = testBindings({
+      PDF_PROVENANCE_PUBLIC_KEYS: "{}",
+      PDF_PROVENANCE_RENDERERS: "artifact-share-qualified-pdf@1",
+    });
+    const deviceVerifiedManifest = await createArtifactApplication().fetch(
+      new Request(`${result.share_url}/manifest`),
+      deviceKeyBindings,
+    );
+    await expect(deviceVerifiedManifest.json()).resolves.toMatchObject({
+      pdf_trust: { status: "controlled" },
+    });
+    await env.ARTIFACT_DB.prepare(
+      "UPDATE device_signing_keys SET revoked_at = ? WHERE key_id = ?",
+    ).bind(Date.now(), "test-key").run();
+    const deviceRevokedManifest = await createArtifactApplication().fetch(
+      new Request(`${result.share_url}/manifest`),
+      deviceKeyBindings,
+    );
+    await expect(deviceRevokedManifest.json()).resolves.toMatchObject({
+      pdf_trust: { status: "human_only", reason: "provenance_invalid" },
+    });
+
     const revokedManifest = await createArtifactApplication().fetch(
       new Request(`${result.share_url}/manifest`),
       testBindings({ PDF_PROVENANCE_PUBLIC_KEYS: "{}", PDF_PROVENANCE_RENDERERS: "" }),

@@ -9,6 +9,7 @@ import {
   CompatibleEnvironmentCredentialStore,
   LEGACY_ARTIFACT_SHARE_CREDENTIAL_SERVICE,
   OsCredentialStore,
+  resolveAgentCredentialBinding,
   resolveCredential,
   type CredentialStore,
 } from "./auth/credential-store";
@@ -79,16 +80,32 @@ const resolvePdfProvenance = async (
   configuration: BridgeConfiguration,
 ): Promise<BridgeConfiguration["pdfProvenance"]> => {
   if (configuration.pdfProvenance !== undefined) return configuration.pdfProvenance;
-  if (configuration.pdfProvenanceKeyId === undefined || configuration.pdfProvenanceStore === undefined) {
-    return undefined;
+  if (configuration.pdfProvenanceKeyId !== undefined && configuration.pdfProvenanceStore !== undefined) {
+    const privateKeyPkcs8Base64 = await configuration.pdfProvenanceStore.get();
+    if (privateKeyPkcs8Base64 === null) {
+      throw new Error(
+        `No PDF signing credential is stored for key ${configuration.pdfProvenanceKeyId}`,
+      );
+    }
+    return { keyId: configuration.pdfProvenanceKeyId, privateKeyPkcs8Base64 };
   }
-  const privateKeyPkcs8Base64 = await configuration.pdfProvenanceStore.get();
-  if (privateKeyPkcs8Base64 === null) {
-    throw new Error(
-      `No PDF signing credential is stored for key ${configuration.pdfProvenanceKeyId}`,
-    );
+  if (configuration.osStore !== undefined) {
+    const stored = await configuration.osStore.get();
+    if (stored !== null) {
+      const binding = resolveAgentCredentialBinding(
+        stored,
+        configuration.baseUrl,
+        configuration.requireOriginBoundCredential === true,
+      );
+      if (binding.deviceSigning !== undefined) {
+        return {
+          keyId: binding.deviceSigning.keyId,
+          privateKeyPkcs8Base64: binding.deviceSigning.privateKeyPkcs8Base64,
+        };
+      }
+    }
   }
-  return { keyId: configuration.pdfProvenanceKeyId, privateKeyPkcs8Base64 };
+  return undefined;
 };
 
 const errorResult = (error: unknown) => ({
@@ -142,6 +159,8 @@ const createConfiguredConnectionController = (
     origin: configuration.baseUrl,
     profileName,
     credentialStore: configuration.osStore,
+    agentName: "ArtifactPass MCP",
+    workspaceIdentity: profileName,
     ...(configuration.fetch === undefined ? {} : { fetch: configuration.fetch }),
   });
 };

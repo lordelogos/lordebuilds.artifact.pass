@@ -16,21 +16,55 @@ export const agentCredentialAccountForProfile = (profileName: string): string =>
 
 const agentTokenPattern = /^as_[A-Za-z0-9_-]{43}$/u;
 
-export const bindAgentCredential = (originValue: URL | string, token: string): string => {
+export interface DeviceSigningCredential {
+  readonly keyId: string;
+  readonly publicKeyBase64: string;
+  readonly privateKeyPkcs8Base64: string;
+}
+
+export interface AgentCredentialBinding {
+  readonly token: string;
+  readonly deviceSigning?: DeviceSigningCredential;
+}
+
+export const bindAgentCredential = (
+  originValue: URL | string,
+  token: string,
+  deviceSigning?: DeviceSigningCredential,
+): string => {
   if (!agentTokenPattern.test(token)) throw new Error("ArtifactPass agent credential is malformed");
-  return JSON.stringify({ version: 1, origin: new URL(originValue).origin, token });
+  if (deviceSigning === undefined) {
+    return JSON.stringify({ version: 1, origin: new URL(originValue).origin, token });
+  }
+  if (
+    !/^dk_[A-Za-z0-9_-]{43}$/u.test(deviceSigning.keyId) ||
+    !/^[A-Za-z0-9+/]{43}=$/u.test(deviceSigning.publicKeyBase64) ||
+    !/^[A-Za-z0-9+/]+={0,2}$/u.test(deviceSigning.privateKeyPkcs8Base64)
+  ) {
+    throw new Error("ArtifactPass device signing credential is malformed");
+  }
+  return JSON.stringify({
+    version: 2,
+    origin: new URL(originValue).origin,
+    token,
+    device_signing: {
+      key_id: deviceSigning.keyId,
+      public_key: deviceSigning.publicKeyBase64,
+      private_key_pkcs8: deviceSigning.privateKeyPkcs8Base64,
+    },
+  });
 };
 
-export const resolveAgentCredential = (
+export const resolveAgentCredentialBinding = (
   storedValue: string,
   expectedOriginValue: URL | string,
   requireOriginBinding = false,
-): string => {
+): AgentCredentialBinding => {
   if (agentTokenPattern.test(storedValue)) {
     if (requireOriginBinding) {
       throw new Error("ArtifactPass credential predates origin binding; reconnect this profile before publishing");
     }
-    return storedValue;
+    return { token: storedValue };
   }
   let parsed: unknown;
   try {
@@ -41,7 +75,7 @@ export const resolveAgentCredential = (
   if (
     parsed === null ||
     typeof parsed !== "object" ||
-    (parsed as { version?: unknown }).version !== 1 ||
+    ((parsed as { version?: unknown }).version !== 1 && (parsed as { version?: unknown }).version !== 2) ||
     typeof (parsed as { origin?: unknown }).origin !== "string" ||
     typeof (parsed as { token?: unknown }).token !== "string" ||
     !agentTokenPattern.test((parsed as { token: string }).token)
@@ -52,8 +86,36 @@ export const resolveAgentCredential = (
   if (new URL((parsed as { origin: string }).origin).origin !== expectedOrigin) {
     throw new Error("ArtifactPass credential belongs to a different deployment; reconnect this profile");
   }
-  return (parsed as { token: string }).token;
+  if ((parsed as { version: number }).version === 1) {
+    return { token: (parsed as { token: string }).token };
+  }
+  const device = (parsed as { device_signing?: unknown }).device_signing;
+  if (device === null || typeof device !== "object" || Array.isArray(device)) {
+    throw new Error("ArtifactPass device signing credential is malformed");
+  }
+  const candidate = device as Record<string, unknown>;
+  if (
+    typeof candidate.key_id !== "string" || !/^dk_[A-Za-z0-9_-]{43}$/u.test(candidate.key_id) ||
+    typeof candidate.public_key !== "string" || !/^[A-Za-z0-9+/]{43}=$/u.test(candidate.public_key) ||
+    typeof candidate.private_key_pkcs8 !== "string" || !/^[A-Za-z0-9+/]+={0,2}$/u.test(candidate.private_key_pkcs8)
+  ) {
+    throw new Error("ArtifactPass device signing credential is malformed");
+  }
+  return {
+    token: (parsed as { token: string }).token,
+    deviceSigning: {
+      keyId: candidate.key_id,
+      publicKeyBase64: candidate.public_key,
+      privateKeyPkcs8Base64: candidate.private_key_pkcs8,
+    },
+  };
 };
+
+export const resolveAgentCredential = (
+  storedValue: string,
+  expectedOriginValue: URL | string,
+  requireOriginBinding = false,
+): string => resolveAgentCredentialBinding(storedValue, expectedOriginValue, requireOriginBinding).token;
 
 export interface CommandResult {
   readonly stdout: string;
