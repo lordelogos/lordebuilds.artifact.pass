@@ -9,6 +9,7 @@ import type { JWTVerifyGetKey } from "jose";
 
 import type { ArtifactServiceBindings } from "./adapters/cloudflare-bindings";
 import { AgentTokenRepository } from "./auth/agent-token";
+import { readPublicSession } from "./auth/public-session";
 import { expireArtifacts } from "./jobs/expire-artifacts";
 import { expireIdentityState } from "./jobs/expire-identity-state";
 import {
@@ -52,6 +53,20 @@ const createService = (
     provenanceBindings: bindings,
     ...(options.now === undefined ? {} : { now: options.now }),
   });
+
+const protocolLimitsFromBindings = (bindings: ArtifactServiceBindings) => {
+  const policy = artifactPolicyFromBindings(bindings);
+  return protocolLimitsSchema.parse({
+    protocol_version: PROTOCOL_VERSION,
+    supported_mime_types: SUPPORTED_MIME_TYPES,
+    max_artifact_bytes: policy.maximumArtifactBytes,
+    max_source_chunk_bytes: PROTOCOL_MAX_SOURCE_CHUNK_BYTES,
+    expiry: {
+      maximum_seconds: policy.maximumExpirySeconds,
+      allowed_seconds: policy.allowedExpirySeconds,
+    },
+  });
+};
 
 const createNonce = (): string => {
   const bytes = crypto.getRandomValues(new Uint8Array(18));
@@ -117,23 +132,30 @@ export const createArtifactApplication = (options: ArtifactApplicationOptions = 
     }),
   );
 
+  app.get("/upload/preflight", async (context) => {
+    const authenticated = options.allowUnauthenticatedUploads === true || (
+      context.env.HUMAN_AUTH_MODE === "artifactpass" &&
+      await readPublicSession(
+        context.req.raw,
+        context.env,
+        (options.now ?? Date.now)(),
+      ) !== null
+    );
+    return context.json({
+      authenticated,
+      policy: protocolLimitsFromBindings(context.env),
+    }, 200, { "Cache-Control": "private, no-store, max-age=0" });
+  });
+
   app.route("/auth", createAuthRouter({
     ...(options.now === undefined ? {} : { now: options.now }),
     ...(options.oauthFetch === undefined ? {} : { oauthFetch: options.oauthFetch }),
   }));
 
   app.get("/upload/policy", requireHuman(authorizationOptions), (context) => {
-    const policy = artifactPolicyFromBindings(context.env);
-    return context.json(protocolLimitsSchema.parse({
-      protocol_version: PROTOCOL_VERSION,
-      supported_mime_types: SUPPORTED_MIME_TYPES,
-      max_artifact_bytes: policy.maximumArtifactBytes,
-      max_source_chunk_bytes: PROTOCOL_MAX_SOURCE_CHUNK_BYTES,
-      expiry: {
-        maximum_seconds: policy.maximumExpirySeconds,
-        allowed_seconds: policy.allowedExpirySeconds,
-      },
-    }), 200, { "Cache-Control": "private, no-store, max-age=0" });
+    return context.json(protocolLimitsFromBindings(context.env), 200, {
+      "Cache-Control": "private, no-store, max-age=0",
+    });
   });
 
   app.get("/upload", requireHuman(authorizationOptions, { redirectToSignIn: true }), (context) => {

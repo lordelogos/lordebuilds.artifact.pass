@@ -185,6 +185,92 @@ describe("public ArtifactPass authentication", () => {
     expect(markup).not.toContain("Cloudflare account");
   });
 
+  it("reports the current browser session alongside public upload policy", async () => {
+    const anonymous = await request("/upload/preflight");
+    expect(anonymous.status).toBe(200);
+    await expect(anonymous.json()).resolves.toMatchObject({
+      authenticated: false,
+      policy: {
+        supported_mime_types: ["text/html", "text/markdown", "application/pdf"],
+        max_artifact_bytes: 26_214_400,
+      },
+    });
+
+    const cookie = await createGoogleSession();
+    const authenticated = await request("/upload/preflight", { headers: { cookie } });
+    expect(authenticated.status).toBe(200);
+    await expect(authenticated.json()).resolves.toMatchObject({ authenticated: true });
+    expect(authenticated.headers.get("cache-control")).toContain("no-store");
+  });
+
+  it("skips provider selection when the browser session is already active", async () => {
+    const cookie = await createGoogleSession();
+    const response = await request(
+      `/auth/sign-in?return_to=${encodeURIComponent("/upload?pending=homepage")}`,
+      { redirect: "manual", headers: { cookie } },
+    );
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe("/upload?pending=homepage");
+  });
+
+  it("does not start a new provider transaction for an active browser session", async () => {
+    const cookie = await createGoogleSession();
+    const response = await request(
+      `/auth/login/google?return_to=${encodeURIComponent("/upload?pending=homepage")}`,
+      { redirect: "manual", headers: { cookie } },
+    );
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe("/upload?pending=homepage");
+    expect(await env.ARTIFACT_DB.prepare(
+      "SELECT COUNT(*) AS count FROM oauth_transactions",
+    ).first("count")).toBe(0);
+  });
+
+  it("treats an expired browser session as signed out everywhere", async () => {
+    const cookie = await createGoogleSession();
+    await env.ARTIFACT_DB.prepare(
+      "UPDATE web_sessions SET expires_at = ?",
+    ).bind(Date.now() - 1).run();
+
+    const preflight = await request("/upload/preflight", { headers: { cookie } });
+    await expect(preflight.json()).resolves.toMatchObject({ authenticated: false });
+
+    const signIn = await request(
+      `/auth/sign-in?return_to=${encodeURIComponent("/upload?pending=homepage")}`,
+      { redirect: "manual", headers: { cookie } },
+    );
+    expect(signIn.status).toBe(200);
+    expect(await signIn.text()).toContain("Continue with Google");
+  });
+
+  it("treats a revoked browser session as signed out on preflight and provider entry", async () => {
+    const cookie = await createGoogleSession();
+    await env.ARTIFACT_DB.prepare(
+      "UPDATE web_sessions SET revoked_at = ?",
+    ).bind(Date.now()).run();
+
+    const preflight = await request("/upload/preflight", { headers: { cookie } });
+    await expect(preflight.json()).resolves.toMatchObject({ authenticated: false });
+
+    const signIn = await request(
+      `/auth/sign-in?return_to=${encodeURIComponent("/upload?pending=homepage")}`,
+      { redirect: "manual", headers: { cookie } },
+    );
+    expect(signIn.status).toBe(200);
+
+    const provider = await request(
+      `/auth/login/google?return_to=${encodeURIComponent("/upload?pending=homepage")}`,
+      { redirect: "manual", headers: { cookie } },
+    );
+    expect(provider.status).toBe(302);
+    expect(provider.headers.get("location")).toContain("accounts.google.com");
+    expect(await env.ARTIFACT_DB.prepare(
+      "SELECT COUNT(*) AS count FROM oauth_transactions",
+    ).first("count")).toBe(1);
+  });
+
   it("completes popup authentication without replacing the landing page", async () => {
     const page = await request("/auth/popup/complete");
     const script = await request("/auth/popup-complete.js");

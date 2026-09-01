@@ -111,7 +111,8 @@ export const publicPageHeaders = (nonce: string) => ({
   "Content-Security-Policy": [
     "default-src 'none'",
     `style-src 'nonce-${nonce}'`,
-    `script-src 'nonce-${nonce}'`,
+    `script-src 'nonce-${nonce}' 'self'`,
+    "connect-src 'self'",
     "frame-ancestors 'none'",
     "base-uri 'none'",
     "form-action 'self'",

@@ -11,6 +11,7 @@ import {
   publicOAuthCookie,
   publicSessionCookie,
   readPublicOAuthState,
+  readPublicSession,
   revokePublicSession,
   type HumanIdentity,
 } from "../auth/public-session";
@@ -46,6 +47,11 @@ const RESPONSE_HEADERS = {
   "Referrer-Policy": "no-referrer",
   "X-Content-Type-Options": "nosniff",
 } as const;
+
+const returnToResponse = (returnTo: string): Response => new Response(null, {
+  status: 302,
+  headers: { ...RESPONSE_HEADERS, Location: returnTo },
+});
 const OAUTH_RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
 const OAUTH_RATE_LIMIT_REQUESTS = 20;
 const OAUTH_REQUEST_TIMEOUT_MS = 10_000;
@@ -241,9 +247,20 @@ export const createAuthRouter = (options: AuthRouterOptions = {}) => {
   const router = new Hono<ArtifactHonoEnvironment>();
   const now = options.now ?? Date.now;
   const oauthFetch = options.oauthFetch ?? globalThis.fetch;
+  const redirectActiveSession = async (
+    request: Request,
+    bindings: ArtifactServiceBindings,
+    returnTo: string,
+  ): Promise<Response | null> =>
+    bindings.HUMAN_AUTH_MODE === "artifactpass" &&
+    await readPublicSession(request, bindings, now()) !== null
+      ? returnToResponse(returnTo)
+      : null;
 
-  router.get("/sign-in", (context) => {
+  router.get("/sign-in", async (context) => {
     const returnTo = safeReturnTo(context.req.query("return_to"));
+    const redirect = await redirectActiveSession(context.req.raw, context.env, returnTo);
+    if (redirect !== null) return redirect;
     const theme = authPageTheme(context.req.query("theme"));
     return context.html(signInPage(returnTo, theme, context.req.query("cancelled") === "1"), 200, {
       ...RESPONSE_HEADERS,
@@ -283,6 +300,8 @@ export const createAuthRouter = (options: AuthRouterOptions = {}) => {
       throw new ArtifactError("not_found", "Authentication provider is unavailable", 404);
     }
     const returnTo = safeReturnTo(context.req.query("return_to"));
+    const redirect = await redirectActiveSession(context.req.raw, context.env, returnTo);
+    if (redirect !== null) return redirect;
     const credentials = providerCredentials(provider, context.env);
     const state = createOpaqueToken();
     const createdAt = now();

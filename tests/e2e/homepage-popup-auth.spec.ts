@@ -1,10 +1,20 @@
-import { expect, test } from "@playwright/test";
+import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { expect, test, type Route } from "@playwright/test";
 
 import { popupCancelledScript } from "../../apps/artifact-service/src/web/popup-cancel";
 import { popupCompleteScript } from "../../apps/artifact-service/src/web/popup-complete";
 import { homepageInteractionScript, publicStyles } from "../../apps/artifact-service/src/web/routes/public-homepage";
+import { publicPageHeaders } from "../../apps/artifact-service/src/web/routes/public-pages";
 
 const origin = "http://artifactpass.test";
+const serviceRoot = resolve(import.meta.dirname, "../../apps/artifact-service");
+const builtValidatorPath = resolve(serviceRoot, "dist/client/assets/homepage-validation.js");
+
+test.beforeAll(() => {
+  execFileSync("pnpm", ["--dir", serviceRoot, "build"], { stdio: "pipe" });
+});
 const homepage = `<!doctype html><html data-theme="light"><body>
   <code id="install-command">pnpm dlx artifactpass</code><button id="copy-command">Copy</button>
   <button id="open-upload">Try it with your own document</button>
@@ -15,7 +25,7 @@ const homepage = `<!doctype html><html data-theme="light"><body>
     <input id="pending-file-input" type="file">
     <div id="drop-zone" tabindex="0"><strong>Drop a document here</strong><span>Choose a file</span></div>
     <div id="file-preview" hidden><b id="file-kind">FILE</b><strong id="file-name"></strong><span id="file-details"></span><button id="change-file">Choose another</button></div>
-    <p id="local-note" hidden>Kept in this browser only.</p><p id="upload-status" hidden></p><div id="upload-config" hidden></div>
+    <p id="local-note" hidden>Kept in this browser only.</p><p id="upload-status" hidden></p><div id="upload-config" hidden><p id="auth-copy">Sign in to continue.</p></div>
     <input type="radio" name="expiry" value="900" checked>
     <input type="radio" name="expiry" value="1800">
     <button id="continue-upload">Continue to sign in</button>
@@ -35,7 +45,7 @@ const visualHomepage = `<!doctype html><html data-theme="light"><head><style>${p
       <div class="drop-zone" id="drop-zone" tabindex="0"><div><strong>Drop a document here</strong><span>Choose a file</span></div></div>
       <div class="file-preview" id="file-preview" hidden><b class="file-kind" id="file-kind">FILE</b><strong id="file-name"></strong><span id="file-details"></span><button id="change-file">Choose another</button></div>
       <p class="local-note" id="local-note" hidden>Kept in this browser only. Nothing uploads before sign-in and final confirmation.</p><p class="modal-status" id="upload-status" hidden></p>
-      <div class="upload-config" id="upload-config" hidden><fieldset><legend>How long should the link work?</legend><div class="expiry-options"><label><input type="radio" name="expiry" value="900" checked><span>15 min</span></label><label><input type="radio" name="expiry" value="1800"><span>30 min</span></label><label><input type="radio" name="expiry" value="3600"><span>60 min</span></label></div></fieldset><div class="auth-gate"><p>Sign in to continue. You still approve the upload before a link is created.</p><button class="continue-button" id="continue-upload">Continue to sign in</button></div></div>
+      <div class="upload-config" id="upload-config" hidden><fieldset><legend>How long should the link work?</legend><div class="expiry-options"><label><input type="radio" name="expiry" value="900" checked><span>15 min</span></label><label><input type="radio" name="expiry" value="1800"><span>30 min</span></label><label><input type="radio" name="expiry" value="3600"><span>60 min</span></label></div></fieldset><div class="auth-gate"><p id="auth-copy">Sign in to continue. You still approve the upload before a link is created.</p><button class="continue-button" id="continue-upload">Continue to sign in</button></div></div>
     </div>
   </dialog><script>${homepageInteractionScript}</script>
 </body></html>`;
@@ -49,11 +59,184 @@ const responsiveHomepage = `<!doctype html><html data-theme="light"><head><meta 
   </main></div>
 </body></html>`;
 
+const homepageValidatorModule = `
+export const prepareBrowserFile = async (file, maximumBytes) => {
+  if (file.size > maximumBytes) return { file: null, error: "This file is larger than the deployment allows." };
+  if (file.name.toLowerCase().endsWith(".pdf")) {
+    const signature = new TextDecoder().decode(await file.slice(0, 5).arrayBuffer());
+    if (signature !== "%PDF-") return { file: null, error: "This file does not contain a valid PDF signature." };
+  }
+  return { file, error: null };
+};`;
+
+const installHomepageRuntime = async (
+  route: Route,
+  authenticated: boolean | (() => boolean) = false,
+): Promise<boolean> => {
+  const url = new URL(route.request().url());
+  if (url.pathname === "/upload/preflight") {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        authenticated: typeof authenticated === "function" ? authenticated() : authenticated,
+        policy: {
+          protocol_version: 1,
+          supported_mime_types: ["text/html", "text/markdown", "application/pdf"],
+          max_artifact_bytes: 26_214_400,
+          max_source_chunk_bytes: 262_144,
+          expiry: { maximum_seconds: 3600, allowed_seconds: [900, 1800, 3600] },
+        },
+      }),
+    });
+    return true;
+  }
+  if (url.pathname === "/assets/homepage-validation.js") {
+    await route.fulfill({ contentType: "application/javascript", body: homepageValidatorModule });
+    return true;
+  }
+  return false;
+};
+
+test("rejects an invalid document before authentication starts", async ({ context, page }) => {
+  await context.route(`${origin}/**`, async (route) => {
+    if (await installHomepageRuntime(route)) return;
+    await route.fulfill({ contentType: "text/html", body: homepage });
+  });
+
+  await page.goto(`${origin}/`);
+  await page.getByRole("button", { name: /Try it with your own document/ }).click();
+  await page.locator("#pending-file-input").setInputFiles({
+    name: "not-a-pdf.pdf",
+    mimeType: "application/pdf",
+    buffer: Buffer.from("This is not a PDF"),
+  });
+
+  await expect(page.locator("#upload-status")).toHaveText("This file does not contain a valid PDF signature.");
+  await expect(page.locator("#upload-config")).toBeHidden();
+  expect(context.pages()).toHaveLength(1);
+});
+
+test("loads the production validator under the real homepage CSP", async ({ context, page }) => {
+  const nonce = "browser-test-nonce";
+  let preflightRequests = 0;
+  await context.route(`${origin}/**`, async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/") {
+      await route.fulfill({
+        contentType: "text/html",
+        headers: publicPageHeaders(nonce),
+        body: homepage.replace("<script>", `<script nonce="${nonce}">`),
+      });
+      return;
+    }
+    if (url.pathname === "/upload/preflight") {
+      preflightRequests += 1;
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          authenticated: false,
+          policy: {
+            protocol_version: 1,
+            supported_mime_types: ["text/html", "text/markdown", "application/pdf"],
+            max_artifact_bytes: 26_214_400,
+            max_source_chunk_bytes: 262_144,
+            expiry: { maximum_seconds: 3600, allowed_seconds: [900, 1800, 3600] },
+          },
+        }),
+      });
+      return;
+    }
+    if (url.pathname === "/assets/homepage-validation.js") {
+      await route.fulfill({
+        contentType: "application/javascript",
+        body: readFileSync(builtValidatorPath, "utf8"),
+      });
+      return;
+    }
+    await route.abort();
+  });
+
+  await page.goto(`${origin}/`);
+  await page.getByRole("button", { name: /Try it with your own document/ }).click();
+  await page.locator("#pending-file-input").setInputFiles({
+    name: "real-validator.md",
+    mimeType: "",
+    buffer: Buffer.from("# Real production validator"),
+  });
+
+  await expect(page.getByRole("button", { name: "Continue to sign in" })).toBeVisible();
+  await expect(page.locator("#file-name")).toHaveText("real-validator.md");
+  expect(preflightRequests).toBe(1);
+  expect(readFileSync(resolve(serviceRoot, "wrangler.jsonc"), "utf8")).toContain('"/upload/*"');
+});
+
+test("lets an authenticated browser continue without provider sign-in", async ({ context, page }) => {
+  await context.route(`${origin}/**`, async (route) => {
+    if (await installHomepageRuntime(route, true)) return;
+    const url = new URL(route.request().url());
+    if (url.pathname === "/") {
+      await route.fulfill({ contentType: "text/html", body: homepage });
+      return;
+    }
+    if (url.pathname === "/upload") {
+      await route.fulfill({ contentType: "text/html", body: "<h1>Upload confirmation</h1>" });
+      return;
+    }
+    await route.abort();
+  });
+
+  await page.goto(`${origin}/`);
+  await page.getByRole("button", { name: /Try it with your own document/ }).click();
+  await page.locator("#pending-file-input").setInputFiles({
+    name: "handoff.md",
+    mimeType: "text/markdown",
+    buffer: Buffer.from("# Signed-in handoff"),
+  });
+
+  await expect(page.getByRole("button", { name: "Continue", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await page.waitForURL(`${origin}/upload?pending=homepage`);
+  expect(context.pages()).toHaveLength(1);
+  await expect(page.getByRole("heading", { name: "Upload confirmation" })).toBeVisible();
+});
+
+test("falls back to sign-in when the browser session expires before continuation", async ({ context, page }) => {
+  let authenticated = true;
+  await context.route(`${origin}/**`, async (route) => {
+    if (await installHomepageRuntime(route, () => authenticated)) return;
+    const url = new URL(route.request().url());
+    if (url.pathname === "/") {
+      await route.fulfill({ contentType: "text/html", body: homepage });
+      return;
+    }
+    if (url.pathname === "/auth/sign-in") {
+      await route.fulfill({ contentType: "text/html", body: "<h1>Sign in again</h1>" });
+      return;
+    }
+    await route.abort();
+  });
+
+  await page.goto(`${origin}/`);
+  await page.getByRole("button", { name: /Try it with your own document/ }).click();
+  await page.locator("#pending-file-input").setInputFiles({
+    name: "handoff.md",
+    mimeType: "text/markdown",
+    buffer: Buffer.from("# Session-expiry handoff"),
+  });
+
+  await expect(page.getByRole("button", { name: "Continue", exact: true })).toBeVisible();
+  authenticated = false;
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await page.waitForURL(new RegExp(`${origin}/auth/sign-in\\?`));
+  await expect(page.getByRole("heading", { name: "Sign in again" })).toBeVisible();
+  expect(context.pages()).toHaveLength(1);
+});
+
 test("renders a single selected document without the empty drop target", async ({ context, page }) => {
-  await context.route(`${origin}/**`, (route) => route.fulfill({
-    contentType: "text/html",
-    body: visualHomepage,
-  }));
+  await context.route(`${origin}/**`, async (route) => {
+    if (await installHomepageRuntime(route)) return;
+    await route.fulfill({ contentType: "text/html", body: visualHomepage });
+  });
 
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto(`${origin}/?theme=light`);
@@ -98,6 +281,7 @@ test("keeps the complete landing page inside phone and tablet viewports", async 
 
 test("keeps mobile authentication in one tab with the selected document stored", async ({ context, page }) => {
   await context.route(`${origin}/**`, async (route) => {
+    if (await installHomepageRuntime(route)) return;
     const url = new URL(route.request().url());
     if (url.pathname === "/") {
       await route.fulfill({ contentType: "text/html", body: homepage });
@@ -171,6 +355,7 @@ test("keeps mobile authentication in one tab with the selected document stored",
 
 test("keeps the landing page open while authentication runs in a popup", async ({ context, page }) => {
   await context.route(`${origin}/**`, async (route) => {
+    if (await installHomepageRuntime(route)) return;
     const url = new URL(route.request().url());
     if (url.pathname === "/") {
       await route.fulfill({ contentType: "text/html", body: homepage });
@@ -234,6 +419,7 @@ test("keeps the landing page open while authentication runs in a popup", async (
 
 test("keeps one selected document ready when the sign-in popup is closed", async ({ context, page }) => {
   await context.route(`${origin}/**`, async (route) => {
+    if (await installHomepageRuntime(route)) return;
     const url = new URL(route.request().url());
     if (url.pathname === "/") {
       await route.fulfill({ contentType: "text/html", body: homepage });
@@ -270,6 +456,7 @@ test("keeps one selected document ready when the sign-in popup is closed", async
 
 test("accepts a matching completion signal after the popup closes", async ({ context, page }) => {
   await context.route(`${origin}/**`, async (route) => {
+    if (await installHomepageRuntime(route)) return;
     const url = new URL(route.request().url());
     if (url.pathname === "/") {
       await route.fulfill({ contentType: "text/html", body: homepage });
@@ -314,6 +501,7 @@ test("accepts a matching completion signal after the popup closes", async ({ con
 
 test("restores the stored document from a completion tab without an opener", async ({ context }) => {
   await context.route(`${origin}/**`, async (route) => {
+    if (await installHomepageRuntime(route)) return;
     const url = new URL(route.request().url());
     if (url.pathname === "/") {
       await route.fulfill({ contentType: "text/html", body: homepage });
@@ -376,6 +564,7 @@ test("restores the stored document from a completion tab without an opener", asy
 
 test("returns a cancelled provider sign-in to the selected document", async ({ context, page }) => {
   await context.route(`${origin}/**`, async (route) => {
+    if (await installHomepageRuntime(route)) return;
     const url = new URL(route.request().url());
     if (url.pathname === "/") {
       await route.fulfill({ contentType: "text/html", body: homepage });
@@ -431,6 +620,7 @@ test("returns a cancelled provider sign-in to the selected document", async ({ c
 
 test("falls back to the upload screen when a mobile auth tab cannot close", async ({ context }) => {
   await context.route(`${origin}/**`, async (route) => {
+    if (await installHomepageRuntime(route)) return;
     const url = new URL(route.request().url());
     if (url.pathname === "/") {
       await route.fulfill({ contentType: "text/html", body: homepage });

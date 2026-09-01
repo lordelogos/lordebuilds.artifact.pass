@@ -1,5 +1,4 @@
 import {
-  SUPPORTED_MIME_TYPES,
   protocolLimitsSchema,
   uploadResponseSchemaForOrigin,
   type ProtocolLimits,
@@ -9,6 +8,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { ExpiryPicker } from "../components/expiry-picker";
 import { FileDrop } from "../components/file-drop";
+import { prepareBrowserFile } from "../file-validation";
 import {
   applyPublicTheme,
   PublicFooter,
@@ -16,54 +16,46 @@ import {
   readPublicTheme,
   type PublicTheme,
 } from "../components/public-chrome";
-import { clearPendingUpload, hasPendingUploadIntent, readPendingUpload } from "../pending-upload";
-import { findFirstSensitiveContent } from "../../../../../scripts/security-patterns.mjs";
+import {
+  clearPendingUpload,
+  hasPendingUploadIntent,
+  readPendingUpload,
+  writePendingUpload,
+} from "../pending-upload";
 
 type UploadStage = "idle" | "validating" | "uploading" | "complete";
 
 type UploadPolicy = ProtocolLimits;
 type UploadResult = UploadResponse;
 
-const extensionByMime = {
-  "text/html": new Set(["html", "htm"]),
-  "text/markdown": new Set(["md", "markdown"]),
-  "application/pdf": new Set(["pdf"]),
-} as const;
+interface UploadPreflight {
+  readonly authenticated: boolean;
+  readonly policy: UploadPolicy;
+}
 
-export const validateBrowserFile = async (
-  file: File,
-  maximumBytes: number,
-  extractPdf: (file: File) => Promise<{ readonly derivedText: string }> = async (pdf) =>
-    (await import("../workers/pdf-extraction-client")).extractPdfInBrowser(pdf),
-): Promise<string | null> => {
-  if (!SUPPORTED_MIME_TYPES.includes(file.type as never)) {
-    return "Only HTML, Markdown, and PDF files are supported.";
+const readUploadPreflight = async (signal?: AbortSignal): Promise<UploadPreflight> => {
+  const response = await fetch("/upload/preflight", {
+    credentials: "same-origin",
+    ...(signal === undefined ? {} : { signal }),
+  });
+  if (!response.ok) throw new Error("The upload policy is unavailable.");
+  const body: unknown = await response.json();
+  if (
+    typeof body !== "object" || body === null ||
+    !("authenticated" in body) || typeof body.authenticated !== "boolean" ||
+    !("policy" in body)
+  ) {
+    throw new Error("The upload policy is unavailable.");
   }
-  if (file.size === 0) return "Choose a file that is not empty.";
-  if (file.size > maximumBytes) return "This file is larger than the deployment allows.";
-  const mimeType = file.type as keyof typeof extensionByMime;
-  const extension = file.name.toLowerCase().split(".").pop() ?? "";
-  if (!extensionByMime[mimeType].has(extension)) {
-    return "The filename extension does not match the file type.";
-  }
-  if (mimeType === "application/pdf") {
-    const bytes = new Uint8Array(await file.slice(0, 5).arrayBuffer());
-    if (new TextDecoder().decode(bytes.slice(0, 5)) !== "%PDF-") {
-      return "This file does not contain a valid PDF signature.";
-    }
-    const extraction = await extractPdf(file);
-    const finding = findFirstSensitiveContent(extraction.derivedText);
-    if (finding !== null) return `This PDF may contain sensitive ${finding.label}.`;
-  } else {
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    try {
-      const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-      if (text.includes("\0")) return "Text artifacts cannot contain null bytes.";
-    } catch {
-      return "Text artifacts must use UTF-8 encoding.";
-    }
-  }
-  return null;
+  return {
+    authenticated: body.authenticated,
+    policy: protocolLimitsSchema.parse(body.policy),
+  };
+};
+
+const signInUrl = (): string => {
+  const theme = document.documentElement.dataset.theme === "light" ? "light" : "dark";
+  return `/auth/sign-in?return_to=${encodeURIComponent("/upload?pending=homepage")}&theme=${theme}`;
 };
 
 const uploadWithProgress = (
@@ -134,14 +126,14 @@ export function UploadPage() {
 
   useEffect(() => {
     const controller = new AbortController();
-    fetch("/upload/policy", { credentials: "same-origin", signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok) throw new Error("The upload policy is unavailable.");
-        return protocolLimitsSchema.parse(await response.json());
-      })
-      .then((nextPolicy) => {
-        setPolicy(nextPolicy);
-        setExpiresInSeconds(nextPolicy.expiry.allowed_seconds[0] ?? 0);
+    readUploadPreflight(controller.signal)
+      .then((preflight) => {
+        if (!preflight.authenticated) {
+          window.location.assign(signInUrl());
+          return;
+        }
+        setPolicy(preflight.policy);
+        setExpiresInSeconds(preflight.policy.expiry.allowed_seconds[0] ?? 0);
       })
       .catch((caught: unknown) => {
         if (!controller.signal.aborted) {
@@ -158,14 +150,14 @@ export function UploadPage() {
     void readPendingUpload()
       .then(async (pending) => {
         if (pending === null || cancelled) return;
-        const validationError = await validateBrowserFile(
+        const prepared = await prepareBrowserFile(
           pending.file,
           policy.max_artifact_bytes,
         );
         if (cancelled) return;
-        setError(validationError);
-        if (validationError === null) {
-          setFile(pending.file);
+        setError(prepared.error);
+        if (prepared.file !== null) {
+          setFile(prepared.file);
           setRestoredFromSignIn(true);
           if (policy.expiry.allowed_seconds.includes(pending.expiresInSeconds)) {
             setExpiresInSeconds(pending.expiresInSeconds);
@@ -194,12 +186,12 @@ export function UploadPage() {
     setCopiedShareUrl(null);
     setRestoredFromSignIn(false);
     setStage("validating");
-    const validationError = await validateBrowserFile(
+    const prepared = await prepareBrowserFile(
       nextFile,
       policy.max_artifact_bytes,
     );
-    setError(validationError);
-    setFile(validationError === null ? nextFile : null);
+    setError(prepared.error);
+    setFile(prepared.file);
     setStage("idle");
   };
 
@@ -208,6 +200,12 @@ export function UploadPage() {
     setError(null);
     setProgress(0);
     try {
+      const preflight = await readUploadPreflight();
+      if (!preflight.authenticated) {
+        await writePendingUpload(file, expiresInSeconds);
+        window.location.assign(signInUrl());
+        return;
+      }
       setStage("uploading");
       setResult(await uploadWithProgress(
         file,
@@ -218,6 +216,16 @@ export function UploadPage() {
       setProgress(100);
       setStage("complete");
     } catch (caught) {
+      try {
+        const preflight = await readUploadPreflight();
+        if (!preflight.authenticated) {
+          await writePendingUpload(file, expiresInSeconds);
+          window.location.assign(signInUrl());
+          return;
+        }
+      } catch {
+        // Keep the original error when session status cannot be checked.
+      }
       setError(caught instanceof Error ? caught.message : "The artifact could not be shared.");
       setStage("idle");
     }
