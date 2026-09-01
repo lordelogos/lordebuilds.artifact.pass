@@ -5,15 +5,22 @@ const uploadUrl = new URL("/upload", previewUrl).href;
 
 const shareToken = "S".repeat(43);
 
-const mockUploadService = async (page: Page, onUpload?: (body: string) => void) => {
-  await page.route("**/upload/policy", (route) => route.fulfill({
+const mockUploadService = async (
+  page: Page,
+  onUpload?: (body: string) => void,
+  authenticated: () => boolean = () => true,
+) => {
+  await page.route("**/upload/preflight", (route) => route.fulfill({
     contentType: "application/json",
     body: JSON.stringify({
-      protocol_version: 1,
-      supported_mime_types: ["text/html", "text/markdown", "application/pdf"],
-      max_artifact_bytes: 26_214_400,
-      max_source_chunk_bytes: 65_536,
-      expiry: { maximum_seconds: 86_400, allowed_seconds: [900, 1800, 3600, 43_200, 86_400] },
+      authenticated: authenticated(),
+      policy: {
+        protocol_version: 1,
+        supported_mime_types: ["text/html", "text/markdown", "application/pdf"],
+        max_artifact_bytes: 26_214_400,
+        max_source_chunk_bytes: 65_536,
+        expiry: { maximum_seconds: 86_400, allowed_seconds: [900, 1800, 3600, 43_200, 86_400] },
+      },
     }),
   }));
   await page.route("**/upload/artifacts", async (route) => {
@@ -174,5 +181,28 @@ test.describe("local upload page preview", () => {
     expect(multipartBody).not.toContain('name="derived_text"');
     expect(multipartBody).not.toContain('name="pdf_provenance"');
     expect(multipartBody).not.toContain('name="extraction_status"');
+  });
+
+  test("preserves the selected document and returns to sign-in when the session expires", async ({ page }) => {
+    let authenticated = true;
+    await mockUploadService(page, undefined, () => authenticated);
+    await page.route("**/auth/sign-in?**", (route) => route.fulfill({
+      contentType: "text/html",
+      body: "<h1>Sign in again</h1>",
+    }));
+    await page.goto(uploadUrl);
+    await page.locator('input[type="file"]').setInputFiles({
+      name: "session-expiry.md",
+      mimeType: "text/markdown",
+      buffer: Buffer.from("# Preserve this handoff"),
+    });
+
+    authenticated = false;
+    await page.getByRole("button", { name: "Create temporary link" }).click();
+    await page.waitForURL(/\/auth\/sign-in\?/u);
+    await expect(page.getByRole("heading", { name: "Sign in again" })).toBeVisible();
+    await expect.poll(() => page.evaluate(() =>
+      sessionStorage.getItem("artifactpass-pending-upload"),
+    )).toBe("1");
   });
 });

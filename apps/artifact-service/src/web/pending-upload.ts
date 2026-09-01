@@ -74,6 +74,24 @@ const isPendingUploadRecord = (value: unknown): value is PendingUploadRecord => 
 export const hasPendingUploadIntent = (): boolean =>
   sessionStorage.getItem(INTENT_MARKER) === "1";
 
+export const writePendingUpload = async (
+  file: File,
+  expiresInSeconds: number,
+): Promise<void> => {
+  const bytes = await file.arrayBuffer();
+  await transact("readwrite", (store) => store.put({
+    key: RECORD_KEY,
+    version: 1,
+    name: file.name,
+    type: file.type,
+    lastModified: file.lastModified,
+    bytes,
+    expiresInSeconds,
+    createdAt: Date.now(),
+  }));
+  sessionStorage.setItem(INTENT_MARKER, "1");
+};
+
 export const clearPendingUpload = async (): Promise<void> => {
   sessionStorage.removeItem(INTENT_MARKER);
   await transact("readwrite", (store) => store.delete(RECORD_KEY));
