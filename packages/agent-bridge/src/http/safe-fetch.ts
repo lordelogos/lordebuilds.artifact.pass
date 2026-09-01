@@ -1,5 +1,10 @@
 import { artifactErrorSchema } from "artifact-protocol";
 
+import {
+  fetchCloudflareDeploymentRoute,
+  type CloudflareRouteFetchDependencies,
+} from "./cloudflare-route-fetch";
+
 const redirectStatuses = new Set([301, 302, 303, 307, 308]);
 const defaultFetchTimeoutMs = 60_000;
 
@@ -45,7 +50,7 @@ const isLocalHostname = (hostname: string): boolean =>
 const isNonPublicHostname = (hostname: string): boolean =>
   isLocalHostname(hostname) || isNonPublicIpv4(hostname);
 
-export interface FetchWithoutRedirectsOptions {
+export interface FetchWithoutRedirectsOptions extends Pick<CloudflareRouteFetchDependencies, "resolve4"> {
   readonly timeoutMs?: number;
 }
 
@@ -99,7 +104,14 @@ export const fetchWithoutRedirects = async (
   const signal = init.signal === undefined || init.signal === null
     ? timeoutSignal
     : AbortSignal.any([init.signal, timeoutSignal]);
-  const response = await fetchImplementation(input, { ...init, redirect: "manual", signal });
+  const response = await fetchCloudflareDeploymentRoute(
+    input,
+    { ...init, redirect: "manual", signal },
+    {
+      fetch: fetchImplementation,
+      ...(options.resolve4 === undefined ? {} : { resolve4: options.resolve4 }),
+    },
+  );
   if (redirectStatuses.has(response.status) || response.redirected) {
     throw new Error("ArtifactPass rejected a redirect response");
   }

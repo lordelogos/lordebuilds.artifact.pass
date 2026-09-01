@@ -6,6 +6,10 @@ export {
   type DeploymentOriginOptions,
 } from "./http/safe-fetch";
 export {
+  fetchCloudflareDeploymentRoute,
+  type CloudflareRouteFetchDependencies,
+} from "./http/cloudflare-route-fetch";
+export {
   agentCredentialAccountForProfile,
   bindAgentCredential,
   ARTIFACTPASS_CREDENTIAL_SERVICE,

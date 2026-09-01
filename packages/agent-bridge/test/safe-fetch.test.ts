@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { EventEmitter } from "node:events";
+import type { request as httpsRequest } from "node:https";
 
 import {
   assertDeploymentOrigin,
   fetchWithoutRedirects,
 } from "../src/http/safe-fetch";
+import { fetchCloudflareDeploymentRoute } from "../src/http/cloudflare-route-fetch";
 
 const pendingFetch = (): typeof globalThis.fetch =>
   vi.fn(async (_input, init) => await new Promise<Response>((_resolve, reject) => {
@@ -61,6 +64,72 @@ describe("deployment origin validation", () => {
 });
 
 describe("fetchWithoutRedirects", () => {
+  it("does not consume a Request body before the primary fetch", async () => {
+    const request = new Request("https://artifacts.example.com/connect", {
+      method: "POST",
+      body: "payload",
+    });
+    const fetchImplementation = vi.fn(async (input: string | URL | Request) => {
+      expect(input).toBe(request);
+      expect(request.bodyUsed).toBe(false);
+      return Response.json({ ok: true });
+    });
+    const response = await fetchCloudflareDeploymentRoute(request, {}, { fetch: fetchImplementation });
+    expect(await response.json()).toEqual({ ok: true });
+  });
+
+  it("preserves a POST request through the successful HTTPS DNS fallback", async () => {
+    const failure = Object.assign(new Error("not found"), { code: "ENOTFOUND" });
+    const fetchImplementation = vi.fn(async () => { throw failure; });
+    let sentBody: Buffer | undefined;
+    const requestHttps = vi.fn((url, options, callback) => {
+      const request = new EventEmitter() as EventEmitter & {
+        end(body?: Buffer): void;
+        destroy(error?: Error): void;
+      };
+      request.end = (body?: Buffer) => {
+        sentBody = body;
+        const incoming = new EventEmitter() as EventEmitter & {
+          statusCode: number;
+          headers: Record<string, string>;
+        };
+        incoming.statusCode = 201;
+        incoming.headers = { "content-type": "application/json" };
+        callback?.(incoming as never);
+        incoming.emit("data", Buffer.from('{"created":true}'));
+        incoming.emit("end");
+      };
+      request.destroy = (error?: Error) => {
+        if (error !== undefined) request.emit("error", error);
+      };
+      expect(url).toEqual(new URL("https://artifacts.example.com/connect"));
+      expect(options.method).toBe("POST");
+      expect(options.headers).toMatchObject({
+        authorization: "Bearer test-token",
+        "content-type": "text/plain;charset=UTF-8",
+      });
+      expect(options.lookup).toBeTypeOf("function");
+      return request as never;
+    }) as unknown as typeof httpsRequest;
+    const response = await fetchCloudflareDeploymentRoute(
+      new Request("https://artifacts.example.com/connect", {
+        method: "POST",
+        headers: { authorization: "Bearer test-token" },
+        body: "payload",
+      }),
+      { redirect: "error" },
+      {
+        fetch: fetchImplementation,
+        resolve4: vi.fn(async () => ["104.16.132.229"]),
+        requestHttps,
+      },
+    );
+
+    expect(sentBody?.toString("utf8")).toBe("payload");
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toEqual({ created: true });
+  });
+
   it("applies the transfer-safe default timeout", async () => {
     const timeout = new AbortController();
     const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockReturnValue(timeout.signal);
@@ -108,6 +177,48 @@ describe("fetchWithoutRedirects", () => {
 
     caller.abort(reason);
 
+    await expect(request).rejects.toBe(reason);
+  });
+
+  it("rejects a DNS fallback that resolves to a private address", async () => {
+    const failure = Object.assign(new Error("not found"), { code: "ENOTFOUND" });
+    await expect(fetchWithoutRedirects(
+      vi.fn(async () => { throw failure; }),
+      new URL("https://artifacts.example.com"),
+      {},
+      { resolve4: vi.fn(async () => ["127.0.0.1"]) },
+    )).rejects.toThrow(/no public address/u);
+  });
+
+  it.each([
+    "192.0.0.1",
+    "192.0.2.1",
+    "192.88.99.1",
+    "198.18.0.1",
+    "198.51.100.1",
+    "203.0.113.1",
+  ])("rejects special-purpose DNS fallback address %s", async (address) => {
+    const failure = Object.assign(new Error("not found"), { code: "ENOTFOUND" });
+    await expect(fetchWithoutRedirects(
+      vi.fn(async () => { throw failure; }),
+      new URL("https://artifacts.example.com"),
+      {},
+      { resolve4: vi.fn(async () => [address]) },
+    )).rejects.toThrow(/no public address/u);
+  });
+
+  it("applies the request timeout while DNS fallback is resolving", async () => {
+    const timeout = new AbortController();
+    vi.spyOn(AbortSignal, "timeout").mockReturnValue(timeout.signal);
+    const failure = Object.assign(new Error("not found"), { code: "ENOTFOUND" });
+    const request = fetchWithoutRedirects(
+      vi.fn(async () => { throw failure; }),
+      new URL("https://artifacts.example.com"),
+      {},
+      { resolve4: vi.fn(async () => await new Promise<readonly string[]>(() => undefined)) },
+    );
+    const reason = new Error("DNS resolution timed out");
+    timeout.abort(reason);
     await expect(request).rejects.toBe(reason);
   });
 });

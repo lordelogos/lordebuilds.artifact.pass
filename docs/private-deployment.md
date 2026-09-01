@@ -43,6 +43,8 @@ pnpm dlx artifactpass --base-url https://artifacts.example.com
 
 It also writes a redacted receipt. The receipt contains resource identifiers and verification results, not Cloudflare credentials, login secrets, agent tokens, private keys, or live share links.
 
+Immediately after Cloudflare activates a new hostname, the operating system may briefly retain an earlier DNS failure. ArtifactPass retries that narrow case through Cloudflare's public resolver while preserving HTTPS hostname verification. It does not accept redirects or private-network fallback addresses. Teammates can therefore connect as soon as the deployment passes verification instead of waiting for a local DNS cache to expire.
+
 ## Pause or resume
 
 Setup progress belongs to your operating-system user, not the folder where the command was started. You may stop and resume from another folder:

@@ -1786,9 +1786,9 @@ var require_deflate = __commonJS({
     var BS_FINISH_STARTED = 3;
     var BS_FINISH_DONE = 4;
     var OS_CODE = 3;
-    function err(strm, errorCode) {
-      strm.msg = msg[errorCode];
-      return errorCode;
+    function err(strm, errorCode2) {
+      strm.msg = msg[errorCode2];
+      return errorCode2;
     }
     function rank(f2) {
       return (f2 << 1) - (f2 > 4 ? 9 : 0);
@@ -91068,16 +91068,31 @@ var ARTIFACTPASS_CREDENTIAL_SERVICE = "artifactpass";
 var LEGACY_ARTIFACT_SHARE_CREDENTIAL_SERVICE = "lordebuilds.artifacts.share";
 var agentCredentialAccountForProfile = (profileName) => profileName === "production" ? "agent-token" : `agent-token:${profileName}`;
 var agentTokenPattern = /^as_[A-Za-z0-9_-]{43}$/u;
-var bindAgentCredential = (originValue, token) => {
+var bindAgentCredential = (originValue, token, deviceSigning) => {
   if (!agentTokenPattern.test(token)) throw new Error("ArtifactPass agent credential is malformed");
-  return JSON.stringify({ version: 1, origin: new URL(originValue).origin, token });
+  if (deviceSigning === void 0) {
+    return JSON.stringify({ version: 1, origin: new URL(originValue).origin, token });
+  }
+  if (!/^dk_[A-Za-z0-9_-]{43}$/u.test(deviceSigning.keyId) || !/^[A-Za-z0-9+/]{43}=$/u.test(deviceSigning.publicKeyBase64) || !/^[A-Za-z0-9+/]+={0,2}$/u.test(deviceSigning.privateKeyPkcs8Base64)) {
+    throw new Error("ArtifactPass device signing credential is malformed");
+  }
+  return JSON.stringify({
+    version: 2,
+    origin: new URL(originValue).origin,
+    token,
+    device_signing: {
+      key_id: deviceSigning.keyId,
+      public_key: deviceSigning.publicKeyBase64,
+      private_key_pkcs8: deviceSigning.privateKeyPkcs8Base64
+    }
+  });
 };
-var resolveAgentCredential = (storedValue, expectedOriginValue, requireOriginBinding = false) => {
+var resolveAgentCredentialBinding = (storedValue, expectedOriginValue, requireOriginBinding = false) => {
   if (agentTokenPattern.test(storedValue)) {
     if (requireOriginBinding) {
       throw new Error("ArtifactPass credential predates origin binding; reconnect this profile before publishing");
     }
-    return storedValue;
+    return { token: storedValue };
   }
   let parsed;
   try {
@@ -91085,15 +91100,34 @@ var resolveAgentCredential = (storedValue, expectedOriginValue, requireOriginBin
   } catch {
     throw new Error("ArtifactPass agent credential is malformed");
   }
-  if (parsed === null || typeof parsed !== "object" || parsed.version !== 1 || typeof parsed.origin !== "string" || typeof parsed.token !== "string" || !agentTokenPattern.test(parsed.token)) {
+  if (parsed === null || typeof parsed !== "object" || parsed.version !== 1 && parsed.version !== 2 || typeof parsed.origin !== "string" || typeof parsed.token !== "string" || !agentTokenPattern.test(parsed.token)) {
     throw new Error("ArtifactPass agent credential is malformed");
   }
   const expectedOrigin = new URL(expectedOriginValue).origin;
   if (new URL(parsed.origin).origin !== expectedOrigin) {
     throw new Error("ArtifactPass credential belongs to a different deployment; reconnect this profile");
   }
-  return parsed.token;
+  if (parsed.version === 1) {
+    return { token: parsed.token };
+  }
+  const device = parsed.device_signing;
+  if (device === null || typeof device !== "object" || Array.isArray(device)) {
+    throw new Error("ArtifactPass device signing credential is malformed");
+  }
+  const candidate = device;
+  if (typeof candidate.key_id !== "string" || !/^dk_[A-Za-z0-9_-]{43}$/u.test(candidate.key_id) || typeof candidate.public_key !== "string" || !/^[A-Za-z0-9+/]{43}=$/u.test(candidate.public_key) || typeof candidate.private_key_pkcs8 !== "string" || !/^[A-Za-z0-9+/]+={0,2}$/u.test(candidate.private_key_pkcs8)) {
+    throw new Error("ArtifactPass device signing credential is malformed");
+  }
+  return {
+    token: parsed.token,
+    deviceSigning: {
+      keyId: candidate.key_id,
+      publicKeyBase64: candidate.public_key,
+      privateKeyPkcs8Base64: candidate.private_key_pkcs8
+    }
+  };
 };
+var resolveAgentCredential = (storedValue, expectedOriginValue, requireOriginBinding = false) => resolveAgentCredentialBinding(storedValue, expectedOriginValue, requireOriginBinding).token;
 var CredentialStoreCommandError = class extends Error {
   constructor(status) {
     super(`Credential store command failed with status ${status ?? "unknown"}`);
@@ -91281,7 +91315,7 @@ var resolveCredential = async (options) => {
 var PROTOCOL_VERSION = 1;
 var PROTOCOL_MAX_ARTIFACT_BYTES = 25 * 1024 * 1024;
 var PROTOCOL_MAX_SOURCE_CHUNK_BYTES = 64 * 1024;
-var PROTOCOL_MAX_EXPIRY_SECONDS = 24 * 60 * 60;
+var PROTOCOL_MAX_EXPIRY_SECONDS = 7 * 24 * 60 * 60;
 var SUPPORTED_MIME_TYPES = [
   "text/html",
   "text/markdown",
@@ -91517,6 +91551,111 @@ var artifactErrorSchema = external_exports.object({
   }).strict()
 }).strict();
 
+// src/http/cloudflare-route-fetch.ts
+import { Resolver } from "node:dns/promises";
+import { request as httpsRequest } from "node:https";
+var retryableDnsCodes = /* @__PURE__ */ new Set(["EAI_AGAIN", "ENOTFOUND"]);
+var maximumResponseBytes = 2 * 1024 * 1024;
+var errorCode = (error51) => {
+  if (error51 instanceof Error && "code" in error51 && typeof error51.code === "string") return error51.code;
+  if (error51 instanceof Error && "cause" in error51) return errorCode(error51.cause);
+  return void 0;
+};
+var isPublicIpv4 = (address) => {
+  const octets = address.split(".").map(Number);
+  if (octets.length !== 4 || octets.some((value) => !Number.isInteger(value) || value < 0 || value > 255)) {
+    return false;
+  }
+  const [first = -1, second = -1, third = -1] = octets;
+  return !(first === 0 || first === 10 || first === 127 || first >= 224 || first === 100 && second >= 64 && second <= 127 || first === 169 && second === 254 || first === 172 && second >= 16 && second <= 31 || first === 192 && second === 0 && third === 0 || first === 192 && second === 0 && third === 2 || first === 192 && second === 88 && third === 99 || first === 192 && second === 168 || first === 198 && (second === 18 || second === 19) || first === 198 && second === 51 && third === 100 || first === 203 && second === 0 && third === 113);
+};
+var resolveWithSignal = async (resolve4, signal, cancel) => {
+  if (signal === void 0 || signal === null) return resolve4();
+  if (signal.aborted) throw signal.reason;
+  return await new Promise((resolve5, reject) => {
+    const onAbort = () => {
+      cancel?.();
+      reject(signal.reason);
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    resolve4().then(resolve5, reject).finally(() => signal.removeEventListener("abort", onAbort));
+  });
+};
+var responseThroughAddress = async (normalized, address, redirect, requestImplementation) => {
+  if (!isPublicIpv4(address)) throw new Error("ArtifactPass DNS fallback rejected a non-public address");
+  const url2 = new URL(normalized.url);
+  const body = normalized.body === null ? void 0 : Buffer.from(await normalized.arrayBuffer());
+  return await new Promise((resolve4, reject) => {
+    const lookup = ((_hostname, options, callback) => {
+      if (typeof options === "object" && options.all) {
+        callback(null, [{ address, family: 4 }]);
+        return;
+      }
+      callback(null, address, 4);
+    });
+    const request = requestImplementation(url2, {
+      method: normalized.method,
+      headers: Object.fromEntries(normalized.headers.entries()),
+      lookup,
+      signal: normalized.signal
+    }, (incoming) => {
+      const chunks = [];
+      let size = 0;
+      incoming.on("data", (chunk) => {
+        size += chunk.length;
+        if (size > maximumResponseBytes) {
+          request.destroy(new Error("ArtifactPass response is too large"));
+          return;
+        }
+        chunks.push(chunk);
+      });
+      incoming.on("end", () => {
+        const status = incoming.statusCode ?? 500;
+        if (redirect === "error" && status >= 300 && status < 400) {
+          reject(new Error("ArtifactPass route redirected unexpectedly"));
+          return;
+        }
+        const headers = new Headers();
+        for (const [name, value] of Object.entries(incoming.headers)) {
+          if (Array.isArray(value)) value.forEach((item) => headers.append(name, item));
+          else if (value !== void 0) headers.set(name, value);
+        }
+        const responseBody = status === 204 || status === 205 || status === 304 ? null : Buffer.concat(chunks);
+        resolve4(new Response(responseBody, { status, headers }));
+      });
+    });
+    request.on("error", reject);
+    request.end(body);
+  });
+};
+var fetchCloudflareDeploymentRoute = async (request, init = {}, dependencies = {}) => {
+  const fetchImplementation = dependencies.fetch ?? globalThis.fetch;
+  const fallbackRequest = request instanceof Request ? new Request(request.clone(), init) : new Request(request, init);
+  try {
+    return await fetchImplementation(request, init);
+  } catch (error51) {
+    if (!retryableDnsCodes.has(errorCode(error51) ?? "")) throw error51;
+    const url2 = new URL(fallbackRequest.url);
+    if (url2.protocol !== "https:") throw error51;
+    const resolver = dependencies.resolve4 === void 0 ? new Resolver() : void 0;
+    resolver?.setServers(["1.1.1.1", "1.0.0.1"]);
+    const resolve4 = dependencies.resolve4 ?? (async (hostname3) => await resolver.resolve4(hostname3));
+    const addresses = await resolveWithSignal(
+      () => resolve4(url2.hostname),
+      fallbackRequest.signal,
+      resolver === void 0 ? void 0 : () => resolver.cancel()
+    );
+    const address = addresses.find(isPublicIpv4);
+    if (address === void 0) throw new Error("ArtifactPass DNS fallback found no public address");
+    return await responseThroughAddress(
+      fallbackRequest,
+      address,
+      init.redirect,
+      dependencies.requestHttps ?? httpsRequest
+    );
+  }
+};
+
 // src/http/safe-fetch.ts
 var redirectStatuses = /* @__PURE__ */ new Set([301, 302, 303, 307, 308]);
 var defaultFetchTimeoutMs = 6e4;
@@ -91572,7 +91711,14 @@ var fetchWithoutRedirects = async (fetchImplementation, input, init = {}, option
   }
   const timeoutSignal = AbortSignal.timeout(timeoutMs);
   const signal = init.signal === void 0 || init.signal === null ? timeoutSignal : AbortSignal.any([init.signal, timeoutSignal]);
-  const response = await fetchImplementation(input, { ...init, redirect: "manual", signal });
+  const response = await fetchCloudflareDeploymentRoute(
+    input,
+    { ...init, redirect: "manual", signal },
+    {
+      fetch: fetchImplementation,
+      ...options.resolve4 === void 0 ? {} : { resolve4: options.resolve4 }
+    }
+  );
   if (redirectStatuses.has(response.status) || response.redirected) {
     throw new Error("ArtifactPass rejected a redirect response");
   }
@@ -91589,13 +91735,25 @@ var responseError = async (response) => {
 };
 
 // src/connection/device-authorization.ts
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, generateKeyPairSync, randomBytes } from "node:crypto";
 var base64Url = (value) => Buffer.from(value).toString("base64url");
 var wait = (milliseconds) => new Promise((resolve4) => setTimeout(resolve4, milliseconds));
+var createDeviceSigningCredential = () => {
+  const pair = generateKeyPairSync("ed25519");
+  const publicSpki = pair.publicKey.export({ format: "der", type: "spki" });
+  const publicRaw = publicSpki.subarray(publicSpki.byteLength - 32);
+  const publicKeyBase64 = publicRaw.toString("base64");
+  return {
+    keyId: `dk_${createHash("sha256").update(publicRaw).digest("base64url")}`,
+    publicKeyBase64,
+    privateKeyPkcs8Base64: pair.privateKey.export({ format: "der", type: "pkcs8" }).toString("base64")
+  };
+};
 var startDeviceAuthorization = async (baseUrl, dependencies = {}) => {
   const origin = assertSafeDeploymentOrigin(new URL(baseUrl));
   const verifier = base64Url(randomBytes(32));
   const challenge = createHash("sha256").update(verifier).digest("base64url");
+  const deviceSigning = createDeviceSigningCredential();
   const fetchImplementation = dependencies.fetch ?? globalThis.fetch;
   const now = dependencies.now ?? Date.now;
   const deviceResponse = await fetchWithoutRedirects(
@@ -91604,7 +91762,14 @@ var startDeviceAuthorization = async (baseUrl, dependencies = {}) => {
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code_challenge: challenge, code_challenge_method: "S256" })
+      body: JSON.stringify({
+        code_challenge: challenge,
+        code_challenge_method: "S256",
+        device_key_id: deviceSigning.keyId,
+        device_public_key: deviceSigning.publicKeyBase64,
+        agent_name: dependencies.agentName ?? "ArtifactPass agent",
+        workspace_identity: dependencies.workspaceIdentity ?? "Current workspace"
+      })
     }
   );
   if (!deviceResponse.ok) throw await responseError(deviceResponse);
@@ -91662,7 +91827,7 @@ var startDeviceAuthorization = async (baseUrl, dependencies = {}) => {
         }
         if (!tokenResponse.ok) throw await responseError(tokenResponse);
         const token = await tokenResponse.json();
-        return { accessToken: token.access_token, expiresIn: token.expires_in };
+        return { accessToken: token.access_token, expiresIn: token.expires_in, deviceSigning };
       }
       throw new Error("Device authorization expired before approval");
     }
@@ -91759,7 +91924,9 @@ var createConnectionController = (options) => {
     try {
       authorization = await (options.startDeviceAuthorization ?? (() => startDeviceAuthorization(options.origin, {
         ...options.fetch === void 0 ? {} : { fetch: options.fetch },
-        now
+        now,
+        ...options.agentName === void 0 ? {} : { agentName: options.agentName },
+        ...options.workspaceIdentity === void 0 ? {} : { workspaceIdentity: options.workspaceIdentity }
       })))();
     } catch (error51) {
       current = { status: "failed", ...base(), message: safeMessage(error51) };
@@ -91779,9 +91946,9 @@ var createConnectionController = (options) => {
       approval_url: authorization.approvalUrl,
       browser_opened: browserOpened
     };
-    void authorization.waitForApproval().then(async ({ accessToken, expiresIn }) => {
+    void authorization.waitForApproval().then(async ({ accessToken, expiresIn, deviceSigning }) => {
       try {
-        await options.credentialStore.set(bindAgentCredential(options.origin, accessToken));
+        await options.credentialStore.set(bindAgentCredential(options.origin, accessToken, deviceSigning));
       } catch (persistenceError) {
         try {
           await revokeCredential(accessToken);
@@ -93231,16 +93398,32 @@ var readArtifactOutputSchema = external_exports.object({
 // src/server.ts
 var resolvePdfProvenance = async (configuration) => {
   if (configuration.pdfProvenance !== void 0) return configuration.pdfProvenance;
-  if (configuration.pdfProvenanceKeyId === void 0 || configuration.pdfProvenanceStore === void 0) {
-    return void 0;
+  if (configuration.pdfProvenanceKeyId !== void 0 && configuration.pdfProvenanceStore !== void 0) {
+    const privateKeyPkcs8Base64 = await configuration.pdfProvenanceStore.get();
+    if (privateKeyPkcs8Base64 === null) {
+      throw new Error(
+        `No PDF signing credential is stored for key ${configuration.pdfProvenanceKeyId}`
+      );
+    }
+    return { keyId: configuration.pdfProvenanceKeyId, privateKeyPkcs8Base64 };
   }
-  const privateKeyPkcs8Base64 = await configuration.pdfProvenanceStore.get();
-  if (privateKeyPkcs8Base64 === null) {
-    throw new Error(
-      `No PDF signing credential is stored for key ${configuration.pdfProvenanceKeyId}`
-    );
+  if (configuration.osStore !== void 0) {
+    const stored = await configuration.osStore.get();
+    if (stored !== null) {
+      const binding = resolveAgentCredentialBinding(
+        stored,
+        configuration.baseUrl,
+        configuration.requireOriginBoundCredential === true
+      );
+      if (binding.deviceSigning !== void 0) {
+        return {
+          keyId: binding.deviceSigning.keyId,
+          privateKeyPkcs8Base64: binding.deviceSigning.privateKeyPkcs8Base64
+        };
+      }
+    }
   }
-  return { keyId: configuration.pdfProvenanceKeyId, privateKeyPkcs8Base64 };
+  return void 0;
 };
 var errorResult = (error51) => ({
   isError: true,
@@ -93287,6 +93470,8 @@ var createConfiguredConnectionController = (configuration, profileName) => {
     origin: configuration.baseUrl,
     profileName,
     credentialStore: configuration.osStore,
+    agentName: "ArtifactPass MCP",
+    workspaceIdentity: profileName,
     ...configuration.fetch === void 0 ? {} : { fetch: configuration.fetch }
   });
 };
