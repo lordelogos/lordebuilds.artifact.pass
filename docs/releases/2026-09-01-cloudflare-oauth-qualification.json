@@ -1,0 +1,440 @@
+{
+  "schema_version": 1,
+  "decision": "go",
+  "environment": "staging",
+  "client_id_sha256": "c0e6751a9596e3d02b41f3f205f1ec03a705ebf1e4ea030f7eba1abcacaea54f",
+  "account_alias": "Paulehiks@gmail.com's Account",
+  "zone_alias": "artifactpass.com",
+  "profile": "companyLogin+emailCode",
+  "registered_redirect": "http://127.0.0.1:8976/oauth/callback",
+  "frozen_scope_profiles": {
+    "companyLogin": [
+      "workers-scripts.write",
+      "workers-routes.write",
+      "d1.write",
+      "workers-r2.write",
+      "workers-r2-bucket-item.write",
+      "zone.read",
+      "access.write",
+      "access-org.read",
+      "access-idp.read",
+      "memberships.read",
+      "user-details.read"
+    ],
+    "emailCode": [
+      "workers-scripts.write",
+      "workers-routes.write",
+      "d1.write",
+      "workers-r2.write",
+      "workers-r2-bucket-item.write",
+      "zone.read",
+      "access.write",
+      "access-org.read",
+      "access-idp.read",
+      "memberships.read",
+      "user-details.read",
+      "access-idp.write",
+      "offline_access"
+    ]
+  },
+  "scope_catalog": {
+    "available": [
+      "workers-scripts.write",
+      "workers-routes.write",
+      "d1.write",
+      "workers-r2.write",
+      "workers-r2-bucket-item.write",
+      "zone.read",
+      "access.write",
+      "access-org.read",
+      "access-idp.read",
+      "memberships.read",
+      "user-details.read",
+      "access-idp.write"
+    ],
+    "missing": []
+  },
+  "required_operations": [
+    "oauth.company_login.authorization_code_pkce",
+    "oauth.company_login.exact_scopes",
+    "oauth.company_login.rejects_idp_write",
+    "oauth.company_login.revoke",
+    "oauth.email_code.authorization_code_pkce",
+    "oauth.email_code.exact_scopes",
+    "oauth.email_code.refresh",
+    "oauth.email_code.revoke",
+    "cloudflare.account_binding",
+    "cloudflare.zone_binding",
+    "cloudflare.scope_catalog",
+    "wrangler.d1_migration",
+    "wrangler.r2_lifecycle",
+    "wrangler.r2_object_put",
+    "wrangler.r2_object_get",
+    "wrangler.r2_object_delete",
+    "wrangler.secret_bulk",
+    "wrangler.worker_deploy",
+    "wrangler.worker_readiness",
+    "wrangler.worker_rollback",
+    "cloudflare.worker_route_create_delete",
+    "cloudflare.access_organization_read",
+    "cloudflare.access_identity_providers_read",
+    "cloudflare.access_otp_create",
+    "cloudflare.access_otp_delete",
+    "cloudflare.access_application_create",
+    "cloudflare.access_application_delete",
+    "cloudflare.access_policy_create",
+    "cloudflare.access_policy_delete",
+    "cloudflare.disposable_resource_cleanup",
+    "oauth.loopback_fixed_port",
+    "oauth.loopback_dynamic_port_rejected"
+  ],
+  "failed_required_operations": [],
+  "operations": [
+    {
+      "name": "oauth.loopback_fixed_port",
+      "status": "passed",
+      "started_at": "2026-09-01T16:33:58.189Z",
+      "completed_at": "2026-09-01T16:33:58.189Z",
+      "detail": {
+        "redirect": "http://127.0.0.1:8976/oauth/callback"
+      }
+    },
+    {
+      "name": "oauth.loopback_dynamic_port_rejected",
+      "status": "passed",
+      "started_at": "2026-09-01T16:33:58.189Z",
+      "completed_at": "2026-09-01T16:33:58.189Z",
+      "detail": {
+        "rejected": true
+      }
+    },
+    {
+      "name": "oauth.company_login.authorization_code_pkce",
+      "status": "passed",
+      "started_at": "2026-09-01T16:33:58.189Z",
+      "completed_at": "2026-09-01T16:34:38.690Z",
+      "detail": {
+        "access_token": "[redacted]",
+        "expires_in": 3600,
+        "scope": "workers-scripts.write workers-routes.write d1.write workers-r2.write workers-r2-bucket-item.write zone.read access.write access-org.read access-idp.read memberships.read user-details.read",
+        "token_type": "[redacted]"
+      }
+    },
+    {
+      "name": "oauth.company_login.exact_scopes",
+      "status": "passed",
+      "started_at": "2026-09-01T16:34:38.690Z",
+      "completed_at": "2026-09-01T16:34:38.690Z",
+      "detail": [
+        "access-idp.read",
+        "access-org.read",
+        "access.write",
+        "d1.write",
+        "memberships.read",
+        "user-details.read",
+        "workers-r2-bucket-item.write",
+        "workers-r2.write",
+        "workers-routes.write",
+        "workers-scripts.write",
+        "zone.read"
+      ]
+    },
+    {
+      "name": "oauth.company_login.rejects_idp_write",
+      "status": "passed",
+      "started_at": "2026-09-01T16:34:38.690Z",
+      "completed_at": "2026-09-01T16:34:39.386Z",
+      "detail": {
+        "rejected_status": 403
+      }
+    },
+    {
+      "name": "oauth.company_login.revoke",
+      "status": "passed",
+      "started_at": "2026-09-01T16:34:39.386Z",
+      "completed_at": "2026-09-01T16:34:39.634Z",
+      "detail": {
+        "revoked_access_tokens": 1,
+        "revoked_refresh_tokens": 0
+      }
+    },
+    {
+      "name": "oauth.email_code.authorization_code_pkce",
+      "status": "passed",
+      "started_at": "2026-09-01T16:34:39.636Z",
+      "completed_at": "2026-09-01T16:35:04.731Z",
+      "detail": {
+        "access_token": "[redacted]",
+        "expires_in": 3600,
+        "refresh_token": "[redacted]",
+        "scope": "workers-scripts.write workers-routes.write d1.write workers-r2.write workers-r2-bucket-item.write zone.read access.write access-org.read access-idp.read memberships.read user-details.read offline_access access-idp.write",
+        "token_type": "[redacted]"
+      }
+    },
+    {
+      "name": "oauth.email_code.exact_scopes",
+      "status": "passed",
+      "started_at": "2026-09-01T16:35:04.731Z",
+      "completed_at": "2026-09-01T16:35:04.731Z",
+      "detail": [
+        "access-idp.read",
+        "access-idp.write",
+        "access-org.read",
+        "access.write",
+        "d1.write",
+        "memberships.read",
+        "offline_access",
+        "user-details.read",
+        "workers-r2-bucket-item.write",
+        "workers-r2.write",
+        "workers-routes.write",
+        "workers-scripts.write",
+        "zone.read"
+      ]
+    },
+    {
+      "name": "oauth.email_code.refresh",
+      "status": "passed",
+      "started_at": "2026-09-01T16:35:04.731Z",
+      "completed_at": "2026-09-01T16:35:05.160Z",
+      "detail": {
+        "access_token": "[redacted]",
+        "expires_in": 3599,
+        "refresh_token": "[redacted]",
+        "scope": "workers-scripts.write workers-routes.write d1.write workers-r2.write workers-r2-bucket-item.write zone.read access.write access-org.read access-idp.read memberships.read user-details.read offline_access access-idp.write",
+        "token_type": "[redacted]"
+      }
+    },
+    {
+      "name": "cloudflare.account_binding",
+      "status": "passed",
+      "started_at": "2026-09-01T16:35:05.160Z",
+      "completed_at": "2026-09-01T16:35:06.137Z",
+      "detail": {
+        "account_alias": "Paulehiks@gmail.com's Account"
+      }
+    },
+    {
+      "name": "cloudflare.zone_binding",
+      "status": "passed",
+      "started_at": "2026-09-01T16:35:06.137Z",
+      "completed_at": "2026-09-01T16:35:06.137Z",
+      "detail": {
+        "zone_alias": "artifactpass.com",
+        "status": "active"
+      }
+    },
+    {
+      "name": "cloudflare.scope_catalog",
+      "status": "passed",
+      "started_at": "2026-09-01T16:35:06.137Z",
+      "completed_at": "2026-09-01T16:35:06.407Z",
+      "detail": {
+        "available": [
+          "workers-scripts.write",
+          "workers-routes.write",
+          "d1.write",
+          "workers-r2.write",
+          "workers-r2-bucket-item.write",
+          "zone.read",
+          "access.write",
+          "access-org.read",
+          "access-idp.read",
+          "memberships.read",
+          "user-details.read",
+          "access-idp.write"
+        ],
+        "missing": []
+      }
+    },
+    {
+      "name": "cloudflare.access_organization_read",
+      "status": "passed",
+      "started_at": "2026-09-01T16:35:06.411Z",
+      "completed_at": "2026-09-01T16:35:06.669Z",
+      "detail": {
+        "configured": true
+      }
+    },
+    {
+      "name": "cloudflare.access_identity_providers_read",
+      "status": "passed",
+      "started_at": "2026-09-01T16:35:06.669Z",
+      "completed_at": "2026-09-01T16:35:07.004Z",
+      "detail": {
+        "count": 1
+      }
+    },
+    {
+      "name": "wrangler.d1_migration",
+      "status": "passed",
+      "started_at": "2026-09-01T16:35:08.505Z",
+      "completed_at": "2026-09-01T16:35:09.922Z",
+      "detail": {
+        "applied": true
+      }
+    },
+    {
+      "name": "wrangler.r2_lifecycle",
+      "status": "passed",
+      "started_at": "2026-09-01T16:35:09.922Z",
+      "completed_at": "2026-09-01T16:35:11.634Z",
+      "detail": {
+        "applied": true
+      }
+    },
+    {
+      "name": "wrangler.r2_object_put",
+      "status": "passed",
+      "started_at": "2026-09-01T16:35:11.634Z",
+      "completed_at": "2026-09-01T16:35:13.374Z",
+      "detail": {
+        "object_alias": ".artifactpass/deployment.json"
+      }
+    },
+    {
+      "name": "wrangler.r2_object_get",
+      "status": "passed",
+      "started_at": "2026-09-01T16:35:13.374Z",
+      "completed_at": "2026-09-01T16:35:15.027Z",
+      "detail": {
+        "exact_bytes": true
+      }
+    },
+    {
+      "name": "wrangler.r2_object_delete",
+      "status": "passed",
+      "started_at": "2026-09-01T16:35:15.027Z",
+      "completed_at": "2026-09-01T16:35:16.421Z",
+      "detail": {
+        "deleted": true
+      }
+    },
+    {
+      "name": "wrangler.secret_bulk",
+      "status": "passed",
+      "started_at": "2026-09-01T16:35:16.421Z",
+      "completed_at": "2026-09-01T16:35:19.033Z",
+      "detail": {
+        "written": true
+      }
+    },
+    {
+      "name": "wrangler.worker_deploy",
+      "status": "passed",
+      "started_at": "2026-09-01T16:35:19.033Z",
+      "completed_at": "2026-09-01T16:35:25.094Z",
+      "detail": {
+        "worker_alias": "artifactpass-oauth-qualification-5bb4dfc3"
+      }
+    },
+    {
+      "name": "wrangler.worker_readiness",
+      "status": "passed",
+      "started_at": "2026-09-01T16:35:25.465Z",
+      "completed_at": "2026-09-01T16:35:29.161Z",
+      "detail": {
+        "status": 200
+      }
+    },
+    {
+      "name": "cloudflare.worker_route_create_delete",
+      "status": "passed",
+      "started_at": "2026-09-01T16:35:29.161Z",
+      "completed_at": "2026-09-01T16:35:29.895Z",
+      "detail": {
+        "route_alias": "artifactpass-oauth-qualification-5bb4dfc3.artifactpass.com/*",
+        "deleted": true
+      }
+    },
+    {
+      "name": "cloudflare.access_otp_create",
+      "status": "passed",
+      "started_at": "2026-09-01T16:35:29.895Z",
+      "completed_at": "2026-09-01T16:35:30.202Z",
+      "detail": {
+        "provider_type": "onetimepin",
+        "created": true
+      }
+    },
+    {
+      "name": "cloudflare.access_application_create",
+      "status": "passed",
+      "started_at": "2026-09-01T16:35:30.202Z",
+      "completed_at": "2026-09-01T16:35:30.816Z",
+      "detail": {
+        "created": true,
+        "application_alias": "artifactpass-oauth-qualification-5bb4dfc3"
+      }
+    },
+    {
+      "name": "cloudflare.access_policy_create",
+      "status": "passed",
+      "started_at": "2026-09-01T16:35:30.816Z",
+      "completed_at": "2026-09-01T16:35:31.323Z",
+      "detail": {
+        "created": true
+      }
+    },
+    {
+      "name": "wrangler.worker_rollback",
+      "status": "passed",
+      "started_at": "2026-09-01T16:35:36.052Z",
+      "completed_at": "2026-09-01T16:35:42.556Z",
+      "detail": {
+        "status": 200
+      }
+    },
+    {
+      "name": "cloudflare.access_policy_delete",
+      "status": "passed",
+      "started_at": "2026-09-01T16:35:42.556Z",
+      "completed_at": "2026-09-01T16:35:43.413Z",
+      "detail": {
+        "deleted": true
+      }
+    },
+    {
+      "name": "cloudflare.access_application_delete",
+      "status": "passed",
+      "started_at": "2026-09-01T16:35:43.413Z",
+      "completed_at": "2026-09-01T16:35:43.998Z",
+      "detail": {
+        "deleted": true
+      }
+    },
+    {
+      "name": "cloudflare.access_otp_delete",
+      "status": "passed",
+      "started_at": "2026-09-01T16:35:43.998Z",
+      "completed_at": "2026-09-01T16:35:44.435Z",
+      "detail": {
+        "deleted": true
+      }
+    },
+    {
+      "name": "cloudflare.disposable_resource_cleanup",
+      "status": "passed",
+      "started_at": "2026-09-01T16:35:44.435Z",
+      "completed_at": "2026-09-01T16:35:46.542Z",
+      "detail": {
+        "route_deleted": false,
+        "worker_deleted": true,
+        "bucket_deleted": true,
+        "database_deleted": true
+      }
+    },
+    {
+      "name": "oauth.email_code.revoke",
+      "status": "passed",
+      "started_at": "2026-09-01T16:35:46.546Z",
+      "completed_at": "2026-09-01T16:35:48.144Z",
+      "detail": {
+        "revoked_access_tokens": 2,
+        "revoked_refresh_tokens": 2
+      }
+    }
+  ],
+  "started_at": "2026-09-01T16:33:58.184Z",
+  "completed_at": "2026-09-01T16:35:48.144Z"
+}

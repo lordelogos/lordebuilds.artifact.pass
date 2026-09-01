@@ -35,6 +35,7 @@
     "test:local-demo": "vitest run --config tests/local-demo.vitest.config.ts",
     "test:network": "vitest run --config tests/network.vitest.config.ts",
     "test:network:live": "node scripts/test-network-demo.mjs",
+    "test:cloudflare-oauth-qualification": "node --test scripts/qualify-cloudflare-oauth.test.mjs",
     "test:agent-contract": "pnpm --dir packages/agent-bridge build && pnpm --dir packages/agent-bridge exec vitest run test/stdio-smoke.test.ts && vitest run --config tests/vitest.config.ts tests/agent-portability.test.ts",
     "test:agent-hosts": "pnpm plugin:build && node scripts/test-agent-hosts.mjs",
     "test:packed-install": "pnpm --dir packages/setup-cli build && node scripts/test-packed-install.mjs",
