@@ -75,6 +75,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 
 .upload-main { padding: 58px 0 48px; }
 .upload-layout { display: grid; grid-template-columns: minmax(0, 0.88fr) minmax(430px, 0.72fr); gap: clamp(52px, 8vw, 104px); align-items: center; min-height: 650px; }
+.upload-layout--automatic { grid-template-columns: minmax(0, 560px); justify-content: center; }
 .upload-intro { max-width: 560px; }
 .eyebrow, .result-kicker { font: 500 11px/1 var(--mono); }
 .eyebrow { display: flex; align-items: center; gap: 9px; margin: 0 0 24px; color: var(--ash); }
@@ -87,6 +88,9 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .share-principles strong { color: var(--ash); font-weight: 500; }
 
 .upload-form { display: grid; gap: 20px; padding: clamp(22px, 3vw, 32px); border: 1px solid var(--line); border-radius: 22px; background: var(--graphite); box-shadow: 0 24px 70px rgba(0, 0, 0, 0.14); }
+.upload-form--automatic { min-height: 320px; align-content: center; }
+.automatic-publish-status h1 { margin: 0; color: var(--bone); font-size: clamp(38px, 7vw, 52px); font-weight: 500; line-height: 1; letter-spacing: -0.05em; }
+.automatic-publish-status p:last-child { margin: 18px 0 0; color: var(--ash); font-size: 14px; line-height: 1.55; }
 .file-drop { display: grid; min-height: 240px; padding: 28px; border: 1px dashed var(--line-strong); border-radius: 16px; text-align: center; place-items: center; align-content: center; gap: 7px; transition: background-color 180ms ease, border-color 180ms ease, transform 180ms ease; }
 .file-drop--active { border-color: var(--bone); background: var(--panel-strong); transform: scale(0.995); }
 .file-drop--selected { min-height: 0; grid-template-columns: 40px minmax(0, 1fr); gap: 2px 14px; align-items: center; border-style: solid; text-align: left; place-items: initial; }

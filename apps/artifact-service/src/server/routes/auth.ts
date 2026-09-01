@@ -125,7 +125,7 @@ const popupCompletePage = (theme: AuthPageTheme): string => `<!doctype html>
 <html lang="en" data-theme="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Signed in to ArtifactPass</title>
 <style>${authPageStyles}${returnActionStyles}</style></head>
-<body><main class="auth-shell"><header class="auth-brand"><span class="brand-mark" aria-hidden="true"></span>ArtifactPass</header><section class="auth-card complete-card"><p class="auth-eyebrow">Authentication complete</p><h1>Signed in.</h1><p id="popup-status">Returning to your document…</p><a class="return-action" id="completion-fallback" href="/upload" hidden>Continue in this tab</a></section></main><script src="/auth/popup-complete.js"></script></body></html>`;
+<body><main class="auth-shell"><header class="auth-brand"><span class="brand-mark" aria-hidden="true"></span>ArtifactPass</header><section class="auth-card complete-card"><p class="auth-eyebrow">Authentication complete</p><h1>Signed in.</h1><p id="popup-status">Creating your temporary link…</p><a class="return-action" id="completion-fallback" href="/upload?pending=homepage&amp;publish=1" hidden>Continue in this tab</a></section></main><script src="/auth/popup-complete.js"></script></body></html>`;
 
 const popupCancelledPage = (theme: AuthPageTheme): string => `<!doctype html>
 <html lang="en" data-theme="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">

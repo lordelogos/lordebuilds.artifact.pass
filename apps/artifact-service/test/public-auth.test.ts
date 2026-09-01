@@ -638,6 +638,67 @@ describe("public ArtifactPass authentication", () => {
       .toBe(1);
   });
 
+  it("recovers a browser publication retry without requiring a client payload commitment", async () => {
+    const cookie = await createGoogleSession();
+    const attempt = crypto.randomUUID();
+    const shareToken = "H".repeat(43);
+    const upload = () => {
+      const form = uploadForm("# Browser retry\n");
+      form.set("publication_attempt", attempt);
+      form.set("share_token", shareToken);
+      return protectedUploadRequest("/upload/artifacts", {
+        method: "POST",
+        headers: {
+          cookie,
+          origin: "https://artifactpass.com",
+          "cf-connecting-ip": "203.0.113.45",
+        },
+        body: form,
+      }, { publicUploadMaximumBytes: 240 });
+    };
+
+    const first = await upload();
+    const retry = await upload();
+    expect(first.status).toBe(201);
+    expect(retry.status).toBe(200);
+    await expect(first.json()).resolves.toMatchObject({
+      share_url: `https://artifactpass.com/a/${shareToken}`,
+    });
+    await expect(retry.json()).resolves.toMatchObject({
+      share_url: `https://artifactpass.com/a/${shareToken}`,
+    });
+    expect(await env.ARTIFACT_DB.prepare("SELECT COUNT(*) AS count FROM artifacts").first("count"))
+      .toBe(1);
+  });
+
+  it("charges browser retry bytes when no client payload commitment proves an exact retry", async () => {
+    const cookie = await createGoogleSession();
+    const attempt = crypto.randomUUID();
+    const shareToken = "Q".repeat(43);
+    const headers = {
+      cookie,
+      origin: "https://artifactpass.com",
+      "cf-connecting-ip": "203.0.113.46",
+    };
+    const first = uploadForm("# First browser payload\n");
+    first.set("publication_attempt", attempt);
+    first.set("share_token", shareToken);
+    expect((await protectedUploadRequest("/upload/artifacts", {
+      method: "POST",
+      headers,
+      body: first,
+    }, { publicUploadMaximumBytes: 160 })).status).toBe(201);
+
+    const mismatchedRetry = uploadForm("# A different browser payload\n");
+    mismatchedRetry.set("publication_attempt", attempt);
+    mismatchedRetry.set("share_token", shareToken);
+    expect((await protectedUploadRequest("/upload/artifacts", {
+      method: "POST",
+      headers,
+      body: mismatchedRetry,
+    }, { publicUploadMaximumBytes: 160 })).status).toBe(429);
+  });
+
   it("counts derived files and rejects unknown multipart fields", async () => {
     const cookie = await createGoogleSession();
     const headers = { cookie, origin: "https://artifactpass.com", "cf-connecting-ip": "203.0.113.42" };
