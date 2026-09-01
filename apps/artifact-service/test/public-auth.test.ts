@@ -202,6 +202,46 @@ describe("public ArtifactPass authentication", () => {
     expect(source).toContain('window.location.assign("/upload")');
   });
 
+  it("returns a cancelled provider login to the original ArtifactPass tab", async () => {
+    const flow = "11111111222233334444555555555555";
+    const returnTo = `/auth/popup/complete?theme=light&flow=${flow}`;
+    const start = await request(
+      `/auth/login/google?return_to=${encodeURIComponent(returnTo)}`,
+      { redirect: "manual" },
+    );
+    const state = new URL(start.headers.get("location") ?? "").searchParams.get("state");
+    const oauthFetch = vi.fn<typeof fetch>();
+
+    const callback = await request(
+      `/auth/callback/google?error=access_denied&state=${state ?? ""}`,
+      { redirect: "manual", headers: { cookie: oauthCookie(start) } },
+      oauthFetch,
+    );
+
+    expect(callback.status).toBe(302);
+    expect(callback.headers.get("location")).toBe(`/auth/popup/cancel?theme=light&flow=${flow}`);
+    expect(callback.headers.get("set-cookie")).toContain("__Host-artifactpass_oauth=;");
+    expect(oauthFetch).not.toHaveBeenCalled();
+    expect(await env.ARTIFACT_DB.prepare(
+      "SELECT COUNT(*) AS count FROM oauth_transactions",
+    ).first("count")).toBe(0);
+
+    const page = await request("/auth/popup/cancel?theme=light");
+    const script = await request("/auth/popup-cancel.js");
+    expect(page.status).toBe(200);
+    const pageSource = await page.text();
+    expect(pageSource).toContain('src="/auth/popup-cancel.js"');
+    expect(pageSource).toContain("Return to ArtifactPass");
+    const source = await script.text();
+    expect(source).toContain('type: "artifactpass:auth-cancelled"');
+    expect(source).toContain("flow !== null");
+    expect(source).toContain('new BroadcastChannel("artifactpass-auth")');
+    expect(source).toContain("window.opener.focus()");
+    expect(source).toContain("window.close()");
+    expect(source).toContain('sessionStorage.setItem("artifactpass-pending-upload", "1")');
+    expect(source).toContain('window.location.assign("/?upload=1&auth=cancelled")');
+  });
+
   it("completes Google login, stores only a hashed session, and approves the agent", async () => {
     const device = await startDeviceFlow();
     const returnTo = `/connect/approve?user_code=${device.user_code}&format=html`;

@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 
+import { popupCancelledScript } from "../../apps/artifact-service/src/web/popup-cancel";
 import { homepageInteractionScript, publicStyles } from "../../apps/artifact-service/src/web/routes/public-homepage";
 
 const origin = "http://artifactpass.test";
@@ -15,6 +16,7 @@ const homepage = `<!doctype html><html data-theme="light"><body>
     <div id="file-preview" hidden><b id="file-kind">FILE</b><strong id="file-name"></strong><span id="file-details"></span><button id="change-file">Choose another</button></div>
     <p id="local-note" hidden>Kept in this browser only.</p><p id="upload-status" hidden></p><div id="upload-config" hidden></div>
     <input type="radio" name="expiry" value="900" checked>
+    <input type="radio" name="expiry" value="1800">
     <button id="continue-upload">Continue to sign in</button>
   </dialog>
   <script>${homepageInteractionScript}</script>
@@ -136,13 +138,15 @@ test("keeps the landing page open while authentication runs in a popup", async (
   const popupPromise = page.waitForEvent("popup");
   await page.getByRole("button", { name: "Continue to sign in" }).click();
   const popup = await popupPromise;
-  await popup.waitForURL(`${origin}/auth/sign-in?return_to=%2Fauth%2Fpopup%2Fcomplete%3Ftheme%3Dlight&theme=light`);
+  await popup.waitForURL(new RegExp(`${origin}/auth/sign-in\\?return_to=.*flow.*&theme=light`));
 
   expect(page.url()).toBe(`${origin}/`);
   await expect(page.locator("#upload-dialog")).toBeVisible();
   await expect(page.getByRole("button", { name: "Close" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Choose another" })).toBeDisabled();
-  await expect(page.locator('input[name="expiry"]')).toBeDisabled();
+  await expect(page.locator('input[name="expiry"]')).toHaveCount(2);
+  await expect(page.locator('input[name="expiry"]').first()).toBeDisabled();
+  await expect(page.locator('input[name="expiry"]').nth(1)).toBeDisabled();
   await expect(page.locator("#upload-status")).toHaveText("Finish signing in in the popup. This page will continue automatically.");
   await expect(popup.getByRole("heading", { name: "Sign in to ArtifactPass" })).toBeVisible();
 
@@ -177,7 +181,7 @@ test("keeps one selected document ready when the sign-in popup is closed", async
   const popupPromise = page.waitForEvent("popup");
   await page.getByRole("button", { name: "Continue to sign in" }).click();
   const popup = await popupPromise;
-  await popup.waitForURL(`${origin}/auth/sign-in?return_to=%2Fauth%2Fpopup%2Fcomplete%3Ftheme%3Dlight&theme=light`);
+  await popup.waitForURL(new RegExp(`${origin}/auth/sign-in\\?return_to=.*flow.*&theme=light`));
   await popup.close();
 
   await expect(page.locator("#upload-status")).toHaveText("Sign-in was closed. Your document is still selected.");
@@ -186,4 +190,114 @@ test("keeps one selected document ready when the sign-in popup is closed", async
   await expect(page.getByRole("button", { name: "Continue to sign in" })).toBeEnabled();
   await expect(page.getByRole("button", { name: "Choose another" })).toBeEnabled();
   await expect(page.locator("#local-note")).toHaveText("Kept in this browser only.");
+});
+
+test("returns a cancelled provider sign-in to the selected document", async ({ context, page }) => {
+  await context.route(`${origin}/**`, async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/") {
+      await route.fulfill({ contentType: "text/html", body: homepage });
+      return;
+    }
+    if (url.pathname === "/auth/sign-in") {
+      await route.fulfill({ contentType: "text/html", body: "<h1>Sign in to ArtifactPass</h1>" });
+      return;
+    }
+    if (url.pathname === "/auth/popup/cancel") {
+      await route.fulfill({
+        contentType: "text/html",
+        body: `<button id="return-to-app">Return to ArtifactPass</button><p id="popup-status"></p><script>${popupCancelledScript}</script>`,
+      });
+      return;
+    }
+    await route.abort();
+  });
+
+  await page.goto(`${origin}/`);
+  await page.getByRole("button", { name: /Try it with your own document/ }).click();
+  await page.locator("#pending-file-input").setInputFiles({
+    name: "handoff.md",
+    mimeType: "text/markdown",
+    buffer: Buffer.from("# Popup handoff"),
+  });
+
+  const popupPromise = page.waitForEvent("popup");
+  await page.getByRole("button", { name: "Continue to sign in" }).click();
+  const popup = await popupPromise;
+  await popup.waitForURL(new RegExp(`${origin}/auth/sign-in\\?return_to=.*flow.*&theme=light`));
+  const returnTo = new URL(popup.url()).searchParams.get("return_to");
+  expect(returnTo).not.toBeNull();
+  const flow = new URL(returnTo ?? "", origin).searchParams.get("flow");
+  expect(flow).toMatch(/^[0-9a-f]{32}$/u);
+  await page.evaluate(() => {
+    const channel = new BroadcastChannel("artifactpass-auth");
+    channel.postMessage({ type: "artifactpass:auth-cancelled", flow: "unrelated-flow" });
+    channel.close();
+  });
+  await expect(page.getByRole("button", { name: "Finish sign-in in the popup" })).toBeDisabled();
+  await popup.goto(`${origin}/auth/popup/cancel?theme=light&flow=${flow ?? ""}`).catch(() => null);
+
+  await expect(page.locator("#upload-status")).toHaveText("Sign-in cancelled. Your document is still selected.");
+  await expect(page.getByText("handoff.md")).toBeVisible();
+  await expect(page.locator("#drop-zone")).toBeHidden();
+  await expect(page.getByRole("button", { name: "Continue to sign in" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Choose another" })).toBeEnabled();
+  await expect(page.locator('input[name="expiry"]')).toHaveCount(2);
+  await expect(page.locator('input[name="expiry"]').first()).toBeEnabled();
+  await expect(page.locator('input[name="expiry"]').nth(1)).toBeEnabled();
+});
+
+test("falls back to the upload screen when a mobile auth tab cannot close", async ({ context }) => {
+  await context.route(`${origin}/**`, async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/") {
+      await route.fulfill({ contentType: "text/html", body: homepage });
+      return;
+    }
+    if (url.pathname === "/auth/popup/cancel") {
+      await route.fulfill({
+        contentType: "text/html",
+        body: `<button id="return-to-app">Return to ArtifactPass</button><script>${popupCancelledScript}</script>`,
+      });
+      return;
+    }
+    await route.abort();
+  });
+
+  const authTab = await context.newPage();
+  await authTab.goto(`${origin}/`);
+  await authTab.evaluate(async () => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("artifactpass-pending-upload", 1);
+      request.addEventListener("upgradeneeded", () => {
+        if (!request.result.objectStoreNames.contains("uploads")) {
+          request.result.createObjectStore("uploads", { keyPath: "key" });
+        }
+      });
+      request.addEventListener("success", () => resolve(request.result));
+      request.addEventListener("error", () => reject(request.error));
+    });
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction("uploads", "readwrite");
+      transaction.objectStore("uploads").put({
+        key: "homepage",
+        version: 1,
+        name: "mobile-handoff.md",
+        type: "text/markdown",
+        lastModified: Date.now(),
+        bytes: new TextEncoder().encode("# Mobile handoff").buffer,
+        expiresInSeconds: 1800,
+        createdAt: Date.now(),
+      });
+      transaction.addEventListener("complete", () => resolve());
+      transaction.addEventListener("error", () => reject(transaction.error));
+    });
+    database.close();
+  });
+  await authTab.goto(`${origin}/auth/popup/cancel?theme=light&flow=11111111222233334444555555555555`);
+  await authTab.waitForURL(`${origin}/?upload=1&auth=cancelled`);
+  await expect(authTab.getByText("mobile-handoff.md")).toBeVisible();
+  await expect(authTab.locator("#upload-status")).toHaveText("Sign-in cancelled. Your document is still selected.");
+  await expect(authTab.locator('input[name="expiry"][value="1800"]')).toBeChecked();
+  await expect(authTab.getByRole("button", { name: "Continue to sign in" })).toBeEnabled();
 });

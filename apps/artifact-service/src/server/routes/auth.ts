@@ -20,6 +20,7 @@ import type { ArtifactHonoEnvironment } from "../middleware/authorize";
 import { ArtifactError } from "../storage/artifact-error";
 import { sha256 } from "../storage/crypto";
 import { GitHubIcon, GoogleIcon } from "../../web/components/brand-icons";
+import { popupCancelledScript } from "../../web/popup-cancel";
 
 type OAuthProvider = "google" | "github";
 type AuthPageTheme = "dark" | "light";
@@ -96,12 +97,14 @@ const authPageStyles = `
 *{box-sizing:border-box}html{min-width:320px;min-height:100%;color:var(--bone);background:var(--void);font-family:var(--sans);-webkit-font-smoothing:antialiased}body{min-height:100dvh;margin:0}.auth-shell{display:grid;width:min(440px,calc(100% - 32px));min-height:100dvh;margin:0 auto;padding:24px 0;align-content:center}.auth-brand{display:inline-flex;align-items:center;width:max-content;margin:0 0 16px;color:var(--bone);font-size:15px;font-weight:600;letter-spacing:-.03em}.brand-mark{position:relative;width:20px;height:20px;margin-right:9px;border:1px solid var(--line-strong);border-radius:6px}.brand-mark:before,.brand-mark:after{position:absolute;width:6px;height:6px;border:1px solid var(--ash);border-radius:2px;content:""}.brand-mark:before{top:3px;left:3px}.brand-mark:after{right:3px;bottom:3px}.auth-card{padding:28px;border:1px solid var(--line);border-radius:22px;background:var(--graphite);box-shadow:0 24px 70px rgba(0,0,0,.18)}.auth-eyebrow{display:flex;align-items:center;gap:9px;margin:0 0 20px;color:var(--slate);font:500 10px/1 var(--mono);text-transform:uppercase}.auth-eyebrow:before{width:18px;height:1px;background:linear-gradient(90deg,#b98458,#716de4,#557fbd);content:""}h1{margin:0;color:var(--bone);font-size:clamp(32px,8vw,42px);font-weight:500;line-height:1.02;letter-spacing:-.05em}.auth-copy{margin:18px 0 0;color:var(--ash);font-size:14px;line-height:1.55}.actions{display:grid;gap:10px;margin-top:26px}.provider{display:grid;grid-template-columns:30px 1fr auto;align-items:center;min-height:56px;padding:0 16px;border:1px solid var(--line-strong);border-radius:12px;color:var(--bone);background:var(--panel);text-decoration:none;font-size:13px;font-weight:500}.provider:hover{border-color:var(--bone);background:var(--panel-strong)}.provider:active{transform:translateY(1px) scale(.995)}.provider:focus-visible{outline:2px solid var(--bone);outline-offset:3px}.provider-icon{display:grid;width:18px;height:18px;color:var(--bone);place-items:center}.provider-icon svg{display:block;width:18px;height:18px}.provider-arrow{color:var(--slate);font:400 13px/1 var(--mono)}.privacy-note{margin:18px 0 0;padding-top:18px;border-top:1px solid var(--line);color:var(--slate);font-size:11px;line-height:1.5}.auth-footer{margin:14px 2px 0;color:var(--slate);font:400 9px/1 var(--mono);text-align:right}.complete-card{text-align:center}.complete-card .auth-eyebrow{justify-content:center}.complete-card p{margin:14px 0 0;color:var(--ash);font-size:13px;line-height:1.55}@media(max-width:480px){.auth-shell{width:calc(100% - 24px);padding:12px 0}.auth-card{padding:22px;border-radius:18px}.auth-brand{margin-left:2px}h1{font-size:34px}}@media(prefers-reduced-motion:reduce){*{transition-duration:0s!important}}
 `;
 
-const signInPage = (returnTo: string, theme: AuthPageTheme): string => {
+const signInPage = (returnTo: string, theme: AuthPageTheme, cancelled = false): string => {
   const encodedReturnTo = encodeURIComponent(returnTo);
   const isPopup = returnTo.startsWith("/auth/popup/complete");
-  const introduction = isPopup
-    ? "Sign in to continue. Your selected document stays in the original tab until you confirm the upload."
-    : "Sign in to create temporary links or approve an agent connection.";
+  const introduction = cancelled
+    ? "Sign-in was cancelled. Choose a provider when you are ready to continue."
+    : isPopup
+      ? "Sign in to continue. Your selected document stays in the original tab until you confirm the upload."
+      : "Sign in to create temporary links or approve an agent connection.";
   return `<!doctype html>
 <html lang="en" data-theme="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Sign in to ArtifactPass</title>
@@ -127,6 +130,12 @@ const popupCompleteScript = `(() => {
   }
   window.location.assign("/upload");
 })();`;
+
+const popupCancelledPage = (theme: AuthPageTheme): string => `<!doctype html>
+<html lang="en" data-theme="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Return to ArtifactPass</title>
+<style>${authPageStyles}.return-action{display:block;width:100%;min-height:52px;margin-top:24px;border:1px solid var(--line-strong);border-radius:12px;color:var(--ink);background:var(--bone);font:600 14px/1 var(--sans);cursor:pointer}.return-action:hover{opacity:.9}.return-action:focus-visible{outline:2px solid var(--bone);outline-offset:3px}</style></head>
+<body><main class="auth-shell"><header class="auth-brand"><span class="brand-mark" aria-hidden="true"></span>ArtifactPass</header><section class="auth-card complete-card"><p class="auth-eyebrow">Sign-in cancelled</p><h1>Returning to ArtifactPass.</h1><p id="popup-status">Your document is still selected in the original tab.</p><button class="return-action" id="return-to-app" type="button">Return to ArtifactPass</button></section></main><script src="/auth/popup-cancel.js"></script></body></html>`;
 
 const authorizationUrl = (
   provider: OAuthProvider,
@@ -246,7 +255,7 @@ export const createAuthRouter = (options: AuthRouterOptions = {}) => {
   router.get("/sign-in", (context) => {
     const returnTo = safeReturnTo(context.req.query("return_to"));
     const theme = authPageTheme(context.req.query("theme"));
-    return context.html(signInPage(returnTo, theme), 200, {
+    return context.html(signInPage(returnTo, theme, context.req.query("cancelled") === "1"), 200, {
       ...RESPONSE_HEADERS,
       "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'",
     });
@@ -260,6 +269,19 @@ export const createAuthRouter = (options: AuthRouterOptions = {}) => {
   }));
 
   router.get("/popup-complete.js", (context) => context.body(popupCompleteScript, 200, {
+    ...RESPONSE_HEADERS,
+    "Content-Type": "application/javascript; charset=UTF-8",
+    "Content-Security-Policy": "default-src 'none'",
+  }));
+
+  router.get("/popup/cancel", (context) => context.html(popupCancelledPage(
+    authPageTheme(context.req.query("theme")),
+  ), 200, {
+    ...RESPONSE_HEADERS,
+    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'",
+  }));
+
+  router.get("/popup-cancel.js", (context) => context.body(popupCancelledScript, 200, {
     ...RESPONSE_HEADERS,
     "Content-Type": "application/javascript; charset=UTF-8",
     "Content-Security-Policy": "default-src 'none'",
@@ -307,10 +329,11 @@ export const createAuthRouter = (options: AuthRouterOptions = {}) => {
   router.get("/callback/:provider", async (context) => {
     const provider = context.req.param("provider");
     const code = context.req.query("code");
+    const providerError = context.req.query("error");
     const state = context.req.query("state");
     if (
       (provider !== "google" && provider !== "github") ||
-      code === undefined ||
+      (code === undefined && providerError !== "access_denied") ||
       state === undefined ||
       !/^[A-Za-z0-9_-]{43}$/u.test(state)
     ) {
@@ -326,6 +349,32 @@ export const createAuthRouter = (options: AuthRouterOptions = {}) => {
     ).bind(await sha256(state), provider, now()).first<OAuthTransaction>();
     if (transaction === null) {
       throw new ArtifactError("forbidden", "Authentication request expired or was already used", 400);
+    }
+    if (providerError === "access_denied") {
+      const validatedReturnTo = safeReturnTo(transaction.return_to);
+      const returnTo = new URL(validatedReturnTo, context.req.url);
+      let location: string;
+      if (returnTo.pathname === "/auth/popup/complete") {
+        const parameters = new URLSearchParams({
+          theme: authPageTheme(returnTo.searchParams.get("theme") ?? undefined),
+        });
+        const flow = returnTo.searchParams.get("flow");
+        if (flow !== null && /^[0-9a-f]{32}$/u.test(flow)) parameters.set("flow", flow);
+        location = `/auth/popup/cancel?${parameters.toString()}`;
+      } else {
+        location = `/auth/sign-in?return_to=${encodeURIComponent(validatedReturnTo)}&cancelled=1`;
+      }
+      return new Response(null, {
+        status: 302,
+        headers: {
+          ...RESPONSE_HEADERS,
+          Location: location,
+          "Set-Cookie": expiredPublicOAuthCookie(),
+        },
+      });
+    }
+    if (code === undefined) {
+      throw new ArtifactError("forbidden", "Authentication response is invalid", 400);
     }
     const credentials = providerCredentials(provider, context.env);
     const redirectUri = new URL(`/auth/callback/${provider}`, context.req.url).toString();
