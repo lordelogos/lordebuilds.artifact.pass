@@ -21,6 +21,7 @@ import { ArtifactError } from "../storage/artifact-error";
 import { sha256 } from "../storage/crypto";
 import { GitHubIcon, GoogleIcon } from "../../web/components/brand-icons";
 import { popupCancelledScript } from "../../web/popup-cancel";
+import { popupCompleteScript } from "../../web/popup-complete";
 
 type OAuthProvider = "google" | "github";
 type AuthPageTheme = "dark" | "light";
@@ -112,29 +113,18 @@ const signInPage = (returnTo: string, theme: AuthPageTheme, cancelled = false): 
 <body><main class="auth-shell"><header class="auth-brand"><span class="brand-mark" aria-hidden="true"></span>ArtifactPass</header><section class="auth-card"><p class="auth-eyebrow">Secure sign-in</p><h1>Continue to ArtifactPass.</h1><p class="auth-copy">${introduction}</p><div class="actions"><a class="provider" href="/auth/login/google?return_to=${encodedReturnTo}"><span class="provider-icon" data-provider="google">${providerIconMarkup.google}</span><span>Continue with Google</span><span class="provider-arrow" aria-hidden="true">→</span></a><a class="provider" href="/auth/login/github?return_to=${encodedReturnTo}"><span class="provider-icon" data-provider="github">${providerIconMarkup.github}</span><span>Continue with GitHub</span><span class="provider-arrow" aria-hidden="true">→</span></a></div><p class="privacy-note">ArtifactPass never receives your Google or GitHub password.</p></section><footer class="auth-footer">one file · one expiring URL</footer></main></body></html>`;
 };
 
+const returnActionStyles = ".return-action{display:block;width:100%;min-height:52px;margin-top:24px;padding:18px;border:1px solid var(--line-strong);border-radius:12px;color:var(--ink);background:var(--bone);font:600 14px/1 var(--sans);text-align:center;text-decoration:none;cursor:pointer}.return-action[hidden]{display:none}.return-action:hover{opacity:.9}.return-action:focus-visible{outline:2px solid var(--bone);outline-offset:3px}";
+
 const popupCompletePage = (theme: AuthPageTheme): string => `<!doctype html>
 <html lang="en" data-theme="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Signed in to ArtifactPass</title>
-<style>${authPageStyles}</style></head>
-<body><main class="auth-shell"><header class="auth-brand"><span class="brand-mark" aria-hidden="true"></span>ArtifactPass</header><section class="auth-card complete-card"><p class="auth-eyebrow">Authentication complete</p><h1>Signed in.</h1><p id="popup-status">Returning to your document…</p></section></main><script src="/auth/popup-complete.js"></script></body></html>`;
-
-const popupCompleteScript = `(() => {
-  if (window.opener !== null && !window.opener.closed) {
-    window.opener.postMessage({ type: "artifactpass:auth-complete" }, window.location.origin);
-    window.close();
-    window.setTimeout(() => {
-      const status = document.querySelector("#popup-status");
-      if (status !== null) status.textContent = "You can return to the ArtifactPass tab.";
-    }, 500);
-    return;
-  }
-  window.location.assign("/upload");
-})();`;
+<style>${authPageStyles}${returnActionStyles}</style></head>
+<body><main class="auth-shell"><header class="auth-brand"><span class="brand-mark" aria-hidden="true"></span>ArtifactPass</header><section class="auth-card complete-card"><p class="auth-eyebrow">Authentication complete</p><h1>Signed in.</h1><p id="popup-status">Returning to your document…</p><a class="return-action" id="completion-fallback" href="/upload" hidden>Continue in this tab</a></section></main><script src="/auth/popup-complete.js"></script></body></html>`;
 
 const popupCancelledPage = (theme: AuthPageTheme): string => `<!doctype html>
 <html lang="en" data-theme="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Return to ArtifactPass</title>
-<style>${authPageStyles}.return-action{display:block;width:100%;min-height:52px;margin-top:24px;border:1px solid var(--line-strong);border-radius:12px;color:var(--ink);background:var(--bone);font:600 14px/1 var(--sans);cursor:pointer}.return-action:hover{opacity:.9}.return-action:focus-visible{outline:2px solid var(--bone);outline-offset:3px}</style></head>
+<style>${authPageStyles}${returnActionStyles}</style></head>
 <body><main class="auth-shell"><header class="auth-brand"><span class="brand-mark" aria-hidden="true"></span>ArtifactPass</header><section class="auth-card complete-card"><p class="auth-eyebrow">Sign-in cancelled</p><h1>Returning to ArtifactPass.</h1><p id="popup-status">Your document is still selected in the original tab.</p><button class="return-action" id="return-to-app" type="button">Return to ArtifactPass</button></section></main><script src="/auth/popup-cancel.js"></script></body></html>`;
 
 const authorizationUrl = (
@@ -361,6 +351,11 @@ export const createAuthRouter = (options: AuthRouterOptions = {}) => {
         const flow = returnTo.searchParams.get("flow");
         if (flow !== null && /^[0-9a-f]{32}$/u.test(flow)) parameters.set("flow", flow);
         location = `/auth/popup/cancel?${parameters.toString()}`;
+      } else if (
+        returnTo.pathname === "/upload" &&
+        returnTo.searchParams.get("pending") === "homepage"
+      ) {
+        location = "/?upload=1&auth=cancelled";
       } else {
         location = `/auth/sign-in?return_to=${encodeURIComponent(validatedReturnTo)}&cancelled=1`;
       }

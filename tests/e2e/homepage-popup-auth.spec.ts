@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { popupCancelledScript } from "../../apps/artifact-service/src/web/popup-cancel";
+import { popupCompleteScript } from "../../apps/artifact-service/src/web/popup-complete";
 import { homepageInteractionScript, publicStyles } from "../../apps/artifact-service/src/web/routes/public-homepage";
 
 const origin = "http://artifactpass.test";
@@ -95,6 +96,79 @@ test("keeps the complete landing page inside phone and tablet viewports", async 
   await page.screenshot({ path: "test-results/homepage-responsive-mobile.png", fullPage: true });
 });
 
+test("keeps mobile authentication in one tab with the selected document stored", async ({ context, page }) => {
+  await context.route(`${origin}/**`, async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/") {
+      await route.fulfill({ contentType: "text/html", body: homepage });
+      return;
+    }
+    if (url.pathname === "/auth/sign-in") {
+      await route.fulfill({ contentType: "text/html", body: "<h1>Sign in to ArtifactPass</h1>" });
+      return;
+    }
+    if (url.pathname === "/upload") {
+      await route.fulfill({
+        contentType: "text/html",
+        body: `<p id="restored"></p><script>(async()=>{const request=indexedDB.open("artifactpass-pending-upload",1);request.onsuccess=()=>{const db=request.result;const read=db.transaction("uploads","readonly").objectStore("uploads").get("homepage");read.onsuccess=()=>{const record=read.result;document.querySelector("#restored").textContent=record.name+"|"+record.expiresInSeconds+"|"+new TextDecoder().decode(record.bytes);db.close();};};})();</script>`,
+      });
+      return;
+    }
+    await route.abort();
+  });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${origin}/`);
+  await page.getByRole("button", { name: /Try it with your own document/ }).click();
+  await page.locator("#pending-file-input").setInputFiles({
+    name: "mobile-handoff.md",
+    mimeType: "text/markdown",
+    buffer: Buffer.from("# Mobile handoff"),
+  });
+  await page.locator('input[name="expiry"][value="1800"]').check();
+
+  await page.getByRole("button", { name: "Continue to sign in" }).click();
+  await page.waitForURL(new RegExp(`${origin}/auth/sign-in\\?`));
+
+  expect(context.pages()).toHaveLength(1);
+  expect(new URL(page.url()).searchParams.get("return_to")).toBe("/upload?pending=homepage");
+  expect(await page.evaluate(() => sessionStorage.getItem("artifactpass-pending-upload"))).toBe("1");
+  expect(await page.evaluate(async () => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("artifactpass-pending-upload", 1);
+      request.addEventListener("success", () => resolve(request.result));
+      request.addEventListener("error", () => reject(request.error));
+    });
+    const record = await new Promise<{
+      name?: string;
+      type?: string;
+      bytes?: ArrayBuffer;
+      expiresInSeconds?: number;
+    } | undefined>((resolve, reject) => {
+      const transaction = database.transaction("uploads", "readonly");
+      const request = transaction.objectStore("uploads").get("homepage");
+      request.addEventListener("success", () => resolve(request.result));
+      request.addEventListener("error", () => reject(request.error));
+    });
+    database.close();
+    return {
+      name: record?.name,
+      type: record?.type,
+      contents: record?.bytes instanceof ArrayBuffer ? new TextDecoder().decode(record.bytes) : undefined,
+      expiresInSeconds: record?.expiresInSeconds,
+    };
+  })).toEqual({
+    name: "mobile-handoff.md",
+    type: "text/markdown",
+    contents: "# Mobile handoff",
+    expiresInSeconds: 1800,
+  });
+
+  await page.goto(`${origin}/upload`);
+  expect(context.pages()).toHaveLength(1);
+  await expect(page.locator("#restored")).toHaveText("mobile-handoff.md|1800|# Mobile handoff");
+});
+
 test("keeps the landing page open while authentication runs in a popup", async ({ context, page }) => {
   await context.route(`${origin}/**`, async (route) => {
     const url = new URL(route.request().url());
@@ -109,7 +183,7 @@ test("keeps the landing page open while authentication runs in a popup", async (
     if (url.pathname === "/auth/popup/complete") {
       await route.fulfill({
         contentType: "text/html",
-        body: `<script>window.opener.postMessage({type:"artifactpass:auth-complete"},window.location.origin);window.close();</script>`,
+        body: `<p id="popup-status"></p><a id="completion-fallback" href="/upload" hidden>Continue in this tab</a><script>${popupCompleteScript}</script>`,
       });
       return;
     }
@@ -150,7 +224,9 @@ test("keeps the landing page open while authentication runs in a popup", async (
   await expect(page.locator("#upload-status")).toHaveText("Finish signing in in the popup. This page will continue automatically.");
   await expect(popup.getByRole("heading", { name: "Sign in to ArtifactPass" })).toBeVisible();
 
-  const completion = popup.goto(`${origin}/auth/popup/complete?theme=light`).catch(() => null);
+  const returnTo = new URL(popup.url()).searchParams.get("return_to");
+  expect(returnTo).not.toBeNull();
+  const completion = popup.goto(new URL(returnTo ?? "", origin).href).catch(() => null);
   await page.waitForURL(`${origin}/upload`);
   await completion;
   await expect(page.getByRole("heading", { name: "Upload restored" })).toBeVisible();
@@ -190,6 +266,112 @@ test("keeps one selected document ready when the sign-in popup is closed", async
   await expect(page.getByRole("button", { name: "Continue to sign in" })).toBeEnabled();
   await expect(page.getByRole("button", { name: "Choose another" })).toBeEnabled();
   await expect(page.locator("#local-note")).toHaveText("Kept in this browser only.");
+});
+
+test("accepts a matching completion signal after the popup closes", async ({ context, page }) => {
+  await context.route(`${origin}/**`, async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/") {
+      await route.fulfill({ contentType: "text/html", body: homepage });
+      return;
+    }
+    if (url.pathname === "/auth/sign-in") {
+      await route.fulfill({ contentType: "text/html", body: "<h1>Sign in to ArtifactPass</h1>" });
+      return;
+    }
+    if (url.pathname === "/upload") {
+      await route.fulfill({ contentType: "text/html", body: "<h1>Upload restored</h1>" });
+      return;
+    }
+    await route.abort();
+  });
+
+  await page.goto(`${origin}/`);
+  await page.getByRole("button", { name: /Try it with your own document/ }).click();
+  await page.locator("#pending-file-input").setInputFiles({
+    name: "handoff.md",
+    mimeType: "text/markdown",
+    buffer: Buffer.from("# Delayed completion"),
+  });
+
+  const popupPromise = page.waitForEvent("popup");
+  await page.getByRole("button", { name: "Continue to sign in" }).click();
+  const popup = await popupPromise;
+  await popup.waitForURL(new RegExp(`${origin}/auth/sign-in\\?return_to=.*flow.*&theme=light`));
+  const returnTo = new URL(popup.url()).searchParams.get("return_to");
+  const flow = new URL(returnTo ?? "", origin).searchParams.get("flow");
+  await popup.close();
+  await page.waitForTimeout(550);
+  await page.evaluate((matchingFlow) => {
+    const channel = new BroadcastChannel("artifactpass-auth");
+    channel.postMessage({ type: "artifactpass:auth-complete", flow: matchingFlow });
+    channel.close();
+  }, flow);
+
+  await page.waitForURL(`${origin}/upload`);
+  await expect(page.getByRole("heading", { name: "Upload restored" })).toBeVisible();
+});
+
+test("restores the stored document from a completion tab without an opener", async ({ context }) => {
+  await context.route(`${origin}/**`, async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/") {
+      await route.fulfill({ contentType: "text/html", body: homepage });
+      return;
+    }
+    if (url.pathname === "/auth/popup/complete") {
+      await route.fulfill({
+        contentType: "text/html",
+        body: `<p id="popup-status"></p><a id="completion-fallback" href="/upload" hidden>Continue in this tab</a><script>${popupCompleteScript}</script>`,
+      });
+      return;
+    }
+    if (url.pathname === "/upload") {
+      await route.fulfill({
+        contentType: "text/html",
+        body: `<p id="restored"></p><script>(async()=>{const request=indexedDB.open("artifactpass-pending-upload",1);request.onsuccess=()=>{const db=request.result;const read=db.transaction("uploads","readonly").objectStore("uploads").get("homepage");read.onsuccess=()=>{const record=read.result;document.querySelector("#restored").textContent=record.name+"|"+record.expiresInSeconds+"|"+new TextDecoder().decode(record.bytes);db.close();};};})();</script>`,
+      });
+      return;
+    }
+    await route.abort();
+  });
+
+  const authTab = await context.newPage();
+  await authTab.goto(`${origin}/`);
+  await authTab.evaluate(async () => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("artifactpass-pending-upload", 1);
+      request.addEventListener("upgradeneeded", () => {
+        if (!request.result.objectStoreNames.contains("uploads")) {
+          request.result.createObjectStore("uploads", { keyPath: "key" });
+        }
+      });
+      request.addEventListener("success", () => resolve(request.result));
+      request.addEventListener("error", () => reject(request.error));
+    });
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction("uploads", "readwrite");
+      transaction.objectStore("uploads").put({
+        key: "homepage",
+        version: 1,
+        name: "orphaned-popup.md",
+        type: "text/markdown",
+        lastModified: Date.now(),
+        bytes: new TextEncoder().encode("# Orphaned popup").buffer,
+        expiresInSeconds: 1800,
+        createdAt: Date.now(),
+      });
+      transaction.addEventListener("complete", () => resolve());
+      transaction.addEventListener("error", () => reject(transaction.error));
+    });
+    database.close();
+  });
+
+  await authTab.goto(`${origin}/auth/popup/complete?flow=11111111222233334444555555555555`);
+  await expect(authTab.getByRole("link", { name: "Continue in this tab" })).toBeVisible();
+  expect(await authTab.evaluate(() => sessionStorage.getItem("artifactpass-pending-upload"))).toBe("1");
+  await authTab.getByRole("link", { name: "Continue in this tab" }).click();
+  await expect(authTab.locator("#restored")).toHaveText("orphaned-popup.md|1800|# Orphaned popup");
 });
 
 test("returns a cancelled provider sign-in to the selected document", async ({ context, page }) => {

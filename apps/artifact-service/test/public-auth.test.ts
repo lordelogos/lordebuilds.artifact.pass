@@ -192,14 +192,20 @@ describe("public ArtifactPass authentication", () => {
     expect(page.status).toBe(200);
     expect(page.headers.get("cross-origin-opener-policy")).toBe("same-origin-allow-popups");
     expect(page.headers.get("content-security-policy")).toContain("script-src 'self'");
-    expect(await page.text()).toContain('src="/auth/popup-complete.js"');
+    const pageSource = await page.text();
+    expect(pageSource).toContain('src="/auth/popup-complete.js"');
+    expect(pageSource).toContain('id="completion-fallback"');
+    expect(pageSource).toContain("hidden>Continue in this tab");
 
     expect(script.status).toBe(200);
     expect(script.headers.get("content-type")).toContain("application/javascript");
     const source = await script.text();
     expect(source).toContain('type: "artifactpass:auth-complete"');
     expect(source).toContain("window.opener.postMessage");
-    expect(source).toContain('window.location.assign("/upload")');
+    expect(source).toContain('new BroadcastChannel("artifactpass-auth")');
+    expect(source).toContain('sessionStorage.setItem("artifactpass-pending-upload", "1")');
+    expect(source).toContain('querySelector("#completion-fallback")?.removeAttribute("hidden")');
+    expect(source).not.toContain('window.location.assign("/upload")');
   });
 
   it("returns a cancelled provider login to the original ArtifactPass tab", async () => {
@@ -240,6 +246,26 @@ describe("public ArtifactPass authentication", () => {
     expect(source).toContain("window.close()");
     expect(source).toContain('sessionStorage.setItem("artifactpass-pending-upload", "1")');
     expect(source).toContain('window.location.assign("/?upload=1&auth=cancelled")');
+  });
+
+  it("returns a cancelled mobile provider login to its stored document", async () => {
+    const start = await request(
+      `/auth/login/google?return_to=${encodeURIComponent("/upload?pending=homepage")}`,
+      { redirect: "manual" },
+    );
+    const state = new URL(start.headers.get("location") ?? "").searchParams.get("state");
+    const oauthFetch = vi.fn<typeof fetch>();
+
+    const callback = await request(
+      `/auth/callback/google?error=access_denied&state=${state ?? ""}`,
+      { redirect: "manual", headers: { cookie: oauthCookie(start) } },
+      oauthFetch,
+    );
+
+    expect(callback.status).toBe(302);
+    expect(callback.headers.get("location")).toBe("/?upload=1&auth=cancelled");
+    expect(callback.headers.get("set-cookie")).toContain("__Host-artifactpass_oauth=;");
+    expect(oauthFetch).not.toHaveBeenCalled();
   });
 
   it("completes Google login, stores only a hashed session, and approves the agent", async () => {
