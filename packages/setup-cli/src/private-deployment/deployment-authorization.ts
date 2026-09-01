@@ -74,6 +74,27 @@ export const authorizePrivateDeployment = async (
     };
   }
   const client = resolveCloudflareOAuthClientConfiguration(environment);
+  const manager = credentialManager(state, client, dependencies);
+  if (!noSaveAuthorization) {
+    try {
+      const status = await manager.status();
+      if (status.connected && status.profile === profile) {
+        await manager.resolveAccessToken();
+        return {
+          persisted: true,
+          source: "oauth",
+          client,
+          profile,
+          grantedScopes: status.granted_scopes ?? [],
+          resolveAccessToken: () => manager.resolveAccessToken(),
+          close: async () => undefined,
+        };
+      }
+    } catch {
+      // A stale, revoked, or differently bound grant is replaced by a fresh
+      // authorization without touching the deployment's non-secret progress.
+    }
+  }
   const authorization = await authorizeCloudflareOAuth(client.clientId, profile, {
     ...dependencies.oauth,
     ...(dependencies.fetch === undefined ? {} : { fetch: dependencies.fetch }),
@@ -92,7 +113,6 @@ export const authorizePrivateDeployment = async (
       ...session,
     };
   }
-  const manager = credentialManager(state, client, dependencies);
   await manager.save(authorization);
   return {
     persisted: true,

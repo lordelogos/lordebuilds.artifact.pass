@@ -77,6 +77,17 @@ describe("private deployment authorization orchestration", () => {
     expect(session).toMatchObject({ persisted: true, source: "oauth", profile: "companyLogin" });
     expect(store.value).toContain("refresh-");
     await expect(session.resolveAccessToken()).resolves.toContain("access-");
+
+    const browser = vi.fn();
+    const resumed = await authorizePrivateDeployment(deployment, false, {
+      environment: { ARTIFACTPASS_CLOUDFLARE_OAUTH_CLIENT_ID: "a".repeat(32) },
+      credentialStore: store,
+      fetch: fetchImplementation,
+      oauth: { openBrowser: browser },
+      now: () => new Date("2026-09-01T17:00:01.000Z"),
+    });
+    expect(resumed.persisted).toBe(true);
+    expect(browser).not.toHaveBeenCalled();
   });
 
   it("revokes a no-save OAuth grant and leaves the credential store untouched", async () => {

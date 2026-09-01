@@ -20,6 +20,7 @@ import {
   parseConnectArguments,
   resolveConnectDeploymentUrl,
 } from "./cli-arguments";
+import { CloudflareClient } from "./cloudflare/client";
 import type { IdentityRule } from "./cloudflare/deployment";
 import { runDoctor } from "./doctor";
 import type { AgentHost } from "./hosts";
@@ -41,6 +42,7 @@ import {
   privateDeploymentStateRoot,
   resolvePrivateDeploymentState,
 } from "./private-deployment/deployment-state";
+import { runPrivateDeploymentPrerequisites } from "./private-deployment/prerequisites";
 import {
   ArtifactpassInstallError,
   renderInstallFailure,
@@ -356,6 +358,11 @@ const main = async (): Promise<void> => {
               },
             },
           ),
+          runPrerequisites: (state, authorization) => runPrivateDeploymentPrerequisites(state, {
+            client: new CloudflareClient({ resolveToken: authorization.resolveAccessToken }),
+            prompt: promptSession.prompt,
+            openBrowser,
+          }),
         });
         try {
           print(jsonOutputRequested ? result : renderPrivateDeploymentWizardResult(result));
