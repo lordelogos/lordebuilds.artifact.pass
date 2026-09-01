@@ -102,6 +102,20 @@ describe("expiry policy", () => {
       expiryPolicySchema.parse({ maximum_seconds: 3600, allowed_seconds: [900, 7200] }),
     ).toThrow();
   });
+
+  it("supports deployment-scoped policies up to seven days", () => {
+    expect(expiryPolicySchema.parse({
+      maximum_seconds: 604_800,
+      allowed_seconds: [900, 3600, 86_400, 604_800],
+    })).toEqual({
+      maximum_seconds: 604_800,
+      allowed_seconds: [900, 3600, 86_400, 604_800],
+    });
+    expect(() => expiryPolicySchema.parse({
+      maximum_seconds: 604_801,
+      allowed_seconds: [604_801],
+    })).toThrow();
+  });
 });
 
 describe("transport schemas", () => {

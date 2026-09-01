@@ -6,6 +6,7 @@ import { resolve } from "node:path";
 import type { ProcessRunner } from "../process";
 import { runProcess } from "../process";
 import { CloudflareApiError, CloudflareClient } from "./client";
+import { storageLifecycleForMaximumExpiry } from "./retention-policy";
 
 export interface IdentityRule {
   readonly kind: "authenticated" | "email" | "domain";
@@ -37,6 +38,7 @@ export interface DeployInput {
     readonly githubClientSecret: string;
   };
   readonly privateAccess?: PrivateAccessConfiguration;
+  readonly allowedExpirySeconds?: readonly number[];
 }
 
 export interface DeploymentResult {
@@ -86,6 +88,7 @@ interface ApprovalManifest {
       readonly githubClientId?: string;
       readonly githubClientSecretSha256?: string;
       readonly privateAccess?: PrivateAccessConfiguration;
+      readonly allowedExpirySeconds?: readonly number[];
     };
     readonly bundleSha256: string;
     readonly remote: unknown;
@@ -121,6 +124,9 @@ export const deploymentPlan = (input: DeployInput): readonly string[] => {
   if (input.publicAuth !== undefined && input.privateAccess !== undefined) {
     throw new Error("Public ArtifactPass authentication cannot include private Access configuration");
   }
+  if (input.publicAuth !== undefined && input.allowedExpirySeconds !== undefined) {
+    throw new Error("Public ArtifactPass expiry policy is fixed at 15, 30, and 60 minutes");
+  }
   for (const identity of input.identities) {
     const valid = identity.kind === "authenticated"
       ? identity.value === "selected-providers"
@@ -146,6 +152,17 @@ export const deploymentPlan = (input: DeployInput): readonly string[] => {
     }
     if (input.privateAccess.identityMode === "company-login" && input.identities.some((identity) => identity.kind !== "authenticated")) {
       throw new Error("Company login is restricted by its selected providers");
+    }
+  }
+  if (input.allowedExpirySeconds !== undefined) {
+    if (
+      input.allowedExpirySeconds.length === 0 ||
+      new Set(input.allowedExpirySeconds).size !== input.allowedExpirySeconds.length ||
+      input.allowedExpirySeconds.some((value, index) =>
+        !Number.isInteger(value) || value <= 0 || value > 604_800 ||
+        (index > 0 && value <= (input.allowedExpirySeconds?.[index - 1] ?? 0)))
+    ) {
+      throw new Error("Private expiry values must be non-empty, unique, increasing, and no more than seven days");
     }
   }
   if (input.publicAuth !== undefined) {
@@ -336,6 +353,7 @@ const approvalBinding = async (
           .update(input.publicAuth.githubClientSecret).digest("hex"),
       }),
       ...(input.privateAccess === undefined ? {} : { privateAccess: input.privateAccess }),
+      ...(input.allowedExpirySeconds === undefined ? {} : { allowedExpirySeconds: input.allowedExpirySeconds }),
     },
     bundleSha256: await deploymentSha256(dependencies.deploymentRoot),
     remote: {
@@ -635,17 +653,31 @@ export const deployArtifactShare = async (
   template.vars.PDF_PROVENANCE_KEY_ID = input.pdfKeyId;
   template.vars.PDF_PROVENANCE_PUBLIC_KEYS = JSON.stringify({ [input.pdfKeyId]: input.pdfPublicKey });
   template.vars.PDF_PROVENANCE_RENDERERS = "artifact-share-qualified-pdf@1";
+  if (input.publicAuth === undefined && input.allowedExpirySeconds !== undefined) {
+    template.vars.ALLOWED_EXPIRY_SECONDS = input.allowedExpirySeconds.join(",");
+    template.vars.MAX_EXPIRY_SECONDS = String(input.allowedExpirySeconds.at(-1));
+  }
   const temporaryRoot = await mkdtemp(resolve(tmpdir(), "artifact-share-deploy-"));
   const configurationPath = resolve(temporaryRoot, "wrangler.json");
   try {
     await writeFile(configurationPath, JSON.stringify(template), { mode: 0o600 });
+    const lifecyclePath = input.allowedExpirySeconds === undefined
+      ? resolve(dependencies.deploymentRoot, "storage-lifecycle.json")
+      : resolve(temporaryRoot, "storage-lifecycle.json");
+    if (input.allowedExpirySeconds !== undefined) {
+      await writeFile(
+        lifecyclePath,
+        JSON.stringify(storageLifecycleForMaximumExpiry(input.allowedExpirySeconds.at(-1) as number)),
+        { mode: 0o600 },
+      );
+    }
     const commandEnvironment = { CLOUDFLARE_ACCOUNT_ID: input.accountId };
     await runner("wrangler", [
       "d1", "migrations", "apply", databaseName, "--remote", "--config", configurationPath,
     ], { env: commandEnvironment });
     await runner("wrangler", [
       "r2", "bucket", "lifecycle", "set", serviceName,
-      "--file", resolve(dependencies.deploymentRoot, "storage-lifecycle.json"), "--force",
+      "--file", lifecyclePath, "--force",
     ], { env: commandEnvironment });
     if (input.publicAuth !== undefined) {
       await runner("wrangler", ["secret", "bulk", "--config", configurationPath], {

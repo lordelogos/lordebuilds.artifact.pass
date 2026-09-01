@@ -44,6 +44,7 @@ import {
 } from "./private-deployment/deployment-state";
 import { runPrivateDeploymentPrerequisites } from "./private-deployment/prerequisites";
 import { runPrivateIdentitySetup } from "./private-deployment/identity-setup";
+import { runPrivateRetentionSetup } from "./private-deployment/retention";
 import {
   ArtifactpassInstallError,
   renderInstallFailure,
@@ -372,10 +373,18 @@ const main = async (): Promise<void> => {
               prompt: promptSession.prompt,
               openBrowser,
             });
+            if (identity.status !== "ready") {
+              return {
+                status: identity.status,
+                state: identity.state,
+                message: identity.message,
+              };
+            }
+            const retention = await runPrivateRetentionSetup(identity.state, promptSession.prompt);
             return {
-              status: identity.status,
-              state: identity.state,
-              message: identity.message,
+              status: "ready",
+              state: retention.state,
+              message: "Cloudflare prerequisites, private login, publisher access, and link retention are ready for deployment approval.",
             };
           },
         });

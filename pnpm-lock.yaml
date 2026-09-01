@@ -206,6 +206,9 @@ importers:
       agent-bridge:
         specifier: workspace:*
         version: link:../agent-bridge
+      artifact-protocol:
+        specifier: workspace:*
+        version: link:../artifact-protocol
       artifact-service:
         specifier: workspace:*
         version: link:../../apps/artifact-service

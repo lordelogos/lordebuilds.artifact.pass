@@ -3,7 +3,7 @@ import { z } from "zod";
 export const PROTOCOL_VERSION = 1 as const;
 export const PROTOCOL_MAX_ARTIFACT_BYTES = 25 * 1024 * 1024;
 export const PROTOCOL_MAX_SOURCE_CHUNK_BYTES = 64 * 1024;
-export const PROTOCOL_MAX_EXPIRY_SECONDS = 24 * 60 * 60;
+export const PROTOCOL_MAX_EXPIRY_SECONDS = 7 * 24 * 60 * 60;
 
 export const SUPPORTED_MIME_TYPES = [
   "text/html",

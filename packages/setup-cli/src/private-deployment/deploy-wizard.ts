@@ -49,7 +49,7 @@ export interface PrivateDeploymentWizardDependencies {
 }
 
 export interface PrivateDeploymentWizardResult {
-  readonly action: "saved" | "authorization-required" | "authorized" | "prerequisites-ready" | "identity-ready" | "status" | "abandoned";
+  readonly action: "saved" | "authorization-required" | "authorized" | "prerequisites-ready" | "identity-ready" | "retention-ready" | "status" | "abandoned";
   readonly deployment: PrivateDeploymentState | null;
   readonly deployments?: readonly PrivateDeploymentState[];
   readonly resume_command?: string;
@@ -384,7 +384,9 @@ export const runPrivateDeploymentWizard = async (
         );
         return {
           action: prerequisiteResult.status === "ready"
-            ? prerequisiteResult.state.stage === "identity-ready" ? "identity-ready" : "prerequisites-ready"
+            ? prerequisiteResult.state.stage === "retention-ready"
+              ? "retention-ready"
+              : prerequisiteResult.state.stage === "identity-ready" ? "identity-ready" : "prerequisites-ready"
             : "saved",
           deployment: persistedPrerequisiteState,
           resume_command: resumeCommand(persistedPrerequisiteState),
@@ -434,7 +436,9 @@ export const runPrivateDeploymentWizard = async (
     );
     return {
       action: prerequisiteResult.status === "ready"
-        ? prerequisiteResult.state.stage === "identity-ready" ? "identity-ready" : "prerequisites-ready"
+        ? prerequisiteResult.state.stage === "retention-ready"
+          ? "retention-ready"
+          : prerequisiteResult.state.stage === "identity-ready" ? "identity-ready" : "prerequisites-ready"
         : "saved",
       deployment: persistedPrerequisiteState,
       resume_command: resumeCommand(persistedPrerequisiteState),

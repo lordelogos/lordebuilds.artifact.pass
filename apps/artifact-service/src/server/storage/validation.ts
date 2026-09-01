@@ -49,13 +49,15 @@ export const artifactPolicyFromBindings = (
     : bindings.ALLOWED_EXPIRY_SECONDS.split(",").map((value) =>
         parsePositiveInteger(value.trim(), 0),
       )
-  ).filter((value, index, values) => values.indexOf(value) === index);
+  );
 
   if (
     allowedExpirySeconds.length === 0 ||
-    allowedExpirySeconds.some((value) => value > maximumExpirySeconds)
+    allowedExpirySeconds.some((value) => value > maximumExpirySeconds) ||
+    new Set(allowedExpirySeconds).size !== allowedExpirySeconds.length ||
+    allowedExpirySeconds.some((value, index) => index > 0 && value <= (allowedExpirySeconds[index - 1] ?? 0))
   ) {
-    throw new Error("Allowed expiry values must be non-empty and within MAX_EXPIRY_SECONDS");
+    throw new Error("Allowed expiry values must be non-empty, unique, increasing, and within MAX_EXPIRY_SECONDS");
   }
 
   return {

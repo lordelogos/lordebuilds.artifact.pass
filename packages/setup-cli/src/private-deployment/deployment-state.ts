@@ -15,6 +15,7 @@ export type PrivateDeploymentStage =
   | "zone-active"
   | "prerequisites-ready"
   | "identity-ready"
+  | "retention-ready"
   | "specification-ready"
   | "approval-ready"
   | "deploying"
@@ -141,6 +142,7 @@ const stages = new Set<PrivateDeploymentStage>([
   "zone-active",
   "prerequisites-ready",
   "identity-ready",
+  "retention-ready",
   "specification-ready",
   "approval-ready",
   "deploying",
@@ -225,7 +227,10 @@ export const validatePrivateDeploymentState = (
   if (
     retentionSeconds !== undefined &&
     (!Array.isArray(retentionSeconds) || retentionSeconds.length === 0 ||
-      !retentionSeconds.every((item) => Number.isInteger(item) && Number(item) > 0 && Number(item) <= 7 * 24 * 60 * 60))
+      new Set(retentionSeconds).size !== retentionSeconds.length ||
+      !retentionSeconds.every((item, index) =>
+        Number.isInteger(item) && Number(item) > 0 && Number(item) <= 7 * 24 * 60 * 60 &&
+        (index === 0 || Number(item) > Number(retentionSeconds[index - 1]))) )
   ) {
     throw new Error("Deployment state retention presets are invalid");
   }

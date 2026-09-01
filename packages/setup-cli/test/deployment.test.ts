@@ -392,6 +392,46 @@ describe("Cloudflare deployment", () => {
     });
   });
 
+  it("deploys private expiry bindings with an R2 lifecycle after the longest link", async () => {
+    const client = fakeClient();
+    let workerConfiguration: Record<string, unknown> | undefined;
+    let lifecycle: Record<string, unknown> | undefined;
+    const runner = vi.fn(async (_command: string, args: readonly string[]) => {
+      const configIndex = args.indexOf("--config");
+      if (args[0] === "deploy" && configIndex >= 0) {
+        workerConfiguration = JSON.parse(await readFile(args[configIndex + 1] as string, "utf8"));
+      }
+      const fileIndex = args.indexOf("--file");
+      if (args[0] === "r2" && fileIndex >= 0) {
+        lifecycle = JSON.parse(await readFile(args[fileIndex + 1] as string, "utf8"));
+      }
+      return { stdout: "", stderr: "" };
+    });
+    const fetch = vi.fn(async (url: string | URL | Request) =>
+      String(url).endsWith("/health")
+        ? Response.json({ service: "lordebuilds.artifacts.share", status: "ok" })
+        : new Response(null, { status: 302 })
+    );
+    await deployArtifactShare({
+      ...input,
+      allowedExpirySeconds: [900, 3600, 86_400, 604_800],
+    }, {
+      client: client.client,
+      deploymentRoot: await deploymentRoot(),
+      runner,
+      fetch,
+    });
+    expect(workerConfiguration).toMatchObject({
+      vars: {
+        ALLOWED_EXPIRY_SECONDS: "900,3600,86400,604800",
+        MAX_EXPIRY_SECONDS: "604800",
+      },
+    });
+    expect(lifecycle).toMatchObject({
+      rules: [{ deleteObjectsTransition: { condition: { maxAge: 691_200 } } }],
+    });
+  });
+
   it("refuses an existing Access application with incompatible provider bindings", async () => {
     const client = fakeClient({ existing: true, allowedIdps: ["another-provider"], autoRedirect: true });
     const runner = vi.fn();
@@ -657,6 +697,8 @@ describe("Cloudflare deployment", () => {
     expect(() => deploymentPlan({ ...input, serviceName: "Invalid Service" })).toThrow("service name");
     expect(() => deploymentPlan({ ...input, serviceName: "a" })).toThrow("service name");
     expect(() => deploymentPlan({ ...input, serviceName: "ab" })).toThrow("service name");
+    expect(() => deploymentPlan({ ...input, allowedExpirySeconds: [3600, 900] }))
+      .toThrow("unique, increasing");
     expect(() => deploymentPlan({
       ...input,
       identities: [{ kind: "authenticated", value: "selected-providers" }],
