@@ -33,6 +33,15 @@ import {
   type PrivateDeploymentPrompt,
 } from "./private-deployment/deploy-wizard";
 import {
+  authorizePrivateDeployment,
+  disconnectPrivateDeploymentAuthorization,
+  privateDeploymentAuthorizationStatus,
+} from "./private-deployment/deployment-authorization";
+import {
+  privateDeploymentStateRoot,
+  resolvePrivateDeploymentState,
+} from "./private-deployment/deployment-state";
+import {
   ArtifactpassInstallError,
   renderInstallFailure,
   renderInstallReceipt,
@@ -94,7 +103,9 @@ Commands:
   install [--base-url <url>] [--profile <name>] [--workspace-root <path>] [--open-development] [--no-host-install] [--json]
   configure [--base-url <url>] [--profile <name>] [--workspace-root <path>] [--open-development] [--json]
   deploy-public --account-id <id> --zone-id <id> --hostname <host> [--service-name <name>] --workers-subdomain <name> --pdf-key-id <id> --pdf-public-key <base64> --google-client-id <id> --github-client-id <id> (--dry-run | --write-approval-manifest <path> | --approve-manifest <path>)
-  deploy [--resume <hostname-or-id> | --new] [--status] [--abandon] [--non-interactive] [--json]
+  deploy [--resume <hostname-or-id> | --new] [--status] [--abandon] [--no-save-authorization] [--non-interactive] [--json]
+  deployment auth status --resume <hostname-or-id> [--json]
+  deployment auth disconnect --resume <hostname-or-id> [--json]
   deploy --account-id <id> --zone-id <id> --hostname <host> [--service-name <name>] --workers-subdomain <name> --pdf-key-id <id> --pdf-public-key <base64> (--allow-email <email> | --allow-domain <domain>) (--dry-run | --write-approval-manifest <path> | --approve-manifest <path>)
   connect [base-url] [--profile <name>] [--workspace-root <path>] [--host codex|claude|both] [--no-host-install] [--marketplace <source>] [--open-development]
   profile list
@@ -102,7 +113,7 @@ Commands:
   disconnect [--profile <name>]
   doctor
 
-Cloudflare credentials come from CLOUDFLARE_API_TOKEN or Wrangler OAuth and are never persisted by ArtifactPass.`;
+Private setup uses ArtifactPass Cloudflare OAuth and stores its refresh grant in your OS credential store. CLOUDFLARE_API_TOKEN remains an environment-only fallback.`;
 
 const requiredEnvironment = (name: string): string => {
   const result = process.env[name];
@@ -248,6 +259,34 @@ const main = async (): Promise<void> => {
     if (!result.node || !result.wrangler || !result.deploymentAssets) process.exitCode = 1;
     return;
   }
+  if (command === "deployment") {
+    const [area, action, ...deploymentArgs] = args;
+    if (area !== "auth" || (action !== "status" && action !== "disconnect")) {
+      throw new Error("Use `deployment auth status --resume <hostname-or-id>` or `deployment auth disconnect --resume <hostname-or-id>`");
+    }
+    jsonOutputRequested = booleanFlag(deploymentArgs, "--json");
+    const supported = new Set(["--resume", "--json"]);
+    const unexpected = deploymentArgs.filter((argument, index) => {
+      if (supported.has(argument)) return false;
+      return index === 0 || deploymentArgs[index - 1] !== "--resume";
+    });
+    if (unexpected.length > 0) throw new Error(`Unknown deployment auth option: ${unexpected[0]}`);
+    const selector = optionalValue(deploymentArgs, "--resume");
+    if (selector === undefined) throw new Error("deployment auth requires --resume <hostname-or-id>");
+    const deployment = await resolvePrivateDeploymentState(privateDeploymentStateRoot(), selector);
+    if (action === "status") {
+      const status = await privateDeploymentAuthorizationStatus(deployment);
+      print(jsonOutputRequested ? status : status.connected
+        ? `Cloudflare authorization is connected for ${selector}. Profile: ${status.profile}. Expires: ${status.expires_at}.`
+        : `Cloudflare authorization is not connected for ${selector}. Resume deployment setup to authorize.`);
+      return;
+    }
+    const disconnected = await disconnectPrivateDeploymentAuthorization(deployment);
+    print(jsonOutputRequested ? disconnected : disconnected.revoked
+      ? `Cloudflare authorization for ${selector} was revoked and removed from the OS credential store.`
+      : `Cloudflare authorization for ${selector} was removed locally. Cloudflare revocation did not complete.`);
+    return;
+  }
   if (command === "deploy-public") {
     const dryRun = booleanFlag(args, "--dry-run");
     const writeApprovalManifest = optionalValue(args, "--write-approval-manifest");
@@ -305,8 +344,24 @@ const main = async (): Promise<void> => {
       try {
         const result = await runPrivateDeploymentWizard(wizardArguments, {
           prompt: promptSession.prompt,
+          authorizeDeployment: (state, noSaveAuthorization) => authorizePrivateDeployment(
+            state,
+            noSaveAuthorization,
+            {
+              oauth: {
+                openBrowser,
+                onManualOpen: (url) => {
+                  process.stderr.write(`Open this Cloudflare authorization URL:\n${url}\n`);
+                },
+              },
+            },
+          ),
         });
-        print(jsonOutputRequested ? result : renderPrivateDeploymentWizardResult(result));
+        try {
+          print(jsonOutputRequested ? result : renderPrivateDeploymentWizardResult(result));
+        } finally {
+          if (result.authorization?.persisted === false) await result.authorization.close();
+        }
       } finally {
         promptSession.close();
       }

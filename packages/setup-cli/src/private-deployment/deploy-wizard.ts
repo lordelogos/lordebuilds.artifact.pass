@@ -12,6 +12,7 @@ import {
   type PrivateDeploymentState,
   type PrivateSignInMode,
 } from "./deployment-state";
+import type { PrivateDeploymentAuthorizationSession } from "./deployment-authorization";
 
 export interface PrivateDeploymentPrompt {
   readonly interactive: boolean;
@@ -26,6 +27,7 @@ export interface PrivateDeploymentWizardArguments {
   readonly status: boolean;
   readonly abandon: boolean;
   readonly json: boolean;
+  readonly noSaveAuthorization: boolean;
 }
 
 export interface PrivateDeploymentWizardDependencies {
@@ -35,14 +37,19 @@ export interface PrivateDeploymentWizardDependencies {
   readonly now?: () => Date;
   readonly createId?: () => string;
   readonly staleLockMilliseconds?: number;
+  readonly authorizeDeployment?: (
+    state: PrivateDeploymentState,
+    noSaveAuthorization: boolean,
+  ) => Promise<PrivateDeploymentAuthorizationSession>;
 }
 
 export interface PrivateDeploymentWizardResult {
-  readonly action: "saved" | "authorization-required" | "status" | "abandoned";
+  readonly action: "saved" | "authorization-required" | "authorized" | "status" | "abandoned";
   readonly deployment: PrivateDeploymentState | null;
   readonly deployments?: readonly PrivateDeploymentState[];
   readonly resume_command?: string;
   readonly message: string;
+  readonly authorization?: PrivateDeploymentAuthorizationSession;
 }
 
 type WizardControl = "back" | "save" | "cancel" | "abandon" | "new";
@@ -75,7 +82,7 @@ const hasFlag = (args: readonly string[], flag: string): boolean => {
 export const parsePrivateDeploymentWizardArguments = (
   args: readonly string[],
 ): PrivateDeploymentWizardArguments => {
-  const supportedFlags = new Set(["--resume", "--new", "--non-interactive", "--status", "--abandon", "--json"]);
+  const supportedFlags = new Set(["--resume", "--new", "--non-interactive", "--status", "--abandon", "--json", "--no-save-authorization"]);
   const unexpected = args.filter((argument, index) => {
     if (supportedFlags.has(argument)) return false;
     return index === 0 || args[index - 1] !== "--resume";
@@ -89,11 +96,15 @@ export const parsePrivateDeploymentWizardArguments = (
     status: hasFlag(args, "--status"),
     abandon: hasFlag(args, "--abandon"),
     json: hasFlag(args, "--json"),
+    noSaveAuthorization: hasFlag(args, "--no-save-authorization"),
   };
   if (parsed.createNew && parsed.resume !== undefined) throw new Error("Choose --new or --resume, not both");
   if (parsed.abandon && parsed.resume === undefined) throw new Error("--abandon requires --resume <hostname-or-id>");
   if (parsed.status && (parsed.createNew || parsed.abandon)) {
     throw new Error("--status cannot be combined with --new or --abandon");
+  }
+  if (parsed.noSaveAuthorization && (parsed.status || parsed.abandon)) {
+    throw new Error("--no-save-authorization is only valid while running deployment setup");
   }
   return parsed;
 };
@@ -346,7 +357,52 @@ export const runPrivateDeploymentWizard = async (
     return saveResult(selected, "Private deployment state is available; interactive setup was not started.");
   }
   try {
-    return await runInitialChoices(selected, root, cliVersion, dependencies);
+    const result = await runInitialChoices(selected, root, cliVersion, dependencies);
+    if (
+      result.action !== "authorization-required" ||
+      result.deployment === null ||
+      dependencies.authorizeDeployment === undefined
+    ) {
+      return result;
+    }
+    const authorization = await dependencies.authorizeDeployment(
+      result.deployment,
+      arguments_.noSaveAuthorization,
+    );
+    if (!authorization.persisted) {
+      return {
+        ...result,
+        authorization,
+        message: "Cloudflare is authorized for this process only. ArtifactPass will revoke it when this command finishes.",
+      };
+    }
+    if (authorization.client === undefined) {
+      throw new Error("Persisted Cloudflare OAuth authorization is missing its client binding");
+    }
+    const authorizedClient = authorization.client;
+    const authorizedState = await withPrivateDeploymentLock(root, result.deployment.deployment_id, async () => {
+      const current = await resolvePrivateDeploymentState(root, result.deployment?.deployment_id as string, cliVersion);
+      const updated = provePrivateDeploymentCheckpoint(
+        current,
+        "cloudflare-authorized",
+        {
+          client_environment: authorizedClient.environment,
+          profile: authorization.profile,
+          granted_scopes: authorization.grantedScopes,
+          persisted: true,
+        },
+        "cloudflare-authorized",
+        (dependencies.now ?? (() => new Date()))(),
+      );
+      return writePrivateDeploymentState(root, updated, cliVersion, dependencies.now);
+    });
+    return {
+      action: "authorized",
+      deployment: authorizedState,
+      resume_command: resumeCommand(authorizedState),
+      message: "Cloudflare authorization is stored securely in your operating system credential store.",
+      authorization,
+    };
   } catch (error) {
     if (error instanceof RestartWizardSignal) {
       return runPrivateDeploymentWizard({
@@ -356,6 +412,7 @@ export const runPrivateDeploymentWizard = async (
         status: false,
         abandon: false,
         json: arguments_.json,
+        noSaveAuthorization: arguments_.noSaveAuthorization,
       }, dependencies);
     }
     if (error instanceof StartSeparateDeploymentSignal) {
@@ -365,6 +422,7 @@ export const runPrivateDeploymentWizard = async (
         status: false,
         abandon: false,
         json: arguments_.json,
+        noSaveAuthorization: arguments_.noSaveAuthorization,
       }, dependencies);
     }
     throw error;

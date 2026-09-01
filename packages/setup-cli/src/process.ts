@@ -21,6 +21,7 @@ export interface RunOptions {
   readonly env?: Readonly<Record<string, string | undefined>>;
   readonly input?: string;
   readonly timeoutMilliseconds?: number;
+  readonly inheritEnvironment?: boolean;
 }
 
 export interface RunResult {
@@ -39,7 +40,9 @@ export const runProcess: ProcessRunner = async (command, args, options = {}) =>
     const executable = resolvedCommand(command, args);
     const child = spawn(executable.command, [...executable.args], {
       cwd: options.cwd,
-      env: { ...process.env, ...options.env },
+      env: options.inheritEnvironment === false
+        ? { ...options.env }
+        : { ...process.env, ...options.env },
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
     });

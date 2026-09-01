@@ -5,7 +5,8 @@ import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import { CloudflareApiError, CloudflareClient } from "../src/cloudflare/client";
-import { runDeployCommand } from "../src/commands/deploy";
+import { createCloudflareProcessRunner, runDeployCommand } from "../src/commands/deploy";
+import type { ProcessRunner } from "../src/process";
 import {
   deployArtifactShare,
   describeCloudflareFailure,
@@ -187,6 +188,46 @@ describe("Cloudflare deployment", () => {
     expect(result.changed).toEqual([]);
     expect(runner).not.toHaveBeenCalled();
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("resolves a fresh token for every Wrangler subprocess and scrubs inherited credentials", async () => {
+    const runner = vi.fn<ProcessRunner>(async () => ({ stdout: "", stderr: "" }));
+    const resolveToken = vi.fn()
+      .mockResolvedValueOnce(`first-${"x".repeat(32)}`)
+      .mockResolvedValueOnce(`second-${"y".repeat(32)}`);
+    const wrapped = createCloudflareProcessRunner(runner, resolveToken, accountId, {
+      PATH: "/usr/bin",
+      HOME: "/tmp/home",
+      AWS_SECRET_ACCESS_KEY: "must-not-leak",
+      CLOUDFLARE_API_TOKEN: "must-not-leak",
+    });
+    await wrapped("wrangler", ["d1", "migrations", "apply"], { env: { CUSTOM_SAFE_VALUE: "yes" } });
+    await wrapped("wrangler", ["deploy"]);
+    expect(resolveToken).toHaveBeenCalledTimes(2);
+    expect(runner).toHaveBeenNthCalledWith(1, "wrangler", ["d1", "migrations", "apply"], expect.objectContaining({
+      inheritEnvironment: false,
+      env: {
+        PATH: "/usr/bin",
+        HOME: "/tmp/home",
+        CUSTOM_SAFE_VALUE: "yes",
+        CLOUDFLARE_API_TOKEN: `first-${"x".repeat(32)}`,
+        CLOUDFLARE_ACCOUNT_ID: accountId,
+      },
+    }));
+    const secondOptions = runner.mock.calls[1]?.[2];
+    expect(secondOptions?.env).not.toHaveProperty("AWS_SECRET_ACCESS_KEY");
+    expect(secondOptions?.env?.CLOUDFLARE_API_TOKEN).toBe(`second-${"y".repeat(32)}`);
+  });
+
+  it("redacts a Wrangler bearer from child-process failures", async () => {
+    const token = `secret-${"z".repeat(32)}`;
+    const wrapped = createCloudflareProcessRunner(
+      vi.fn(async () => { throw new Error(`wrangler echoed ${token}`); }),
+      async () => token,
+      accountId,
+      {},
+    );
+    await expect(wrapped("wrangler", ["deploy"])).rejects.toThrow("wrangler echoed [REDACTED]");
   });
 
   it("writes an authenticated state-bound approval manifest without mutations", async () => {

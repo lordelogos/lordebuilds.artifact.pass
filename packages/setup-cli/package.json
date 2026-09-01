@@ -10,6 +10,12 @@
   "bin": {
     "artifactpass": "dist/cli.mjs"
   },
+  "artifactpass": {
+    "cloudflareOAuth": {
+      "stagingClientId": "55277634635e7ce787ed554d396d2694",
+      "productionClientId": ""
+    }
+  },
   "files": ["dist"],
   "scripts": {
     "build": "pnpm --dir ../../apps/artifact-service build && node ../../scripts/build-setup-package.mjs",

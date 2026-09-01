@@ -5,7 +5,8 @@ export interface CloudflareEnvelope<T> {
 }
 
 export interface CloudflareClientOptions {
-  readonly token: string;
+  readonly token?: string;
+  readonly resolveToken?: () => Promise<string>;
   readonly fetch?: typeof globalThis.fetch;
   readonly apiOrigin?: string;
 }
@@ -25,15 +26,21 @@ export class CloudflareClient {
   private readonly apiOrigin: string;
 
   public constructor(private readonly options: CloudflareClientOptions) {
+    if ((options.token === undefined) === (options.resolveToken === undefined)) {
+      throw new Error("CloudflareClient requires exactly one token source");
+    }
     this.fetchImplementation = options.fetch ?? globalThis.fetch;
     this.apiOrigin = options.apiOrigin ?? "https://api.cloudflare.com/client/v4/";
   }
 
   public async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+    const token = this.options.resolveToken === undefined
+      ? this.options.token as string
+      : await this.options.resolveToken();
     const response = await this.fetchImplementation(new URL(path.replace(/^\//u, ""), this.apiOrigin), {
       ...init,
       headers: {
-        Authorization: `Bearer ${this.options.token}`,
+        Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
         ...init.headers,
       },

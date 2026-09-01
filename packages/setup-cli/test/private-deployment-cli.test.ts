@@ -45,6 +45,7 @@ describe("private deployment CLI contract", () => {
         status: true,
         abandon: false,
         json: true,
+        noSaveAuthorization: false,
       });
     expect(() => parsePrivateDeploymentWizardArguments(["--new", "--resume", deploymentId]))
       .toThrow("Choose --new or --resume");
@@ -52,6 +53,44 @@ describe("private deployment CLI contract", () => {
       .toThrow("requires --resume");
     expect(() => parsePrivateDeploymentWizardArguments(["--mystery"]))
       .toThrow("Unknown private deployment option");
+  });
+
+  it("authorizes the profile selected by the sign-in choice and checkpoints only non-secret evidence", async () => {
+    const root = await temporaryRoot();
+    const resolveAccessToken = async () => `access-${"x".repeat(32)}`;
+    const result = await runPrivateDeploymentWizard(
+      parsePrivateDeploymentWizardArguments(["--new"]),
+      {
+        root,
+        cliVersion,
+        createId: () => deploymentId,
+        now: () => instant,
+        prompt: promptWith(["1", "1", "2"]).prompt,
+        authorizeDeployment: async (state, noSave) => {
+          expect(state.sign_in_mode).toBe("company-login");
+          expect(noSave).toBe(false);
+          return {
+            persisted: true,
+            source: "oauth",
+            client: { environment: "staging", clientId: "a".repeat(32) },
+            profile: "companyLogin",
+            grantedScopes: ["zone.read"],
+            resolveAccessToken,
+            close: async () => undefined,
+          };
+        },
+      },
+    );
+    expect(result.action).toBe("authorized");
+    const stored = await readPrivateDeploymentState(root, deploymentId, cliVersion);
+    expect(stored.stage).toBe("cloudflare-authorized");
+    expect(stored.checkpoints["cloudflare-authorized"]?.evidence).toEqual({
+      client_environment: "staging",
+      profile: "companyLogin",
+      granted_scopes: ["zone.read"],
+      persisted: true,
+    });
+    expect(JSON.stringify(stored)).not.toContain(await resolveAccessToken());
   });
 
   it("starts the plain-language wizard and saves choices before authorization", async () => {

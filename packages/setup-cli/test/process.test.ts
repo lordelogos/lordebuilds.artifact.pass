@@ -8,4 +8,15 @@ describe("setup process runner", () => {
       timeoutMilliseconds: 25,
     })).rejects.toThrow(/timed out/u);
   });
+
+  it("can launch a child with only the explicitly supplied environment", async () => {
+    const result = await runProcess(process.execPath, [
+      "-e",
+      "process.stdout.write(JSON.stringify({ allowed: process.env.ALLOWED, path: process.env.PATH ?? null }))",
+    ], {
+      inheritEnvironment: false,
+      env: { ALLOWED: "yes" },
+    });
+    expect(JSON.parse(result.stdout)).toEqual({ allowed: "yes", path: null });
+  });
 });
