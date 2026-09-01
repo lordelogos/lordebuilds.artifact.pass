@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
@@ -6,6 +6,7 @@ import { resolve } from "node:path";
 import type { ProcessRunner } from "../process";
 import { runProcess } from "../process";
 import { CloudflareApiError, CloudflareClient } from "./client";
+import { listCloudflareIdentityProviders } from "./identity";
 import { storageLifecycleForMaximumExpiry } from "./retention-policy";
 
 export interface IdentityRule {
@@ -16,18 +17,22 @@ export interface IdentityRule {
 export interface PrivateAccessConfiguration {
   readonly identityMode: "email-code" | "company-login";
   readonly allowedIdpIds: readonly string[];
+  readonly providerAction?: "reuse" | "create-after-approval";
+  readonly providerDisplayDigest?: string;
   readonly autoRedirectToIdentity: boolean;
 }
 
 export interface DeployInput {
+  readonly deploymentId?: string;
   readonly accountId: string;
   readonly zoneId: string;
   readonly hostname: string;
   readonly identities: readonly IdentityRule[];
   readonly dryRun: boolean;
-  readonly pdfKeyId: string;
-  readonly pdfPublicKey: string;
+  readonly pdfKeyId?: string;
+  readonly pdfPublicKey?: string;
   readonly workersSubdomain: string;
+  readonly workersSubdomainAction?: "reuse" | "create-after-approval";
   readonly serviceName?: string;
   readonly writeApprovalManifest?: string;
   readonly approveManifest?: string;
@@ -39,6 +44,12 @@ export interface DeployInput {
   };
   readonly privateAccess?: PrivateAccessConfiguration;
   readonly allowedExpirySeconds?: readonly number[];
+  readonly authorizationBinding?: {
+    readonly source: "oauth" | "api-token";
+    readonly client_environment: "staging" | "production" | "api-token";
+    readonly profile: "emailCode" | "companyLogin";
+    readonly granted_scopes: readonly string[];
+  };
 }
 
 export interface DeploymentResult {
@@ -47,6 +58,24 @@ export interface DeploymentResult {
   readonly plan: readonly string[];
   readonly changed: readonly string[];
   readonly approvalManifest?: string;
+  readonly resources?: Readonly<Record<string, string>>;
+  readonly verification?: {
+    readonly health: "passed";
+    readonly protectedUpload: "passed";
+    readonly verifiedAt: string;
+  };
+}
+
+export class DeploymentMutationError extends Error {
+  constructor(
+    message: string,
+    readonly changed: readonly string[],
+    readonly resources: Readonly<Record<string, string>>,
+    cause: unknown,
+  ) {
+    super(message, { cause });
+    this.name = "DeploymentMutationError";
+  }
 }
 
 interface Database { readonly uuid: string; readonly name: string }
@@ -68,20 +97,29 @@ interface AccessPolicy {
 interface AccessOrganization { readonly auth_domain: string }
 interface WorkerDomain { readonly hostname: string; readonly service: string }
 interface WorkerScript { readonly id: string; readonly modified_on?: string; readonly etag?: string }
+interface DeploymentMarker {
+  readonly version: 1;
+  readonly deployment_id: string;
+  readonly bucket_name: string;
+  readonly creation_operation_id: string;
+  readonly manifest_digest: string;
+}
 
 interface ApprovalManifest {
-  readonly version: 2;
+  readonly version: 2 | 3;
   readonly generated_at: string;
   readonly binding: {
     readonly input: {
       readonly accountId: string;
+      readonly deploymentId?: string;
       readonly zoneId: string;
       readonly hostname: string;
       readonly identities: readonly IdentityRule[];
       readonly serviceName: string;
-      readonly pdfKeyId: string;
-      readonly pdfPublicKeySha256: string;
+      readonly pdfKeyId?: string;
+      readonly pdfPublicKeySha256?: string;
       readonly workersSubdomain: string;
+      readonly workersSubdomainAction?: "reuse" | "create-after-approval";
       readonly authMode: "cloudflare-access" | "artifactpass";
       readonly googleClientId?: string;
       readonly googleClientSecretSha256?: string;
@@ -89,6 +127,7 @@ interface ApprovalManifest {
       readonly githubClientSecretSha256?: string;
       readonly privateAccess?: PrivateAccessConfiguration;
       readonly allowedExpirySeconds?: readonly number[];
+      readonly authorizationBinding?: DeployInput["authorizationBinding"];
     };
     readonly bundleSha256: string;
     readonly remote: unknown;
@@ -99,6 +138,7 @@ const identifier = /^[a-f0-9]{32}$/u;
 const hostnamePattern = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/u;
 const workersSubdomainPattern = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u;
 const serviceNamePattern = /^(?=.{3,63}$)[a-z0-9](?:[a-z0-9-]*[a-z0-9])$/u;
+const deploymentIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 export const deploymentPlan = (input: DeployInput): readonly string[] => {
   if (!identifier.test(input.accountId) || !identifier.test(input.zoneId)) {
@@ -108,8 +148,16 @@ export const deploymentPlan = (input: DeployInput): readonly string[] => {
   if (input.serviceName !== undefined && !serviceNamePattern.test(input.serviceName)) {
     throw new Error("Choose a valid lowercase Cloudflare service name");
   }
-  if (!/^[A-Za-z0-9._-]{1,64}$/u.test(input.pdfKeyId)) throw new Error("Choose a valid PDF signing key ID");
-  if (!/^[A-Za-z0-9+/]{43}=$/u.test(input.pdfPublicKey)) {
+  if (input.deploymentId !== undefined && !deploymentIdPattern.test(input.deploymentId)) {
+    throw new Error("Choose a valid private deployment ID");
+  }
+  if ((input.pdfKeyId === undefined) !== (input.pdfPublicKey === undefined)) {
+    throw new Error("PDF signing key ID and public key must be provided together");
+  }
+  if (input.pdfKeyId !== undefined && !/^[A-Za-z0-9._-]{1,64}$/u.test(input.pdfKeyId)) {
+    throw new Error("Choose a valid PDF signing key ID");
+  }
+  if (input.pdfPublicKey !== undefined && !/^[A-Za-z0-9+/]{43}=$/u.test(input.pdfPublicKey)) {
     throw new Error("PDF public key must be one base64-encoded Ed25519 raw key");
   }
   if (!workersSubdomainPattern.test(input.workersSubdomain)) {
@@ -136,15 +184,21 @@ export const deploymentPlan = (input: DeployInput): readonly string[] => {
     if (!valid) throw new Error(`Allowed ${identity.kind} is invalid`);
   }
   if (input.privateAccess !== undefined) {
+    const providerAction = input.privateAccess.providerAction ?? "reuse";
     if (
-      input.privateAccess.allowedIdpIds.length === 0 ||
+      (providerAction === "reuse" && input.privateAccess.allowedIdpIds.length === 0) ||
+      (providerAction === "create-after-approval" && (
+        input.privateAccess.identityMode !== "email-code" || input.privateAccess.allowedIdpIds.length !== 0
+      )) ||
       input.privateAccess.allowedIdpIds.length > 20 ||
       new Set(input.privateAccess.allowedIdpIds).size !== input.privateAccess.allowedIdpIds.length ||
       !input.privateAccess.allowedIdpIds.every((id) => /^[A-Za-z0-9_-]{1,128}$/u.test(id))
     ) {
       throw new Error("Private Access requires one or more valid identity provider IDs");
     }
-    if (input.privateAccess.autoRedirectToIdentity !== (input.privateAccess.allowedIdpIds.length === 1)) {
+    if (input.privateAccess.autoRedirectToIdentity !== (
+      input.privateAccess.allowedIdpIds.length === 1 || providerAction === "create-after-approval"
+    )) {
       throw new Error("Direct identity redirect requires exactly one provider");
     }
     if (input.privateAccess.identityMode === "email-code" && input.identities.some((identity) => identity.kind === "authenticated")) {
@@ -153,6 +207,9 @@ export const deploymentPlan = (input: DeployInput): readonly string[] => {
     if (input.privateAccess.identityMode === "company-login" && input.identities.some((identity) => identity.kind !== "authenticated")) {
       throw new Error("Company login is restricted by its selected providers");
     }
+  }
+  if (input.deploymentId !== undefined && input.approveManifest === undefined && input.writeApprovalManifest === undefined) {
+    throw new Error("Private deployment mutation requires an approval manifest");
   }
   if (input.allowedExpirySeconds !== undefined) {
     if (
@@ -283,12 +340,46 @@ const readWorkersSubdomain = async (
   }
 };
 
+const readR2DeploymentMarker = async (
+  input: DeployInput,
+  bucketName: string,
+  dependencies: DeployDependencies,
+): Promise<DeploymentMarker | null> => {
+  if (input.deploymentId === undefined) return null;
+  const root = await mkdtemp(resolve(tmpdir(), "artifactpass-marker-read-"));
+  const output = resolve(root, "deployment.json");
+  try {
+    try {
+      await (dependencies.runner ?? runProcess)("wrangler", [
+        "r2", "object", "get", `${bucketName}/.artifactpass/deployment.json`,
+        "--remote", "--file", output,
+      ], { env: { CLOUDFLARE_ACCOUNT_ID: input.accountId } });
+    } catch (error) {
+      const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+      if (message.includes("not found") || message.includes("does not exist") || message.includes("404")) return null;
+      throw error;
+    }
+    const parsed = JSON.parse(await readFile(output, "utf8")) as Record<string, unknown>;
+    if (
+      parsed.version !== 1 || parsed.deployment_id !== input.deploymentId ||
+      parsed.bucket_name !== bucketName ||
+      typeof parsed.creation_operation_id !== "string" || !deploymentIdPattern.test(parsed.creation_operation_id) ||
+      typeof parsed.manifest_digest !== "string" || !/^[a-f0-9]{64}$/u.test(parsed.manifest_digest)
+    ) {
+      throw new Error("Existing R2 bucket has a foreign or malformed ArtifactPass ownership marker");
+    }
+    return parsed as unknown as DeploymentMarker;
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+};
+
 const approvalBinding = async (
   input: DeployInput,
   serviceName: string,
   dependencies: DeployDependencies,
 ): Promise<ApprovalManifest["binding"]> => {
-  const [workersSubdomain, zone, domains, databases, buckets, applications] = await Promise.all([
+  const [workersSubdomain, zone, domains, databases, buckets, applications, identityProviders] = await Promise.all([
     readWorkersSubdomain(input, dependencies),
     dependencies.client.request<{ readonly name: string; readonly status: string }>(`/zones/${input.zoneId}`),
     dependencies.client.request<readonly WorkerDomain[]>(`/accounts/${input.accountId}/workers/domains`),
@@ -299,6 +390,9 @@ const approvalBinding = async (
       `/accounts/${input.accountId}/r2/buckets`,
     ),
     dependencies.client.request<readonly AccessApplication[]>(`/accounts/${input.accountId}/access/apps`),
+    input.deploymentId !== undefined
+      ? listCloudflareIdentityProviders(dependencies.client, input.accountId)
+      : Promise.resolve([]),
   ]);
   const application = applications.find((candidate) => candidate.name === serviceName);
   const organization = input.publicAuth !== undefined && application === undefined
@@ -316,7 +410,7 @@ const approvalBinding = async (
       }[]>(`/accounts/${input.accountId}/access/apps/${application.id}/policies`);
   const database = databases.find((candidate) => candidate.name === serviceName) ?? null;
   const bucket = buckets.buckets.find((candidate) => candidate.name === serviceName) ?? null;
-  const [scripts, databaseSchema, lifecycle] = await Promise.all([
+  const [scripts, databaseSchema, deploymentMetadata, lifecycle, r2Marker] = await Promise.all([
     dependencies.client.request<readonly WorkerScript[]>(`/accounts/${input.accountId}/workers/scripts`),
     database === null
       ? Promise.resolve(null)
@@ -327,22 +421,54 @@ const approvalBinding = async (
             body: JSON.stringify({ sql: "SELECT name, type, sql FROM sqlite_schema ORDER BY type, name" }),
           },
         ).then((queries) => queries.flatMap((query) => query.results ?? [])),
+    database === null || input.deploymentId === undefined
+      ? Promise.resolve(null)
+      : dependencies.client.request<readonly { readonly results?: readonly unknown[] }[]>(
+          `/accounts/${input.accountId}/d1/database/${database.uuid}/query`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              sql: "SELECT deployment_id, manifest_digest, account_id, zone_id, hostname, service_name FROM deployment_metadata LIMIT 1",
+            }),
+          },
+        ).then((queries) => queries.flatMap((query) => query.results ?? [])[0] ?? null)
+          .catch((error: unknown) => {
+            const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+            if (message.includes("no such table")) return null;
+            throw error;
+          }),
     bucket === null
       ? Promise.resolve(null)
       : dependencies.client.request<unknown>(
           `/accounts/${input.accountId}/r2/buckets/${encodeURIComponent(serviceName)}/lifecycle`,
         ),
+    bucket === null ? Promise.resolve(null) : readR2DeploymentMarker(input, serviceName, dependencies),
   ]);
+  if (input.deploymentId !== undefined && database !== null) {
+    const metadata = deploymentMetadata as Record<string, unknown> | null;
+    if (metadata?.deployment_id !== input.deploymentId) {
+      throw new Error("Existing D1 database is not owned by this ArtifactPass deployment");
+    }
+  }
+  if (input.deploymentId !== undefined && bucket !== null && r2Marker?.deployment_id !== input.deploymentId) {
+    throw new Error("Existing R2 bucket is not owned by this ArtifactPass deployment");
+  }
   return {
     input: {
+      ...(input.deploymentId === undefined ? {} : { deploymentId: input.deploymentId }),
       accountId: input.accountId,
       zoneId: input.zoneId,
       hostname: input.hostname,
       identities: input.identities,
       serviceName,
-      pdfKeyId: input.pdfKeyId,
-      pdfPublicKeySha256: createHash("sha256").update(input.pdfPublicKey).digest("hex"),
+      ...(input.pdfKeyId === undefined ? {} : { pdfKeyId: input.pdfKeyId }),
+      ...(input.pdfPublicKey === undefined ? {} : {
+        pdfPublicKeySha256: createHash("sha256").update(input.pdfPublicKey).digest("hex"),
+      }),
       workersSubdomain: input.workersSubdomain,
+      ...(input.workersSubdomainAction === undefined ? {} : {
+        workersSubdomainAction: input.workersSubdomainAction,
+      }),
       authMode: input.publicAuth === undefined ? "cloudflare-access" : "artifactpass",
       ...(input.publicAuth === undefined ? {} : {
         googleClientId: input.publicAuth.googleClientId,
@@ -354,6 +480,7 @@ const approvalBinding = async (
       }),
       ...(input.privateAccess === undefined ? {} : { privateAccess: input.privateAccess }),
       ...(input.allowedExpirySeconds === undefined ? {} : { allowedExpirySeconds: input.allowedExpirySeconds }),
+      ...(input.authorizationBinding === undefined ? {} : { authorizationBinding: input.authorizationBinding }),
     },
     bundleSha256: await deploymentSha256(dependencies.deploymentRoot),
     remote: {
@@ -362,12 +489,15 @@ const approvalBinding = async (
       domain: domains.find((candidate) => candidate.hostname === input.hostname) ?? null,
       database,
       databaseSchema,
+      deploymentMetadata,
       bucket,
       lifecycle,
+      r2Marker,
       worker: scripts.find((candidate) => candidate.id === serviceName) ?? null,
       organization,
       application: application ?? null,
       policy: policies.find((candidate) => candidate.name === "Artifact Share uploaders") ?? null,
+      identityProviders,
     },
   };
 };
@@ -437,13 +567,15 @@ export const deployArtifactShare = async (
 
   const runner = dependencies.runner ?? runProcess;
   const changed: string[] = [];
+  const resourceIdentities: Record<string, string> = {};
+  let approvedBindingDigest: string | undefined;
   const verified = await dependencies.client.verifyToken();
   if (verified.status !== "active") throw new Error("Cloudflare API token is not active");
   if (input.writeApprovalManifest !== undefined || input.approveManifest !== undefined) {
     const binding = await approvalBinding(input, serviceName, dependencies);
     if (input.writeApprovalManifest !== undefined) {
       const manifest: ApprovalManifest = {
-        version: 2,
+        version: input.deploymentId === undefined ? 2 : 3,
         generated_at: new Date().toISOString(),
         binding,
       };
@@ -457,9 +589,37 @@ export const deployArtifactShare = async (
       };
     }
     const approved = JSON.parse(await readFile(input.approveManifest ?? "", "utf8")) as ApprovalManifest;
-    if (approved.version !== 2 || JSON.stringify(approved.binding) !== JSON.stringify(binding)) {
+    const expectedVersion = input.deploymentId === undefined ? 2 : 3;
+    if (approved.version !== expectedVersion || JSON.stringify(approved.binding) !== JSON.stringify(binding)) {
       throw new Error("Hosted approval manifest no longer matches the deployment bundle or Cloudflare state");
     }
+    approvedBindingDigest = createHash("sha256").update(JSON.stringify(approved.binding)).digest("hex");
+  }
+  try {
+  let privateAccess = input.privateAccess;
+  if (privateAccess?.providerAction === "create-after-approval") {
+    const createdProvider = await dependencies.client.request<{ readonly id: string; readonly type?: string }>(
+      `/accounts/${input.accountId}/access/identity_providers`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          name: `ArtifactPass email code ${input.deploymentId?.slice(0, 8) ?? serviceName}`,
+          type: "onetimepin",
+          config: {},
+        }),
+      },
+    );
+    if (!/^[A-Za-z0-9_-]{1,128}$/u.test(createdProvider.id)) {
+      throw new Error("Cloudflare created an invalid email verification provider");
+    }
+    privateAccess = {
+      ...privateAccess,
+      allowedIdpIds: [createdProvider.id],
+      providerAction: "reuse",
+      autoRedirectToIdentity: true,
+    };
+    resourceIdentities.identity_provider_id = createdProvider.id;
+    changed.push("Email verification provider");
   }
   const workersSubdomain = await readWorkersSubdomain(input, dependencies);
   if (workersSubdomain === null) {
@@ -491,6 +651,7 @@ export const deployArtifactShare = async (
     `/accounts/${input.accountId}/d1/database?name=${encodeURIComponent(databaseName)}`,
   );
   let database = databases.find((candidate) => candidate.name === databaseName);
+  const databaseCreated = database === undefined;
   if (database === undefined) {
     database = await dependencies.client.request<Database>(`/accounts/${input.accountId}/d1/database`, {
       method: "POST",
@@ -498,17 +659,20 @@ export const deployArtifactShare = async (
     });
     changed.push("D1 database");
   }
+  resourceIdentities.d1_database_id = database.uuid;
 
   const buckets = await dependencies.client.request<{ readonly buckets: readonly Bucket[] }>(
     `/accounts/${input.accountId}/r2/buckets`,
   );
-  if (!buckets.buckets.some((bucket) => bucket.name === serviceName)) {
+  const bucketCreated = !buckets.buckets.some((bucket) => bucket.name === serviceName);
+  if (bucketCreated) {
     await dependencies.client.request(`/accounts/${input.accountId}/r2/buckets`, {
       method: "POST",
       body: JSON.stringify({ name: serviceName }),
     });
     changed.push("R2 bucket");
   }
+  resourceIdentities.r2_bucket_name = serviceName;
 
   const applications = await dependencies.client.request<readonly AccessApplication[]>(
     `/accounts/${input.accountId}/access/apps`,
@@ -542,13 +706,14 @@ export const deployArtifactShare = async (
           type: "self_hosted",
           session_duration: "24h",
           destinations: expectedDestinations(input.hostname),
-          ...(input.privateAccess === undefined ? {} : {
-            allowed_idps: input.privateAccess.allowedIdpIds,
-            auto_redirect_to_identity: input.privateAccess.autoRedirectToIdentity,
+          ...(privateAccess === undefined ? {} : {
+            allowed_idps: privateAccess.allowedIdpIds,
+            auto_redirect_to_identity: privateAccess.autoRedirectToIdentity,
           }),
         }),
       },
     );
+    resourceIdentities.access_application_id = application.id;
     changed.push("Access application");
   } else if (input.publicAuth === undefined) {
     if (application === undefined) throw new Error("Cloudflare Access application is unavailable");
@@ -559,12 +724,12 @@ export const deployArtifactShare = async (
     if (actual !== canonicalJson(expectedDestinations(input.hostname))) {
       throw new Error("Existing Access application has different protected paths");
     }
-    if (input.privateAccess !== undefined) {
+    if (privateAccess !== undefined) {
       const actualProviders = [...(application.allowed_idps ?? [])].sort();
-      const expectedProviders = [...input.privateAccess.allowedIdpIds].sort();
+      const expectedProviders = [...privateAccess.allowedIdpIds].sort();
       if (
         JSON.stringify(actualProviders) !== JSON.stringify(expectedProviders) ||
-        application.auto_redirect_to_identity !== input.privateAccess.autoRedirectToIdentity
+        application.auto_redirect_to_identity !== privateAccess.autoRedirectToIdentity
       ) {
         throw new Error("Existing Access application has incompatible identity-provider bindings");
       }
@@ -576,6 +741,7 @@ export const deployArtifactShare = async (
     if (typeof application.aud !== "string" || application.aud.length === 0) {
       throw new Error("Cloudflare Access application did not return an audience tag");
     }
+    resourceIdentities.access_application_id = application.id;
     if (!/^[a-z0-9-]+\.cloudflareaccess\.com$/u.test(organization.auth_domain)) {
       throw new Error("Cloudflare Access organization returned an invalid team domain");
     }
@@ -586,7 +752,7 @@ export const deployArtifactShare = async (
     const expectedIncludes = identityIncludes(input.identities);
     const policy = policies.find((candidate) => candidate.name === "Artifact Share uploaders");
     if (policy === undefined) {
-      await dependencies.client.request(
+      const createdPolicy = await dependencies.client.request<{ readonly id?: string }>(
         `/accounts/${input.accountId}/access/apps/${application.id}/policies`,
         {
           method: "POST",
@@ -597,6 +763,7 @@ export const deployArtifactShare = async (
           }),
         },
       );
+      if (typeof createdPolicy.id === "string") resourceIdentities.access_policy_id = createdPolicy.id;
       changed.push("Access policy");
     } else if (
       policy.decision !== "allow" ||
@@ -615,6 +782,7 @@ export const deployArtifactShare = async (
       );
       changed.push("Access policy");
     }
+    if (policy !== undefined) resourceIdentities.access_policy_id = policy.id;
   }
 
   const template = JSON.parse(await readFile(resolve(dependencies.deploymentRoot, "wrangler-template.json"), "utf8"));
@@ -650,9 +818,21 @@ export const deployArtifactShare = async (
     template.vars.ALLOWED_EXPIRY_SECONDS = "900,1800,3600";
     template.vars.MAX_EXPIRY_SECONDS = "3600";
   }
-  template.vars.PDF_PROVENANCE_KEY_ID = input.pdfKeyId;
-  template.vars.PDF_PROVENANCE_PUBLIC_KEYS = JSON.stringify({ [input.pdfKeyId]: input.pdfPublicKey });
-  template.vars.PDF_PROVENANCE_RENDERERS = "artifact-share-qualified-pdf@1";
+  if (input.pdfKeyId !== undefined && input.pdfPublicKey !== undefined) {
+    template.vars.PDF_PROVENANCE_KEY_ID = input.pdfKeyId;
+    template.vars.PDF_PROVENANCE_PUBLIC_KEYS = JSON.stringify({ [input.pdfKeyId]: input.pdfPublicKey });
+    template.vars.PDF_PROVENANCE_RENDERERS = "artifact-share-qualified-pdf@1";
+  } else {
+    delete template.vars.PDF_PROVENANCE_KEY_ID;
+    delete template.vars.PDF_PROVENANCE_PUBLIC_KEYS;
+    delete template.vars.PDF_PROVENANCE_RENDERERS;
+  }
+  if (input.deploymentId !== undefined) {
+    template.vars.ARTIFACTPASS_DEPLOYMENT_ID = input.deploymentId;
+    if (approvedBindingDigest !== undefined) {
+      template.vars.ARTIFACTPASS_DEPLOYMENT_MANIFEST_DIGEST = approvedBindingDigest;
+    }
+  }
   if (input.publicAuth === undefined && input.allowedExpirySeconds !== undefined) {
     template.vars.ALLOWED_EXPIRY_SECONDS = input.allowedExpirySeconds.join(",");
     template.vars.MAX_EXPIRY_SECONDS = String(input.allowedExpirySeconds.at(-1));
@@ -675,10 +855,39 @@ export const deployArtifactShare = async (
     await runner("wrangler", [
       "d1", "migrations", "apply", databaseName, "--remote", "--config", configurationPath,
     ], { env: commandEnvironment });
+    if (input.deploymentId !== undefined && approvedBindingDigest !== undefined && databaseCreated) {
+      const timestamp = Math.floor(Date.now() / 1000);
+      const sql = [
+        "INSERT INTO deployment_metadata",
+        "(deployment_id, manifest_digest, account_id, zone_id, hostname, service_name, created_at, updated_at)",
+        `VALUES ('${input.deploymentId}', '${approvedBindingDigest}', '${input.accountId}', '${input.zoneId}', '${input.hostname}', '${serviceName}', ${timestamp}, ${timestamp});`,
+      ].join(" ");
+      await runner("wrangler", [
+        "d1", "execute", databaseName, "--remote", "--config", configurationPath, "--command", sql,
+      ], { env: commandEnvironment });
+      changed.push("D1 ownership marker");
+    }
     await runner("wrangler", [
       "r2", "bucket", "lifecycle", "set", serviceName,
       "--file", lifecyclePath, "--force",
     ], { env: commandEnvironment });
+    if (input.deploymentId !== undefined && approvedBindingDigest !== undefined && bucketCreated) {
+      const marker: DeploymentMarker = {
+        version: 1,
+        deployment_id: input.deploymentId,
+        bucket_name: serviceName,
+        creation_operation_id: randomUUID(),
+        manifest_digest: approvedBindingDigest,
+      };
+      const markerPath = resolve(temporaryRoot, "deployment-marker.json");
+      await writeFile(markerPath, `${JSON.stringify(marker)}\n`, { mode: 0o600 });
+      await runner("wrangler", [
+        "r2", "object", "put", `${serviceName}/.artifactpass/deployment.json`,
+        "--remote", "--file", markerPath,
+      ], { env: commandEnvironment });
+      changed.push("R2 ownership marker");
+      resourceIdentities.r2_marker_operation_id = marker.creation_operation_id;
+    }
     if (input.publicAuth !== undefined) {
       await runner("wrangler", ["secret", "bulk", "--config", configurationPath], {
         env: commandEnvironment,
@@ -690,6 +899,7 @@ export const deployArtifactShare = async (
     }
     await runner("wrangler", ["deploy", "--config", configurationPath, "--strict"], { env: commandEnvironment });
     changed.push("Worker deployment");
+    resourceIdentities.worker_service = serviceName;
   } finally {
     await rm(temporaryRoot, { recursive: true });
   }
@@ -817,7 +1027,18 @@ export const deployArtifactShare = async (
         cause: error,
       });
     }
-    return { baseUrl, teamCommand, plan, changed };
+    return {
+      baseUrl,
+      teamCommand,
+      plan,
+      changed,
+      ...(Object.keys(resourceIdentities).length === 0 ? {} : { resources: resourceIdentities }),
+      verification: {
+        health: "passed",
+        protectedUpload: "passed",
+        verifiedAt: new Date().toISOString(),
+      },
+    };
   }
   const protectedUpload = await fetchAfterDeploymentPropagation(
     fetchImplementation,
@@ -829,7 +1050,27 @@ export const deployArtifactShare = async (
   if (![302, 303, 307, 401, 403].includes(protectedUpload.status)) {
     throw new Error(`Cloudflare Access did not protect the upload route (${protectedUpload.status})`);
   }
-  return { baseUrl, teamCommand, plan, changed };
+  return {
+    baseUrl,
+    teamCommand,
+    plan,
+    changed,
+    ...(Object.keys(resourceIdentities).length === 0 ? {} : { resources: resourceIdentities }),
+    verification: {
+      health: "passed",
+      protectedUpload: "passed",
+      verifiedAt: new Date().toISOString(),
+    },
+  };
+  } catch (error) {
+    if (changed.length === 0 && Object.keys(resourceIdentities).length === 0) throw error;
+    throw new DeploymentMutationError(
+      error instanceof Error ? error.message : "Cloudflare deployment failed after mutation started",
+      [...changed],
+      { ...resourceIdentities },
+      error,
+    );
+  }
 };
 
 export const describeCloudflareFailure = (error: unknown): string => {

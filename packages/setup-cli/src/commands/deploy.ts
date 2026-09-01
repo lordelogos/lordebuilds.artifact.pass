@@ -2,6 +2,7 @@ import { CloudflareClient } from "../cloudflare/client";
 import {
   deployArtifactShare,
   describeCloudflareFailure,
+  DeploymentMutationError,
   type DeployInput,
   type DeploymentResult,
 } from "../cloudflare/deployment";
@@ -107,6 +108,14 @@ export const runDeployCommand = async (
       runner: credentialedRunner,
     });
   } catch (error) {
+    if (error instanceof DeploymentMutationError) {
+      throw new DeploymentMutationError(
+        describeCloudflareFailure(error.cause),
+        error.changed,
+        error.resources,
+        error.cause,
+      );
+    }
     throw new Error(describeCloudflareFailure(error));
   }
 };

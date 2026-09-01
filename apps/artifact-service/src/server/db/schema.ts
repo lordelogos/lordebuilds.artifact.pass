@@ -108,6 +108,34 @@ export const webSessions = sqliteTable("web_sessions", {
   revokedAt: integer("revoked_at"),
 });
 
+export const deploymentMetadata = sqliteTable("deployment_metadata", {
+  deploymentId: text("deployment_id").primaryKey(),
+  manifestDigest: text("manifest_digest").notNull(),
+  accountId: text("account_id").notNull(),
+  zoneId: text("zone_id").notNull(),
+  hostname: text("hostname").notNull(),
+  serviceName: text("service_name").notNull(),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+});
+
+export const deviceSigningKeys = sqliteTable(
+  "device_signing_keys",
+  {
+    keyId: text("key_id").primaryKey(),
+    publicKey: text("public_key").notNull(),
+    agentTokenId: text("agent_token_id"),
+    workspaceIdentity: text("workspace_identity").notNull(),
+    deploymentOrigin: text("deployment_origin").notNull(),
+    createdAt: integer("created_at").notNull(),
+    revokedAt: integer("revoked_at"),
+  },
+  (table) => [
+    index("device_signing_keys_agent_token_id_idx").on(table.agentTokenId),
+    index("device_signing_keys_revoked_at_idx").on(table.revokedAt),
+  ],
+);
+
 export const ARTIFACT_SCHEMA_SQL = [
   "CREATE TABLE IF NOT EXISTS artifacts (id TEXT PRIMARY KEY NOT NULL, status TEXT NOT NULL CHECK (status IN ('staging', 'active', 'cleanup_pending')), object_key TEXT NOT NULL UNIQUE, derived_object_key TEXT, legacy_derived_object_key TEXT, filename TEXT NOT NULL, mime_type TEXT NOT NULL, byte_size INTEGER NOT NULL CHECK (byte_size >= 0), sha256 TEXT NOT NULL, share_token_hash TEXT NOT NULL UNIQUE, publisher_id TEXT, publication_attempt TEXT, payload_commitment TEXT, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, extraction_status TEXT NOT NULL, extractor TEXT, extractor_version TEXT, page_count INTEGER, extraction_reason TEXT, pdf_trust_status TEXT NOT NULL DEFAULT 'not_applicable', pdf_trust_reason TEXT, pdf_provenance_receipt TEXT, cleanup_attempts INTEGER NOT NULL DEFAULT 0, last_cleanup_error TEXT);",
   "CREATE INDEX IF NOT EXISTS artifacts_status_expires_at_idx ON artifacts (status, expires_at);",
@@ -123,4 +151,8 @@ export const ARTIFACT_SCHEMA_SQL = [
   "CREATE TABLE IF NOT EXISTS web_sessions (token_hash TEXT PRIMARY KEY NOT NULL, identity_subject TEXT NOT NULL, identity_email TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, revoked_at INTEGER);",
   "CREATE INDEX IF NOT EXISTS web_sessions_expires_at_idx ON web_sessions (expires_at);",
   "CREATE INDEX IF NOT EXISTS web_sessions_revoked_at_idx ON web_sessions (revoked_at) WHERE revoked_at IS NOT NULL;",
+  "CREATE TABLE IF NOT EXISTS deployment_metadata (deployment_id TEXT PRIMARY KEY NOT NULL, manifest_digest TEXT NOT NULL, account_id TEXT NOT NULL, zone_id TEXT NOT NULL, hostname TEXT NOT NULL, service_name TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);",
+  "CREATE TABLE IF NOT EXISTS device_signing_keys (key_id TEXT PRIMARY KEY NOT NULL, public_key TEXT NOT NULL, agent_token_id TEXT, workspace_identity TEXT NOT NULL, deployment_origin TEXT NOT NULL, created_at INTEGER NOT NULL, revoked_at INTEGER);",
+  "CREATE INDEX IF NOT EXISTS device_signing_keys_agent_token_id_idx ON device_signing_keys (agent_token_id);",
+  "CREATE INDEX IF NOT EXISTS device_signing_keys_revoked_at_idx ON device_signing_keys (revoked_at) WHERE revoked_at IS NOT NULL;",
 ].join("\n");

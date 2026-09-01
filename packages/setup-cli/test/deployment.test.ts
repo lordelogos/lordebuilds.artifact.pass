@@ -27,6 +27,11 @@ const input: DeployInput = {
   dryRun: false,
 };
 
+const privateInput = (): Omit<DeployInput, "pdfKeyId" | "pdfPublicKey"> => {
+  const { pdfKeyId: _pdfKeyId, pdfPublicKey: _pdfPublicKey, ...remaining } = input;
+  return remaining;
+};
+
 const deploymentRoot = async (): Promise<string> => {
   const root = await mkdtemp(resolve(tmpdir(), "artifact-share-deployment-test-"));
   await writeFile(resolve(root, "wrangler-template.json"), JSON.stringify({
@@ -52,6 +57,7 @@ const fakeClient = (options: {
   autoRedirect?: boolean;
   remoteState?: { workerVersion: string; schemaVersion: string; lifecycleVersion: string };
   serviceName?: string;
+  ownershipDeploymentId?: string;
 } = {}) => {
   const hostname = options.hostname ?? "artifacts.example.com";
   const serviceName = options.serviceName ?? "lordebuilds-artifacts-share";
@@ -81,13 +87,30 @@ const fakeClient = (options: {
     if (path.endsWith("/r2/buckets") && init.method === "POST" && options.failR2 === true) {
       throw new Error("R2 provisioning failed");
     }
-    if (path.includes("/d1/database/db-id/query")) return [{
-      results: [{ name: "artifacts", type: "table", sql: options.remoteState?.schemaVersion ?? "schema-v1" }],
-    }];
+    if (path.includes("/d1/database/db-id/query")) {
+      const body = typeof init.body === "string" ? JSON.parse(init.body) as { readonly sql?: string } : {};
+      if (body.sql?.includes("deployment_metadata")) {
+        return [{
+          results: options.ownershipDeploymentId === undefined ? [] : [{
+            deployment_id: options.ownershipDeploymentId,
+            manifest_digest: "d".repeat(64),
+            account_id: accountId,
+            zone_id: zoneId,
+            hostname,
+            service_name: serviceName,
+          }],
+        }];
+      }
+      return [{ results: [{ name: "artifacts", type: "table", sql: options.remoteState?.schemaVersion ?? "schema-v1" }] }];
+    }
     if (path.endsWith(`/r2/buckets/${serviceName}/lifecycle`)) return {
       rules: [{ id: options.remoteState?.lifecycleVersion ?? "lifecycle-v1" }],
     };
     if (path.endsWith("/access/organizations")) return { auth_domain: "team.cloudflareaccess.com" };
+    if (path.endsWith("/access/identity_providers") && init.method !== "POST") return [];
+    if (path.endsWith("/access/identity_providers") && init.method === "POST") {
+      return { id: "otp-provider-id", name: "ArtifactPass email code", type: "onetimepin" };
+    }
     if (path.endsWith("/access/apps") && init.method !== "POST") {
       return options.existing ? [{
         id: "app-id",
@@ -260,6 +283,115 @@ describe("Cloudflare deployment", () => {
         remote: { database: { uuid: "db-id" } },
       },
     });
+  });
+
+  it("binds a private deployment ID, authorization profile, planned OTP, and retention without mutation", async () => {
+    const root = await deploymentRoot();
+    const manifestPath = resolve(root, "private-approval.json");
+    const runner = vi.fn();
+    const client = fakeClient();
+    await deployArtifactShare({
+      ...privateInput(),
+      deploymentId: "11111111-1111-4111-8111-111111111111",
+      serviceName: "artifactpass-11111111",
+      workersSubdomainAction: "reuse",
+      privateAccess: {
+        identityMode: "email-code",
+        allowedIdpIds: [],
+        providerAction: "create-after-approval",
+        providerDisplayDigest: "c".repeat(64),
+        autoRedirectToIdentity: true,
+      },
+      authorizationBinding: {
+        source: "oauth",
+        client_environment: "staging",
+        profile: "emailCode",
+        granted_scopes: ["zone.read"],
+      },
+      allowedExpirySeconds: [900, 3600, 604_800],
+      writeApprovalManifest: manifestPath,
+    }, {
+      client: client.client,
+      deploymentRoot: root,
+      runner,
+    });
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<string, unknown>;
+    expect(manifest.version).toBe(3);
+    expect(JSON.stringify(manifest)).toContain("create-after-approval");
+    expect(JSON.stringify(manifest)).toContain("604800");
+    expect(JSON.stringify(manifest)).not.toContain("PDF_PROVENANCE");
+    expect(runner).not.toHaveBeenCalled();
+    expect(client.requests.every(({ init }) => init.method === undefined)).toBe(true);
+  });
+
+  it("reuses named private resources only when D1 and R2 ownership markers match", async () => {
+    const root = await deploymentRoot();
+    const manifestPath = resolve(root, "owned-private-approval.json");
+    const deploymentId = "11111111-1111-4111-8111-111111111111";
+    const serviceName = "artifactpass-11111111";
+    const client = fakeClient({ existing: true, serviceName, ownershipDeploymentId: deploymentId });
+    const runner = vi.fn<ProcessRunner>(async (_command, args) => {
+      const fileIndex = args.indexOf("--file");
+      if (args.slice(0, 3).join(" ") === "r2 object get" && fileIndex >= 0) {
+        await writeFile(args[fileIndex + 1] as string, JSON.stringify({
+          version: 1,
+          deployment_id: deploymentId,
+          bucket_name: serviceName,
+          creation_operation_id: "22222222-2222-4222-8222-222222222222",
+          manifest_digest: "d".repeat(64),
+        }));
+      }
+      return { stdout: "", stderr: "" };
+    });
+    await expect(deployArtifactShare({
+      ...privateInput(),
+      deploymentId,
+      serviceName,
+      privateAccess: {
+        identityMode: "email-code",
+        allowedIdpIds: ["otp-id"],
+        providerAction: "reuse",
+        autoRedirectToIdentity: true,
+      },
+      authorizationBinding: {
+        source: "oauth",
+        client_environment: "staging",
+        profile: "emailCode",
+        granted_scopes: ["zone.read"],
+      },
+      allowedExpirySeconds: [900, 3600],
+      writeApprovalManifest: manifestPath,
+    }, { client: client.client, deploymentRoot: root, runner })).resolves.toMatchObject({ changed: [] });
+    expect(runner).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses name-only D1 and R2 collisions for a private deployment", async () => {
+    const root = await deploymentRoot();
+    const deploymentId = "11111111-1111-4111-8111-111111111111";
+    const serviceName = "artifactpass-11111111";
+    const client = fakeClient({ existing: true, serviceName });
+    const runner = vi.fn<ProcessRunner>(async () => {
+      throw new Error("object not found");
+    });
+    await expect(deployArtifactShare({
+      ...privateInput(),
+      deploymentId,
+      serviceName,
+      privateAccess: {
+        identityMode: "email-code",
+        allowedIdpIds: ["otp-id"],
+        providerAction: "reuse",
+        autoRedirectToIdentity: true,
+      },
+      authorizationBinding: {
+        source: "oauth",
+        client_environment: "staging",
+        profile: "emailCode",
+        granted_scopes: ["zone.read"],
+      },
+      allowedExpirySeconds: [900],
+      writeApprovalManifest: resolve(root, "foreign-approval.json"),
+    }, { client: client.client, deploymentRoot: root, runner })).rejects.toThrow("D1 database is not owned");
   });
 
   it("binds an approval manifest to an explicitly isolated staging service", async () => {

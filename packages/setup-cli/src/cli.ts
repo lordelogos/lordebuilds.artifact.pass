@@ -45,6 +45,7 @@ import {
 import { runPrivateDeploymentPrerequisites } from "./private-deployment/prerequisites";
 import { runPrivateIdentitySetup } from "./private-deployment/identity-setup";
 import { runPrivateRetentionSetup } from "./private-deployment/retention";
+import { runPrivateDeploymentApproval } from "./private-deployment/deployment-approval";
 import {
   ArtifactpassInstallError,
   renderInstallFailure,
@@ -389,7 +390,37 @@ const main = async (): Promise<void> => {
           },
         });
         try {
-          print(jsonOutputRequested ? result : renderPrivateDeploymentWizardResult(result));
+          if (
+            result.action === "retention-ready" &&
+            result.deployment !== null &&
+            result.authorization !== undefined
+          ) {
+            const deploymentResult = await runPrivateDeploymentApproval(result.deployment, {
+              root: privateDeploymentStateRoot(),
+              cliVersion: result.deployment.last_written_by_cli_version,
+              deploymentRoot,
+              prompt: promptSession.prompt,
+              authorization: result.authorization,
+            });
+            if (jsonOutputRequested) {
+              print(deploymentResult);
+            } else {
+              const lines = [deploymentResult.message, `Stage: ${deploymentResult.state.stage}`];
+              if (deploymentResult.result !== undefined) {
+                lines.push("", "Set up ArtifactPass for a teammate:", deploymentResult.result.teamCommand);
+                lines.push("", "Anyone with a live ArtifactPass link can read that artifact until it expires.");
+              }
+              if (deploymentResult.receiptPath !== undefined) {
+                lines.push(`Deployment receipt: ${deploymentResult.receiptPath}`);
+              }
+              if (deploymentResult.action !== "complete") {
+                lines.push(`Resume: pnpm dlx artifactpass deploy --resume ${deploymentResult.state.hostname ?? deploymentResult.state.deployment_id}`);
+              }
+              print(lines.join("\n"));
+            }
+          } else {
+            print(jsonOutputRequested ? result : renderPrivateDeploymentWizardResult(result));
+          }
         } finally {
           if (result.authorization?.persisted === false) await result.authorization.close();
         }
