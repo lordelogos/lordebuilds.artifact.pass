@@ -8,8 +8,14 @@ import { runProcess } from "../process";
 import { CloudflareApiError, CloudflareClient } from "./client";
 
 export interface IdentityRule {
-  readonly kind: "email" | "domain";
+  readonly kind: "authenticated" | "email" | "domain";
   readonly value: string;
+}
+
+export interface PrivateAccessConfiguration {
+  readonly identityMode: "email-code" | "company-login";
+  readonly allowedIdpIds: readonly string[];
+  readonly autoRedirectToIdentity: boolean;
 }
 
 export interface DeployInput {
@@ -30,6 +36,7 @@ export interface DeployInput {
     readonly githubClientId: string;
     readonly githubClientSecret: string;
   };
+  readonly privateAccess?: PrivateAccessConfiguration;
 }
 
 export interface DeploymentResult {
@@ -47,6 +54,8 @@ interface AccessApplication {
   readonly name: string;
   readonly aud: string;
   readonly destinations?: readonly { readonly type: string; readonly uri?: string }[];
+  readonly allowed_idps?: readonly string[];
+  readonly auto_redirect_to_identity?: boolean;
 }
 interface AccessPolicy {
   readonly id: string;
@@ -76,6 +85,7 @@ interface ApprovalManifest {
       readonly googleClientSecretSha256?: string;
       readonly githubClientId?: string;
       readonly githubClientSecretSha256?: string;
+      readonly privateAccess?: PrivateAccessConfiguration;
     };
     readonly bundleSha256: string;
     readonly remote: unknown;
@@ -108,11 +118,35 @@ export const deploymentPlan = (input: DeployInput): readonly string[] => {
   if (input.publicAuth !== undefined && input.identities.length > 0) {
     throw new Error("Public ArtifactPass authentication cannot include Cloudflare Access identities");
   }
+  if (input.publicAuth !== undefined && input.privateAccess !== undefined) {
+    throw new Error("Public ArtifactPass authentication cannot include private Access configuration");
+  }
   for (const identity of input.identities) {
-    const valid = identity.kind === "email"
+    const valid = identity.kind === "authenticated"
+      ? identity.value === "selected-providers"
+      : identity.kind === "email"
       ? /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/u.test(identity.value)
       : hostnamePattern.test(`x.${identity.value}`);
     if (!valid) throw new Error(`Allowed ${identity.kind} is invalid`);
+  }
+  if (input.privateAccess !== undefined) {
+    if (
+      input.privateAccess.allowedIdpIds.length === 0 ||
+      input.privateAccess.allowedIdpIds.length > 20 ||
+      new Set(input.privateAccess.allowedIdpIds).size !== input.privateAccess.allowedIdpIds.length ||
+      !input.privateAccess.allowedIdpIds.every((id) => /^[A-Za-z0-9_-]{1,128}$/u.test(id))
+    ) {
+      throw new Error("Private Access requires one or more valid identity provider IDs");
+    }
+    if (input.privateAccess.autoRedirectToIdentity !== (input.privateAccess.allowedIdpIds.length === 1)) {
+      throw new Error("Direct identity redirect requires exactly one provider");
+    }
+    if (input.privateAccess.identityMode === "email-code" && input.identities.some((identity) => identity.kind === "authenticated")) {
+      throw new Error("Email verification code cannot allow every internet email address");
+    }
+    if (input.privateAccess.identityMode === "company-login" && input.identities.some((identity) => identity.kind !== "authenticated")) {
+      throw new Error("Company login is restricted by its selected providers");
+    }
   }
   if (input.publicAuth !== undefined) {
     for (const [name, credential] of Object.entries(input.publicAuth)) {
@@ -149,7 +183,9 @@ const expectedDestinations = (hostname: string) => [
 ];
 
 const identityIncludes = (identities: readonly IdentityRule[]) => identities.map((identity) =>
-  identity.kind === "email"
+  identity.kind === "authenticated"
+    ? { everyone: {} }
+    : identity.kind === "email"
     ? { email: { email: identity.value } }
     : { email_domain: { domain: identity.value } });
 
@@ -171,6 +207,10 @@ const restoreLegacyAccess = async (
         type: "self_hosted",
         session_duration: "24h",
         destinations: expectedDestinations(input.hostname),
+        ...(input.privateAccess === undefined ? {} : {
+          allowed_idps: input.privateAccess.allowedIdpIds,
+          auto_redirect_to_identity: input.privateAccess.autoRedirectToIdentity,
+        }),
       }),
     },
   );
@@ -295,6 +335,7 @@ const approvalBinding = async (
         githubClientSecretSha256: createHash("sha256")
           .update(input.publicAuth.githubClientSecret).digest("hex"),
       }),
+      ...(input.privateAccess === undefined ? {} : { privateAccess: input.privateAccess }),
     },
     bundleSha256: await deploymentSha256(dependencies.deploymentRoot),
     remote: {
@@ -483,6 +524,10 @@ export const deployArtifactShare = async (
           type: "self_hosted",
           session_duration: "24h",
           destinations: expectedDestinations(input.hostname),
+          ...(input.privateAccess === undefined ? {} : {
+            allowed_idps: input.privateAccess.allowedIdpIds,
+            auto_redirect_to_identity: input.privateAccess.autoRedirectToIdentity,
+          }),
         }),
       },
     );
@@ -495,6 +540,16 @@ export const deployArtifactShare = async (
     })));
     if (actual !== canonicalJson(expectedDestinations(input.hostname))) {
       throw new Error("Existing Access application has different protected paths");
+    }
+    if (input.privateAccess !== undefined) {
+      const actualProviders = [...(application.allowed_idps ?? [])].sort();
+      const expectedProviders = [...input.privateAccess.allowedIdpIds].sort();
+      if (
+        JSON.stringify(actualProviders) !== JSON.stringify(expectedProviders) ||
+        application.auto_redirect_to_identity !== input.privateAccess.autoRedirectToIdentity
+      ) {
+        throw new Error("Existing Access application has incompatible identity-provider bindings");
+      }
     }
   }
   if (input.publicAuth === undefined) {

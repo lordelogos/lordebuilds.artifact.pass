@@ -49,7 +49,7 @@ export interface PrivateDeploymentWizardDependencies {
 }
 
 export interface PrivateDeploymentWizardResult {
-  readonly action: "saved" | "authorization-required" | "authorized" | "prerequisites-ready" | "status" | "abandoned";
+  readonly action: "saved" | "authorization-required" | "authorized" | "prerequisites-ready" | "identity-ready" | "status" | "abandoned";
   readonly deployment: PrivateDeploymentState | null;
   readonly deployments?: readonly PrivateDeploymentState[];
   readonly resume_command?: string;
@@ -383,7 +383,9 @@ export const runPrivateDeploymentWizard = async (
           async () => writePrivateDeploymentState(root, prerequisiteResult.state, cliVersion, dependencies.now),
         );
         return {
-          action: prerequisiteResult.status === "ready" ? "prerequisites-ready" : "saved",
+          action: prerequisiteResult.status === "ready"
+            ? prerequisiteResult.state.stage === "identity-ready" ? "identity-ready" : "prerequisites-ready"
+            : "saved",
           deployment: persistedPrerequisiteState,
           resume_command: resumeCommand(persistedPrerequisiteState),
           message: `${prerequisiteResult.message} Cloudflare authorization was not saved and will be revoked when this command finishes.`,
@@ -431,7 +433,9 @@ export const runPrivateDeploymentWizard = async (
       async () => writePrivateDeploymentState(root, prerequisiteResult.state, cliVersion, dependencies.now),
     );
     return {
-      action: prerequisiteResult.status === "ready" ? "prerequisites-ready" : "saved",
+      action: prerequisiteResult.status === "ready"
+        ? prerequisiteResult.state.stage === "identity-ready" ? "identity-ready" : "prerequisites-ready"
+        : "saved",
       deployment: persistedPrerequisiteState,
       resume_command: resumeCommand(persistedPrerequisiteState),
       message: prerequisiteResult.message,

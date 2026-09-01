@@ -43,6 +43,7 @@ import {
   resolvePrivateDeploymentState,
 } from "./private-deployment/deployment-state";
 import { runPrivateDeploymentPrerequisites } from "./private-deployment/prerequisites";
+import { runPrivateIdentitySetup } from "./private-deployment/identity-setup";
 import {
   ArtifactpassInstallError,
   renderInstallFailure,
@@ -358,11 +359,25 @@ const main = async (): Promise<void> => {
               },
             },
           ),
-          runPrerequisites: (state, authorization) => runPrivateDeploymentPrerequisites(state, {
-            client: new CloudflareClient({ resolveToken: authorization.resolveAccessToken }),
-            prompt: promptSession.prompt,
-            openBrowser,
-          }),
+          runPrerequisites: async (state, authorization) => {
+            const client = new CloudflareClient({ resolveToken: authorization.resolveAccessToken });
+            const prerequisites = await runPrivateDeploymentPrerequisites(state, {
+              client,
+              prompt: promptSession.prompt,
+              openBrowser,
+            });
+            if (prerequisites.status !== "ready") return prerequisites;
+            const identity = await runPrivateIdentitySetup(prerequisites.state, {
+              client,
+              prompt: promptSession.prompt,
+              openBrowser,
+            });
+            return {
+              status: identity.status,
+              state: identity.state,
+              message: identity.message,
+            };
+          },
         });
         try {
           print(jsonOutputRequested ? result : renderPrivateDeploymentWizardResult(result));

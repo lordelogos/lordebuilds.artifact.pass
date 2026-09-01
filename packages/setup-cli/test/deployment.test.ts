@@ -48,6 +48,8 @@ const fakeClient = (options: {
   failR2?: boolean;
   hostname?: string;
   policyDecision?: string;
+  allowedIdps?: readonly string[];
+  autoRedirect?: boolean;
   remoteState?: { workerVersion: string; schemaVersion: string; lifecycleVersion: string };
   serviceName?: string;
 } = {}) => {
@@ -95,6 +97,8 @@ const fakeClient = (options: {
           { type: "public", uri: `${hostname}/upload*` },
           { type: "public", uri: `${hostname}/connect/approve*` },
         ],
+        ...(options.allowedIdps === undefined ? {} : { allowed_idps: options.allowedIdps }),
+        ...(options.autoRedirect === undefined ? {} : { auto_redirect_to_identity: options.autoRedirect }),
       }] : [];
     }
     if (path.endsWith("/access/apps") && init.method === "POST") {
@@ -355,6 +359,57 @@ describe("Cloudflare deployment", () => {
     expect(JSON.parse(String(update?.init.body))).toMatchObject({ decision: "allow" });
   });
 
+  it("creates a path-scoped Access application with the approved provider binding", async () => {
+    const client = fakeClient();
+    const runner = vi.fn(async () => ({ stdout: "", stderr: "" }));
+    const fetch = vi.fn(async (url: string | URL | Request) =>
+      String(url).endsWith("/health")
+        ? Response.json({ service: "lordebuilds.artifacts.share", status: "ok" })
+        : new Response(null, { status: 302 })
+    );
+    const result = await deployArtifactShare({
+      ...input,
+      privateAccess: {
+        identityMode: "email-code",
+        allowedIdpIds: ["otp-provider"],
+        autoRedirectToIdentity: true,
+      },
+    }, {
+      client: client.client,
+      deploymentRoot: await deploymentRoot(),
+      runner,
+      fetch,
+    });
+    expect(result.changed).toContain("Access application");
+    const create = client.requests.find(({ path, init }) => path.endsWith("/access/apps") && init.method === "POST");
+    expect(JSON.parse(String(create?.init.body))).toMatchObject({
+      allowed_idps: ["otp-provider"],
+      auto_redirect_to_identity: true,
+      destinations: [
+        { type: "public", uri: "artifacts.example.com/upload*" },
+        { type: "public", uri: "artifacts.example.com/connect/approve*" },
+      ],
+    });
+  });
+
+  it("refuses an existing Access application with incompatible provider bindings", async () => {
+    const client = fakeClient({ existing: true, allowedIdps: ["another-provider"], autoRedirect: true });
+    const runner = vi.fn();
+    await expect(deployArtifactShare({
+      ...input,
+      privateAccess: {
+        identityMode: "email-code",
+        allowedIdpIds: ["otp-provider"],
+        autoRedirectToIdentity: true,
+      },
+    }, {
+      client: client.client,
+      deploymentRoot: await deploymentRoot(),
+      runner,
+    })).rejects.toThrow("incompatible identity-provider bindings");
+    expect(runner).not.toHaveBeenCalled();
+  });
+
   it("deploys public OAuth before removing the matching legacy Access gate", async () => {
     const client = fakeClient({ existing: true });
     const runnerCalls: Array<{
@@ -602,6 +657,15 @@ describe("Cloudflare deployment", () => {
     expect(() => deploymentPlan({ ...input, serviceName: "Invalid Service" })).toThrow("service name");
     expect(() => deploymentPlan({ ...input, serviceName: "a" })).toThrow("service name");
     expect(() => deploymentPlan({ ...input, serviceName: "ab" })).toThrow("service name");
+    expect(() => deploymentPlan({
+      ...input,
+      identities: [{ kind: "authenticated", value: "selected-providers" }],
+      privateAccess: {
+        identityMode: "email-code",
+        allowedIdpIds: ["otp-provider"],
+        autoRedirectToIdentity: true,
+      },
+    })).toThrow("cannot allow every internet email address");
     const client = fakeClient();
     await expect(deployArtifactShare({ ...input, hostname: "artifacts.foreign.com" }, {
       client: client.client,
