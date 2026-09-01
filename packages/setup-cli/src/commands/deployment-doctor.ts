@@ -6,6 +6,7 @@ import {
   listCloudflareZones,
   type CloudflarePrerequisiteSnapshot,
 } from "../cloudflare/discovery";
+import { fetchCloudflareDeploymentRoute } from "../cloudflare/deployment-readiness";
 import type { DeploymentAuthorizationStatus } from "../private-deployment/deployment-credentials";
 import type { PrivateDeploymentState } from "../private-deployment/deployment-state";
 
@@ -77,27 +78,52 @@ const safeRead = async (action: () => Promise<unknown>): Promise<boolean> => {
 const resourcesArePresent = async (
   state: PrivateDeploymentState,
   client: CloudflareClient,
-): Promise<boolean> => {
+): Promise<{ readonly allPresent: boolean; readonly missing: readonly string[] }> => {
   const accountId = state.cloudflare?.account_id;
   const resources = state.resources;
-  if (accountId === undefined || resources === undefined) return false;
-  const checks: Array<Promise<boolean>> = [];
-  const add = (value: string | undefined, path: (resolved: string) => string) => {
+  if (accountId === undefined || resources === undefined) return { allPresent: false, missing: ["ownership record"] };
+  const checks: Array<Promise<{ readonly name: string; readonly present: boolean }>> = [];
+  const add = (name: string, value: string | undefined, path: (resolved: string) => string) => {
     if (value === undefined) {
-      checks.push(Promise.resolve(false));
+      checks.push(Promise.resolve({ name, present: false }));
       return;
     }
-    checks.push(safeRead(() => client.request(path(value))));
+    checks.push(safeRead(() => client.request(path(value))).then((present) => ({ name, present })));
   };
-  add(resources.d1_database_id, (id) => `/accounts/${accountId}/d1/database/${id}`);
-  add(resources.r2_bucket_name, (name) => `/accounts/${accountId}/r2/buckets/${encodeURIComponent(name)}`);
-  add(resources.access_application_id, (id) => `/accounts/${accountId}/access/apps/${id}`);
-  add(resources.worker_service ?? state.service_name, (name) =>
+  add("D1 database", resources.d1_database_id, (id) => `/accounts/${accountId}/d1/database/${id}`);
+  add("R2 bucket", resources.r2_bucket_name, (name) => `/accounts/${accountId}/r2/buckets/${encodeURIComponent(name)}`);
+  add("Access application", resources.access_application_id, (id) => `/accounts/${accountId}/access/apps/${id}`);
+  add("Worker service", resources.worker_service ?? state.service_name, (name) =>
     `/accounts/${accountId}/workers/services/${encodeURIComponent(name)}`);
   if (state.sign_in_mode === "email-code") {
-    add(resources.identity_provider_id, (id) => `/accounts/${accountId}/access/identity_providers/${id}`);
+    let identityProviderIds: readonly string[] = [];
+    try {
+      const parsed = JSON.parse(resources.identity_provider_ids ?? "[]") as unknown;
+      if (Array.isArray(parsed) && parsed.every((item) => typeof item === "string")) identityProviderIds = parsed;
+    } catch {
+      identityProviderIds = [];
+    }
+    const providerIds = identityProviderIds.length > 0
+      ? identityProviderIds
+      : resources.identity_provider_id === undefined ? [] : [resources.identity_provider_id];
+    if (providerIds.length === 0) add("email-code provider", undefined, (id) => id);
+    else providerIds.forEach((id, index) => add(
+      providerIds.length === 1 ? "email-code provider" : `email-code provider ${index + 1}`,
+      id,
+      (resolved) => `/accounts/${accountId}/access/identity_providers/${resolved}`,
+    ));
   }
-  return (await Promise.all(checks)).every(Boolean);
+  const results = await Promise.all(checks);
+  const missing = results.filter((check) => !check.present).map((check) => check.name);
+  return { allPresent: missing.length === 0, missing };
+};
+
+const effectiveResources = (state: PrivateDeploymentState): Readonly<Record<string, string>> => {
+  const failureResources = state.checkpoints["deployment-failure"]?.evidence.resources;
+  const safeFailureResources = failureResources !== null && typeof failureResources === "object" && !Array.isArray(failureResources)
+    ? Object.fromEntries(Object.entries(failureResources).filter((entry): entry is [string, string] => typeof entry[1] === "string"))
+    : {};
+  return { ...safeFailureResources, ...state.resources };
 };
 
 const prerequisiteIsReady = (snapshot: CloudflarePrerequisiteSnapshot): boolean =>
@@ -174,16 +200,17 @@ export const runPrivateDeploymentDoctor = async (
           prerequisites = snapshot !== null && prerequisiteIsReady(snapshot) && zone?.status === "active"
             ? passed("D1, R2, Zero Trust, Workers, and the domain are ready.")
             : pending("One or more Cloudflare prerequisites are not ready.");
-          resources = await resourcesArePresent(state, client)
+          const resourceStatus = await resourcesArePresent({ ...state, resources: effectiveResources(state) }, client);
+          resources = resourceStatus.allPresent
             ? passed("Every recorded Cloudflare resource is present.")
-            : failed("One or more recorded Cloudflare resources are missing or inaccessible.");
+            : failed(`Missing or inaccessible: ${resourceStatus.missing.join(", ")}.`);
         }
       }
     }
   }
 
   if (state.hostname !== undefined) {
-    const fetchImplementation = dependencies.fetch ?? globalThis.fetch;
+    const fetchImplementation = dependencies.fetch ?? fetchCloudflareDeploymentRoute;
     const origin = `https://${state.hostname}`;
     const [health, session, upload] = await Promise.all([
       readJson(fetchImplementation, `${origin}/health`).catch(() => null),

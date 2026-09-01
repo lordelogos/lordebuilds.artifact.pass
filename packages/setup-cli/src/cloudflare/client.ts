@@ -9,7 +9,10 @@ export interface CloudflareClientOptions {
   readonly resolveToken?: () => Promise<string>;
   readonly fetch?: typeof globalThis.fetch;
   readonly apiOrigin?: string;
+  readonly sleep?: (milliseconds: number) => Promise<void>;
 }
+
+const readRetryDelays = [500, 1_500, 3_000] as const;
 
 export class CloudflareApiError extends Error {
   public constructor(
@@ -37,17 +40,27 @@ export class CloudflareClient {
     const token = this.options.resolveToken === undefined
       ? this.options.token as string
       : await this.options.resolveToken();
-    const response = await this.fetchImplementation(new URL(path.replace(/^\//u, ""), this.apiOrigin), {
-      ...init,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-        ...init.headers,
-      },
-      redirect: "error",
-    });
-    const envelope = await response.json().catch(() => null) as CloudflareEnvelope<T> | null;
-    if (!response.ok || envelope?.success !== true) {
+    const method = (init.method ?? "GET").toUpperCase();
+    for (let attempt = 0; ; attempt += 1) {
+      const response = await this.fetchImplementation(new URL(path.replace(/^\//u, ""), this.apiOrigin), {
+        ...init,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+          ...init.headers,
+        },
+        redirect: "error",
+      });
+      const envelope = await response.json().catch(() => null) as CloudflareEnvelope<T> | null;
+      if (response.ok && envelope?.success === true) return envelope.result;
+      const delay = method === "GET" && (response.status === 429 || response.status >= 500)
+        ? readRetryDelays[attempt]
+        : undefined;
+      if (delay !== undefined) {
+        await (this.options.sleep ?? (async (milliseconds: number) =>
+          await new Promise<void>((resolve) => setTimeout(resolve, milliseconds))))(delay);
+        continue;
+      }
       const first = envelope?.errors?.[0];
       throw new CloudflareApiError(
         first?.message ?? `Cloudflare API request failed (${response.status})`,
@@ -55,7 +68,6 @@ export class CloudflareClient {
         first?.code,
       );
     }
-    return envelope.result;
   }
 
   public async verifyToken(): Promise<{ readonly status: string }> {

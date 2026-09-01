@@ -6,6 +6,7 @@ import { resolve } from "node:path";
 import type { ProcessRunner } from "../process";
 import { runProcess } from "../process";
 import { CloudflareApiError, CloudflareClient } from "./client";
+import { fetchCloudflareDeploymentRoute } from "./deployment-readiness";
 import { listCloudflareIdentityProviders } from "./identity";
 import { storageLifecycleForMaximumExpiry } from "./retention-policy";
 
@@ -907,7 +908,7 @@ export const deployArtifactShare = async (
     await rm(temporaryRoot, { recursive: true });
   }
 
-  const fetchImplementation = dependencies.fetch ?? globalThis.fetch;
+  const fetchImplementation = dependencies.fetch ?? fetchCloudflareDeploymentRoute;
   const sleep = dependencies.sleep ?? (async (milliseconds: number) =>
     await new Promise<void>((resolveSleep) => setTimeout(resolveSleep, milliseconds)));
   const readinessTimeoutMilliseconds = dependencies.readinessTimeoutMilliseconds ?? 10_000;

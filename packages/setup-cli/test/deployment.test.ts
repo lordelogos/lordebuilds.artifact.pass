@@ -181,6 +181,22 @@ describe("Cloudflare deployment", () => {
     ]);
   });
 
+  it("retries bounded read-only Cloudflare API failures but never retries a mutation", async () => {
+    const sleep = vi.fn(async () => undefined);
+    const readFetch = vi.fn()
+      .mockResolvedValueOnce(Response.json({ success: false, result: null }, { status: 503 }))
+      .mockResolvedValueOnce(Response.json({ success: true, result: { id: "zone" } }));
+    const readClient = new CloudflareClient({ token: "cloudflare-secret", fetch: readFetch, sleep });
+    await expect(readClient.request("/zones")).resolves.toEqual({ id: "zone" });
+    expect(readFetch).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledWith(500);
+
+    const mutationFetch = vi.fn(async () => Response.json({ success: false, result: null }, { status: 503 }));
+    const mutationClient = new CloudflareClient({ token: "cloudflare-secret", fetch: mutationFetch, sleep });
+    await expect(mutationClient.request("/zones", { method: "POST" })).rejects.toMatchObject({ status: 503 });
+    expect(mutationFetch).toHaveBeenCalledTimes(1);
+  });
+
   it("turns permission denials into the least-privilege checklist", () => {
     const message = describeCloudflareFailure(new CloudflareApiError("forbidden", 403));
     expect(message).toContain("Workers Scripts Write");
