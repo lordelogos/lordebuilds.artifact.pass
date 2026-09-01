@@ -511,7 +511,10 @@ export interface DeployDependencies {
   readonly readinessTimeoutMilliseconds?: number;
 }
 
-const readinessRetryDelays = [1_000, 2_000, 4_000, 8_000, 15_000] as const;
+// A newly attached Worker custom domain can exist at Cloudflare before the local
+// resolver's negative DNS cache expires. Keep every request bounded, but allow
+// two minutes for the first hostname verification before requiring repair.
+const readinessRetryDelays = [1_000, 2_000, 4_000, 8_000, 15_000, 30_000, 30_000, 30_000] as const;
 
 const fetchAfterDeploymentPropagation = async (
   fetchImplementation: typeof globalThis.fetch,

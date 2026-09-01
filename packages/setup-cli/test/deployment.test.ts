@@ -1105,13 +1105,16 @@ describe("Cloudflare deployment", () => {
       readinessTimeoutMilliseconds: 1,
     })).rejects.toThrow();
 
-    expect(fetch).toHaveBeenCalledTimes(6);
+    expect(fetch).toHaveBeenCalledTimes(9);
     expect(sleep.mock.calls.map(([milliseconds]) => milliseconds)).toEqual([
       1_000,
       2_000,
       4_000,
       8_000,
       15_000,
+      30_000,
+      30_000,
+      30_000,
     ]);
   });
 
