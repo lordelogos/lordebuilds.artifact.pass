@@ -78,4 +78,6 @@ They start a new agent session, where ArtifactPass is installed but disconnected
 
 ## Organization-owned deployments
 
-The repository retains the earlier Cloudflare Access deployment machinery for compatibility and development, but it is not the public v1 setup path. The planned organization-owned product will add a separate admin experience, customer-selected identity configuration, and customer-controlled retention without changing the MCP tools or Agent Skills.
+Private deployment is a separate guided admin path and does not change the public service. Run `pnpm dlx artifactpass deploy` to create a customer-owned Worker, D1 database, private R2 bucket, Access application, publisher policy, and retention policy. The customer owns the Cloudflare account, domain, identity configuration, logs, and bill. The setup uses Cloudflare OAuth by default, keeps the grant in the OS credential store, and requires a state-bound approval before mutation.
+
+See [private deployment](private-deployment.md) for the exact admin and teammate procedure. Do not reuse public ArtifactPass resources or Google/GitHub OAuth credentials for a private deployment. Browser authentication belongs to that private deployment's Cloudflare Access configuration.

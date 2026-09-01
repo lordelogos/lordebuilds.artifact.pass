@@ -4,12 +4,12 @@ ArtifactPass protects upload authority and artifact confidentiality differently.
 
 ## Trust boundaries
 
-- `/upload*` and `/connect/approve*` require an ArtifactPass browser session created after Google or GitHub sign-in. Human uploads also require a matching same-origin request.
+- On public ArtifactPass, `/upload*` and `/connect/approve*` require an ArtifactPass browser session created after Google or GitHub sign-in. On a private deployment, Cloudflare Access authenticates the person and the Worker accepts only the asserted Access identity at those routes. Human uploads also require a matching same-origin request.
 - `/api/artifacts` accepts a scoped, revocable agent token. The browser upload route accepts the signed-in human session.
 - `/a/<token>*` is intentionally public. Its high-entropy token is the only read credential and expires with the artifact.
 - D1 and R2 are private Worker bindings. Only token hashes are stored in D1.
 - Browser session tokens and OAuth state are stored only as hashes in D1 and expire automatically. A short-lived HttpOnly cookie binds each OAuth callback to the browser that started it. Google and GitHub access tokens are used only to fetch the verified identity during callback and are not stored.
-- Agent tokens live in separate per-profile accounts in macOS Keychain or Linux Secret Service. The local JSON file contains only profile names, origins, absolute approved workspace roots, and non-secret PDF key IDs.
+- Agent tokens and private device keys live in separate per-profile accounts in macOS Keychain or Linux Secret Service. The local JSON file contains only profile names, origins, absolute approved workspace roots, and non-secret key IDs. Private deployments bind each token and public key to one origin, agent, and workspace approval.
 
 Treat every share URL like a temporary secret. Do not post it in public logs, issues, analytics, or durable chat transcripts.
 
@@ -35,7 +35,7 @@ Authorization checks use `now < expires_at`; at the exact cutoff every represent
 - Revoking an agent token stops future uploads but cannot retract already shared bytes before their selected expiry.
 - Human and unknown PDFs are intentionally human-only in this release; there is no click-through agent trust override.
 - macOS and Linux credential stores are supported in v1. Windows connection is not yet supported.
-- Lorde Builds Cloudflare administrators remain able to access the public deployment's infrastructure. Organization-owned deployment isolation is not claimed in public v1.
+- Lorde Builds Cloudflare administrators remain able to access the public deployment's infrastructure. In private mode, the customer owns and administers the Cloudflare account and can access its infrastructure. ArtifactPass does not claim protection from that account's administrators.
 - HTML preview isolation ultimately depends on the browser engine correctly enforcing its sandbox and Content Security Policy. ArtifactPass removes active content first and tests the browser boundary, but cannot eliminate browser-engine vulnerabilities.
 
 Report vulnerabilities as described in [SECURITY.md](../SECURITY.md).

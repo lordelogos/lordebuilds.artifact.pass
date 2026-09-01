@@ -15,6 +15,7 @@ export interface ArtifactServiceBindings {
   readonly MAX_ARTIFACT_BYTES?: string;
   readonly MAX_EXPIRY_SECONDS?: string;
   readonly LOCAL_TEST_CONTROL_TOKEN?: string;
+  readonly ARTIFACTPASS_DEPLOYMENT_ID?: string;
   readonly PDF_PROVENANCE_PUBLIC_KEYS?: string;
   readonly PDF_PROVENANCE_RENDERERS?: string;
   readonly PDF_PROVENANCE_KEY_ID?: string;

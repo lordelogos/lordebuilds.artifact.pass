@@ -189,6 +189,12 @@ export class DeploymentCredentialManager {
     };
   }
 
+  public async accessTokenForInspection(): Promise<string | null> {
+    const credential = await this.read();
+    if (credential === null || Date.parse(credential.expires_at) <= this.now().getTime()) return null;
+    return credential.access_token;
+  }
+
   public async resolveAccessToken(): Promise<string> {
     const credential = await this.read();
     if (credential === null) throw new Error("Cloudflare authorization is required; resume this deployment to reconnect");

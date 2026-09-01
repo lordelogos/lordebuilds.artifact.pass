@@ -11,6 +11,10 @@ import {
 } from "agent-bridge";
 
 import { runDeployCommand } from "./commands/deploy";
+import {
+  renderPrivateDeploymentDoctor,
+  runPrivateDeploymentDoctor,
+} from "./commands/deployment-doctor";
 import { connectHost } from "./commands/connect";
 import { disconnectHost, selectDisconnectProfile } from "./commands/disconnect";
 import {
@@ -36,6 +40,7 @@ import {
 import {
   authorizePrivateDeployment,
   disconnectPrivateDeploymentAuthorization,
+  privateDeploymentAccessTokenForInspection,
   privateDeploymentAuthorizationStatus,
 } from "./private-deployment/deployment-authorization";
 import {
@@ -111,6 +116,7 @@ Commands:
   deploy [--resume <hostname-or-id> | --new] [--status] [--abandon] [--no-save-authorization] [--non-interactive] [--json]
   deployment auth status --resume <hostname-or-id> [--json]
   deployment auth disconnect --resume <hostname-or-id> [--json]
+  deployment doctor --resume <hostname-or-id> [--json]
   deploy --account-id <id> --zone-id <id> --hostname <host> [--service-name <name>] --workers-subdomain <name> --pdf-key-id <id> --pdf-public-key <base64> (--allow-email <email> | --allow-domain <domain>) (--dry-run | --write-approval-manifest <path> | --approve-manifest <path>)
   connect [base-url] [--profile <name>] [--workspace-root <path>] [--host codex|claude|both] [--no-host-install] [--marketplace <source>] [--open-development]
   profile list
@@ -266,19 +272,31 @@ const main = async (): Promise<void> => {
   }
   if (command === "deployment") {
     const [area, action, ...deploymentArgs] = args;
-    if (area !== "auth" || (action !== "status" && action !== "disconnect")) {
-      throw new Error("Use `deployment auth status --resume <hostname-or-id>` or `deployment auth disconnect --resume <hostname-or-id>`");
+    const authCommand = area === "auth" && (action === "status" || action === "disconnect");
+    const doctorCommand = area === "doctor";
+    if (!authCommand && !doctorCommand) {
+      throw new Error("Use `deployment doctor --resume <hostname-or-id>`, `deployment auth status --resume <hostname-or-id>`, or `deployment auth disconnect --resume <hostname-or-id>`");
     }
-    jsonOutputRequested = booleanFlag(deploymentArgs, "--json");
+    const commandArgs = doctorCommand ? args.slice(1) : deploymentArgs;
+    jsonOutputRequested = booleanFlag(commandArgs, "--json");
     const supported = new Set(["--resume", "--json"]);
-    const unexpected = deploymentArgs.filter((argument, index) => {
+    const unexpected = commandArgs.filter((argument, index) => {
       if (supported.has(argument)) return false;
-      return index === 0 || deploymentArgs[index - 1] !== "--resume";
+      return index === 0 || commandArgs[index - 1] !== "--resume";
     });
-    if (unexpected.length > 0) throw new Error(`Unknown deployment auth option: ${unexpected[0]}`);
-    const selector = optionalValue(deploymentArgs, "--resume");
-    if (selector === undefined) throw new Error("deployment auth requires --resume <hostname-or-id>");
+    if (unexpected.length > 0) throw new Error(`Unknown deployment option: ${unexpected[0]}`);
+    const selector = optionalValue(commandArgs, "--resume");
+    if (selector === undefined) throw new Error("deployment command requires --resume <hostname-or-id>");
     const deployment = await resolvePrivateDeploymentState(privateDeploymentStateRoot(), selector);
+    if (doctorCommand) {
+      const result = await runPrivateDeploymentDoctor(deployment, {
+        authorizationStatus: () => privateDeploymentAuthorizationStatus(deployment),
+        accessTokenForInspection: () => privateDeploymentAccessTokenForInspection(deployment),
+      });
+      print(jsonOutputRequested ? result : renderPrivateDeploymentDoctor(result));
+      if (result.classification !== "healthy") process.exitCode = 1;
+      return;
+    }
     if (action === "status") {
       const status = await privateDeploymentAuthorizationStatus(deployment);
       print(jsonOutputRequested ? status : status.connected

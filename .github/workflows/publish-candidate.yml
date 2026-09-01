@@ -12,10 +12,12 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    environment: artifactpass-release
     steps:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+          fetch-depth: 0
       - name: Verify immutable candidate tag
         env:
           RELEASE_TAG: ${{ github.ref_name }}
@@ -26,6 +28,7 @@ jobs:
           test "$RELEASE_TAG" = "v$package_version"
           test "$package_version" = "$root_version"
           test "$package_version" = "$plugin_version"
+          git merge-base --is-ancestor HEAD origin/main
           case "$package_version" in
             *-rc.*) ;;
             *) echo "candidate publishing only accepts release-candidate versions" >&2; exit 1 ;;
@@ -49,4 +52,4 @@ jobs:
       - name: Publish candidate through npm trusted publishing
         run: |
           package_archive="$(find "$RUNNER_TEMP/artifactpass-release" -maxdepth 1 -name '*.tgz' -print -quit)"
-          npm publish "$package_archive" --tag rc --access public
+          npm publish "$package_archive" --tag rc --access public --provenance

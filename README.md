@@ -52,7 +52,25 @@ pnpm dlx artifactpass --base-url https://artifacts.example.com \
   --workspace-root /absolute/path/to/approved/workspace
 ```
 
-The command prints the MCP configuration and Agent Skills directory to register. This path uses the same bridge and skills as every ecosystem plugin; there is no separate implementation. Organization-owned deployment setup is a later phase and is not part of the public v1 release.
+The command prints the MCP configuration and Agent Skills directory to register. This path uses the same bridge and skills as every ecosystem plugin; there is no separate implementation.
+
+## Private deployment
+
+An administrator can deploy ArtifactPass into a company-owned Cloudflare account and domain:
+
+```sh
+pnpm dlx artifactpass deploy
+```
+
+The guided setup discovers the Cloudflare account and domain, waits for first-time R2 or Zero Trust activation, configures email-code or an existing company login, creates D1/R2/Worker/Access resources after one explicit approval, and prints the exact teammate setup command. Cloudflare billing, plan acceptance, registrar nameservers, and identity-provider credentials remain in Cloudflare or the registrar UI.
+
+Progress is saved for the operating-system user and may be resumed by hostname from any folder. Cloudflare authorization lives only in the OS credential store. Diagnose an existing deployment without changing it:
+
+```sh
+pnpm dlx artifactpass deployment doctor --resume artifacts.example.com
+```
+
+See [private deployment setup](docs/private-deployment.md) for the admin and teammate flows. Private deployment implementation is complete only after its staging qualification; release readiness additionally requires the unrelated-account, fresh-domain procedure in [private deployment qualification](docs/private-deployment-qualification.md).
 
 See [agent setup](docs/agent-setup.md) for portable setup, optional ecosystem installers, and revocation.
 
@@ -152,6 +170,8 @@ disposable deployment; see [operations](docs/operations.md).
 - [Architecture](docs/architecture.md)
 - [Security model](docs/security-model.md)
 - [Deployment](docs/deployment.md)
+- [Private deployment](docs/private-deployment.md)
+- [Private deployment qualification](docs/private-deployment-qualification.md)
 - [Hosted activation packet](docs/hosted-activation.md)
 - [Agent setup](docs/agent-setup.md)
 - [Operations, upgrade, and rollback](docs/operations.md)

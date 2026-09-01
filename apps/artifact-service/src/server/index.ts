@@ -117,6 +117,9 @@ export const createArtifactApplication = (options: ArtifactApplicationOptions = 
     context.json({
       service: "lordebuilds.artifacts.share",
       status: "ok",
+      ...(context.env.ARTIFACTPASS_DEPLOYMENT_ID === undefined
+        ? {}
+        : { deployment_id: context.env.ARTIFACTPASS_DEPLOYMENT_ID }),
       human_auth_mode: context.env.HUMAN_AUTH_MODE ?? "cloudflare-access",
       authentication_configured: context.env.HUMAN_AUTH_MODE === "artifactpass"
         ? [

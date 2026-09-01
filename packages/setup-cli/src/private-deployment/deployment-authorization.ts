@@ -133,6 +133,14 @@ export const privateDeploymentAuthorizationStatus = async (
   return credentialManager(state, client, dependencies).status();
 };
 
+export const privateDeploymentAccessTokenForInspection = async (
+  state: PrivateDeploymentState,
+  dependencies: Omit<PrivateDeploymentAuthorizationDependencies, "oauth"> = {},
+): Promise<string | null> => {
+  const client = resolveCloudflareOAuthClientConfiguration(dependencies.environment);
+  return credentialManager(state, client, dependencies).accessTokenForInspection();
+};
+
 export const disconnectPrivateDeploymentAuthorization = async (
   state: PrivateDeploymentState,
   dependencies: Omit<PrivateDeploymentAuthorizationDependencies, "oauth"> = {},

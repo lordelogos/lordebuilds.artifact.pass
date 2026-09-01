@@ -25,6 +25,12 @@ Monitor Worker error rate, D1 failures, R2 failures, provider callback failures,
 9. Run the live two-agent handoff gate below.
 10. Verify exact-cutoff denial in controlled-time tests and observe scheduled cleanup on the disposable deployment.
 
+## Distribution controls
+
+Candidate and release workflows must use the protected `artifactpass-release` GitHub environment. Configure required reviewers for that environment and protect `v*` tags from deletion or force updates. A candidate tag must point to a reviewed commit reachable from `main`.
+
+npm publication uses trusted publishing with an OIDC identity restricted to `.github/workflows/publish-candidate.yml`. Do not create a long-lived npm automation token. Publication explicitly requests npm provenance. The release gate verifies exact RC version agreement, the published CLI entrypoint, the native build allowlist, absence of package install lifecycle scripts, dependency audit and licenses, secret scanning, packed contents, and a clean packed installation. Verify the registry provenance and tarball integrity before running the privileged deployment command.
+
 ## Live release gate
 
 Use a disposable 15-minute artifact token. Keep the storage-state file and agent token outside the repository and delete them when the run ends.
@@ -47,3 +53,19 @@ Read release notes, run `pnpm dlx artifactpass@<new-version> doctor`, and run a 
 Keep the previous setup package and Worker build available. If the new Worker fails, redeploy the previous pinned package against the same hostname and bindings, then repeat health, authentication, upload, and read checks. Do not reverse D1 migrations in place; releases must keep the prior Worker compatible with newly added schema until the rollback window closes. If a migration is not backward compatible, restore D1 to a new database and explicitly rebind only after validating it.
 
 Disconnect compromised hosts immediately. For a leaked share URL, there is no v1 revocation endpoint; assume the artifact is readable until expiry and rotate the source content elsewhere if necessary.
+
+## Private deployment operations
+
+Use the private doctor before repair or upgrade. It performs read-only Cloudflare and origin checks and does not refresh the stored grant:
+
+```sh
+pnpm dlx artifactpass deployment doctor --resume artifacts.example.com
+```
+
+`healthy` needs matching local state, active authorization, ready Cloudflare prerequisites, all recorded resources, a protected upload boundary, matching Worker deployment ID and retention policy, successful hosted verification, and a receipt. Any other result prints one next action.
+
+Resume an incomplete or repair-required deployment with the exact pinned package version that owns its state schema. Reusing a resource requires its recorded ID and ownership marker to match. A same-name resource without that proof is a conflict, not an adoption candidate.
+
+The admin setup grant and teammate agent credentials have separate lifecycles. Disconnecting the Cloudflare setup grant does not stop the deployed Worker. Disconnecting a teammate revokes that agent token and device key. Removing Cloudflare Access, D1, R2, or the custom domain outside ArtifactPass creates drift and must be reviewed before repair.
+
+Release qualification for private onboarding is defined in [private deployment qualification](private-deployment-qualification.md). Current-account staging proof must never be reported as the unrelated-account, fresh-domain gate.
