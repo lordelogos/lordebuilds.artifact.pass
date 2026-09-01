@@ -49,25 +49,31 @@ export const artifactRecordToManifest = (artifact: ArtifactRecord): ArtifactMani
 const notFound = (): ArtifactError =>
   new ArtifactError("not_found", "Artifact is unavailable", 404);
 
-interface PublicationRetry {
+interface PublicationRetryInput {
   readonly publisherId: string;
   readonly publicationAttempt: string;
-  readonly payloadCommitment: string;
   readonly shareToken: string;
+  readonly payloadCommitment?: string;
 }
 
-const publicationRetryFromInput = (input: ArtifactUploadInput): PublicationRetry | undefined => {
+interface ValidatedPublicationRetry {
+  readonly publisherId: string;
+  readonly publicationAttempt: string;
+  readonly shareToken: string;
+  readonly payloadCommitment: string;
+}
+
+const publicationRetryFromInput = (input: ArtifactUploadInput): PublicationRetryInput | undefined => {
   if (
     input.publisherId !== undefined &&
     input.publicationAttempt !== undefined &&
-    input.payloadCommitment !== undefined &&
     input.shareToken !== undefined
   ) {
     return {
       publisherId: input.publisherId,
       publicationAttempt: input.publicationAttempt,
-      payloadCommitment: input.payloadCommitment,
       shareToken: input.shareToken,
+      ...(input.payloadCommitment === undefined ? {} : { payloadCommitment: input.payloadCommitment }),
     };
   }
   if (
@@ -110,7 +116,7 @@ export class ArtifactApplicationService {
     );
     const normalizedInput = { ...input, pdfTrust: declaredPdfTrust };
     const mimeType = validateArtifactUpload(normalizedInput, this.options.policy);
-    const publication = publicationRetryFromInput(input);
+    const publicationInput = publicationRetryFromInput(input);
     const [checksum, derivedSha256] = await Promise.all([
       sha256(input.bytes),
       input.derivedText === undefined ? Promise.resolve(null) : sha256(input.derivedText),
@@ -131,12 +137,14 @@ export class ArtifactApplicationService {
       }
       pdfTrust = { status: "controlled", receipt: verified };
     }
-    if (publication !== undefined) {
+    let publication: ValidatedPublicationRetry | undefined;
+    if (publicationInput !== undefined) {
       if (
-        !/^[A-Za-z0-9:_-]{8,255}$/u.test(publication.publisherId) ||
-        !/^[0-9a-f]{8}-[0-9a-f-]{27,45}$/u.test(publication.publicationAttempt) ||
-        !/^[a-f0-9]{64}$/u.test(publication.payloadCommitment) ||
-        !/^[A-Za-z0-9_-]{43}$/u.test(publication.shareToken)
+        !/^[A-Za-z0-9:_-]{8,255}$/u.test(publicationInput.publisherId) ||
+        !/^[0-9a-f]{8}-[0-9a-f-]{27,45}$/u.test(publicationInput.publicationAttempt) ||
+        (publicationInput.payloadCommitment !== undefined &&
+          !/^[a-f0-9]{64}$/u.test(publicationInput.payloadCommitment)) ||
+        !/^[A-Za-z0-9_-]{43}$/u.test(publicationInput.shareToken)
       ) {
         throw new ArtifactError("malformed_upload", "Publication retry fields are malformed", 400);
       }
@@ -149,9 +157,16 @@ export class ArtifactApplicationService {
         pdfTrust,
         sourceHash: checksum,
       });
-      if (expectedCommitment !== publication.payloadCommitment) {
+      if (
+        publicationInput.payloadCommitment !== undefined &&
+        expectedCommitment !== publicationInput.payloadCommitment
+      ) {
         throw new ArtifactError("malformed_upload", "Payload commitment does not match the upload", 400);
       }
+      publication = {
+        ...publicationInput,
+        payloadCommitment: expectedCommitment,
+      };
       const existing = await this.options.repository.findByPublication(
         publication.publisherId,
         publication.publicationAttempt,
@@ -231,7 +246,7 @@ export class ArtifactApplicationService {
 
   private async recoverPublication(
     existing: ArtifactRecord,
-    publication: PublicationRetry,
+    publication: ValidatedPublicationRetry,
   ): Promise<CreatedArtifact> {
     const shareTokenHash = await hashShareToken(publication.shareToken);
     let candidate: ArtifactRecord | null = existing;

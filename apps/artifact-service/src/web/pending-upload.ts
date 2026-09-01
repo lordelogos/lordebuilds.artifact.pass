@@ -7,18 +7,26 @@ const MAXIMUM_RECORD_AGE_MS = 60 * 60 * 1000;
 
 interface PendingUploadRecord {
   readonly key: typeof RECORD_KEY;
-  readonly version: 1;
+  readonly version: 1 | 2;
   readonly name: string;
   readonly type: string;
   readonly lastModified: number;
   readonly bytes: ArrayBuffer;
   readonly expiresInSeconds: number;
   readonly createdAt: number;
+  readonly publicationAttempt?: string;
+  readonly shareToken?: string;
 }
 
 export interface PendingUpload {
   readonly file: File;
   readonly expiresInSeconds: number;
+  readonly publicationIdentity?: PublicationIdentity;
+}
+
+export interface PublicationIdentity {
+  readonly publicationAttempt: string;
+  readonly shareToken: string;
 }
 
 const openDatabase = (): Promise<IDBDatabase> =>
@@ -58,8 +66,13 @@ const transact = async <T>(
 const isPendingUploadRecord = (value: unknown): value is PendingUploadRecord => {
   if (typeof value !== "object" || value === null) return false;
   const record = value as Partial<PendingUploadRecord>;
+  const identityIsValid = record.version === 1 || (
+    record.version === 2 &&
+    typeof record.publicationAttempt === "string" &&
+    typeof record.shareToken === "string"
+  );
   return record.key === RECORD_KEY &&
-    record.version === 1 &&
+    identityIsValid &&
     typeof record.name === "string" &&
     record.name.length > 0 &&
     typeof record.type === "string" &&
@@ -77,17 +90,19 @@ export const hasPendingUploadIntent = (): boolean =>
 export const writePendingUpload = async (
   file: File,
   expiresInSeconds: number,
+  publicationIdentity?: PublicationIdentity,
 ): Promise<void> => {
   const bytes = await file.arrayBuffer();
   await transact("readwrite", (store) => store.put({
     key: RECORD_KEY,
-    version: 1,
+    version: publicationIdentity === undefined ? 1 : 2,
     name: file.name,
     type: file.type,
     lastModified: file.lastModified,
     bytes,
     expiresInSeconds,
     createdAt: Date.now(),
+    ...(publicationIdentity === undefined ? {} : publicationIdentity),
   }));
   sessionStorage.setItem(INTENT_MARKER, "1");
 };
@@ -109,5 +124,11 @@ export const readPendingUpload = async (): Promise<PendingUpload | null> => {
       lastModified: value.lastModified,
     }),
     expiresInSeconds: value.expiresInSeconds,
+    ...(value.version === 2 && value.publicationAttempt !== undefined && value.shareToken !== undefined
+      ? { publicationIdentity: {
+        publicationAttempt: value.publicationAttempt,
+        shareToken: value.shareToken,
+      } }
+      : {}),
   };
 };

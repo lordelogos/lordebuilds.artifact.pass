@@ -220,13 +220,23 @@ export const createArtifactApplication = (options: ArtifactApplicationOptions = 
         PUBLIC_RESPONSE_HEADERS,
       );
     }
+    const requestId = context.req.header("cf-ray") ?? crypto.randomUUID();
+    console.error(JSON.stringify({
+      event: "artifactpass.request_failed",
+      request_id: requestId,
+      method: context.req.method,
+      path: new URL(context.req.url).pathname,
+      error_name: error instanceof Error ? error.name : "UnknownError",
+      error_message: error instanceof Error ? error.message : String(error),
+      ...(error instanceof Error && error.stack !== undefined ? { stack: error.stack } : {}),
+    }));
     return context.json(
       {
         protocol_version: PROTOCOL_VERSION,
         error: { code: "internal_error", message: "Artifact service failed" },
       },
       500,
-      PUBLIC_RESPONSE_HEADERS,
+      { ...PUBLIC_RESPONSE_HEADERS, "X-ArtifactPass-Request-Id": requestId },
     );
   });
 

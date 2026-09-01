@@ -115,6 +115,10 @@ const publicationPublishers = async (
   }
   const identity = context.get("accessIdentity");
   if (identity !== undefined) return { current: `access:${await sha256(identity.subject)}` };
+  const humanIdentity = context.get("humanIdentity");
+  if (humanIdentity !== undefined) {
+    return { current: `human:${await sha256(humanIdentity.subject)}` };
+  }
   const localPublisher = context.req.header("x-artifact-publisher");
   if (localPublisher === undefined) return undefined;
   if (!/^[A-Za-z0-9_-]{16,128}$/u.test(localPublisher)) {

@@ -44,8 +44,8 @@ const visualHomepage = `<!doctype html><html data-theme="light"><head><style>${p
     <div class="dialog-body"><input id="pending-file-input" type="file" hidden>
       <div class="drop-zone" id="drop-zone" tabindex="0"><div><strong>Drop a document here</strong><span>Choose a file</span></div></div>
       <div class="file-preview" id="file-preview" hidden><b class="file-kind" id="file-kind">FILE</b><strong id="file-name"></strong><span id="file-details"></span><button id="change-file">Choose another</button></div>
-      <p class="local-note" id="local-note" hidden>Kept in this browser only. Nothing uploads before sign-in and final confirmation.</p><p class="modal-status" id="upload-status" hidden></p>
-      <div class="upload-config" id="upload-config" hidden><fieldset><legend>How long should the link work?</legend><div class="expiry-options"><label><input type="radio" name="expiry" value="900" checked><span>15 min</span></label><label><input type="radio" name="expiry" value="1800"><span>30 min</span></label><label><input type="radio" name="expiry" value="3600"><span>60 min</span></label></div></fieldset><div class="auth-gate"><p id="auth-copy">Sign in to continue. You still approve the upload before a link is created.</p><button class="continue-button" id="continue-upload">Continue to sign in</button></div></div>
+      <p class="local-note" id="local-note" hidden>Kept in this browser only. Nothing uploads until you continue.</p><p class="modal-status" id="upload-status" hidden></p>
+      <div class="upload-config" id="upload-config" hidden><fieldset><legend>How long should the link work?</legend><div class="expiry-options"><label><input type="radio" name="expiry" value="900" checked><span>15 min</span></label><label><input type="radio" name="expiry" value="1800"><span>30 min</span></label><label><input type="radio" name="expiry" value="3600"><span>60 min</span></label></div></fieldset><div class="auth-gate"><p id="auth-copy">Sign in, then ArtifactPass creates the temporary link.</p><button class="continue-button" id="continue-upload">Continue to sign in</button></div></div>
     </div>
   </dialog><script>${homepageInteractionScript}</script>
 </body></html>`;
@@ -195,7 +195,7 @@ test("lets an authenticated browser continue without provider sign-in", async ({
 
   await expect(page.getByRole("button", { name: "Continue", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Continue", exact: true }).click();
-  await page.waitForURL(`${origin}/upload?pending=homepage`);
+  await page.waitForURL(`${origin}/upload?pending=homepage&publish=1`);
   expect(context.pages()).toHaveLength(1);
   await expect(page.getByRole("heading", { name: "Upload confirmation" })).toBeVisible();
 });
@@ -315,7 +315,7 @@ test("keeps mobile authentication in one tab with the selected document stored",
   await page.waitForURL(new RegExp(`${origin}/auth/sign-in\\?`));
 
   expect(context.pages()).toHaveLength(1);
-  expect(new URL(page.url()).searchParams.get("return_to")).toBe("/upload?pending=homepage");
+  expect(new URL(page.url()).searchParams.get("return_to")).toBe("/upload?pending=homepage&publish=1");
   expect(await page.evaluate(() => sessionStorage.getItem("artifactpass-pending-upload"))).toBe("1");
   expect(await page.evaluate(async () => {
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
@@ -368,7 +368,7 @@ test("keeps the landing page open while authentication runs in a popup", async (
     if (url.pathname === "/auth/popup/complete") {
       await route.fulfill({
         contentType: "text/html",
-        body: `<p id="popup-status"></p><a id="completion-fallback" href="/upload" hidden>Continue in this tab</a><script>${popupCompleteScript}</script>`,
+        body: `<p id="popup-status"></p><a id="completion-fallback" href="/upload?pending=homepage&amp;publish=1" hidden>Continue in this tab</a><script>${popupCompleteScript}</script>`,
       });
       return;
     }
@@ -391,7 +391,7 @@ test("keeps the landing page open while authentication runs in a popup", async (
   await expect(page.locator("#file-preview")).toBeVisible();
   await expect(page.getByText("handoff.md")).toBeVisible();
   await expect(page.getByRole("button", { name: "Choose another" })).toBeVisible();
-  await expect(page.locator("#upload-description")).toHaveText("One document selected. Nothing uploads until you confirm.");
+  await expect(page.locator("#upload-description")).toHaveText("One document selected. Nothing uploads until you continue.");
   await expect(page.locator("#local-note")).toHaveText("Kept in this browser only.");
 
   const popupPromise = page.waitForEvent("popup");
@@ -406,13 +406,13 @@ test("keeps the landing page open while authentication runs in a popup", async (
   await expect(page.locator('input[name="expiry"]')).toHaveCount(2);
   await expect(page.locator('input[name="expiry"]').first()).toBeDisabled();
   await expect(page.locator('input[name="expiry"]').nth(1)).toBeDisabled();
-  await expect(page.locator("#upload-status")).toHaveText("Finish signing in in the popup. This page will continue automatically.");
+  await expect(page.locator("#upload-status")).toHaveText("Finish signing in in the popup. This page will create the link automatically.");
   await expect(popup.getByRole("heading", { name: "Sign in to ArtifactPass" })).toBeVisible();
 
   const returnTo = new URL(popup.url()).searchParams.get("return_to");
   expect(returnTo).not.toBeNull();
   const completion = popup.goto(new URL(returnTo ?? "", origin).href).catch(() => null);
-  await page.waitForURL(`${origin}/upload`);
+  await page.waitForURL(`${origin}/upload?pending=homepage&publish=1`);
   await completion;
   await expect(page.getByRole("heading", { name: "Upload restored" })).toBeVisible();
 });
@@ -495,7 +495,7 @@ test("accepts a matching completion signal after the popup closes", async ({ con
     channel.close();
   }, flow);
 
-  await page.waitForURL(`${origin}/upload`);
+  await page.waitForURL(`${origin}/upload?pending=homepage&publish=1`);
   await expect(page.getByRole("heading", { name: "Upload restored" })).toBeVisible();
 });
 
@@ -510,7 +510,7 @@ test("restores the stored document from a completion tab without an opener", asy
     if (url.pathname === "/auth/popup/complete") {
       await route.fulfill({
         contentType: "text/html",
-        body: `<p id="popup-status"></p><a id="completion-fallback" href="/upload" hidden>Continue in this tab</a><script>${popupCompleteScript}</script>`,
+        body: `<p id="popup-status"></p><a id="completion-fallback" href="/upload?pending=homepage&amp;publish=1" hidden>Continue in this tab</a><script>${popupCompleteScript}</script>`,
       });
       return;
     }
