@@ -25,6 +25,36 @@ describe("Cloudflare identity contract", () => {
     }]);
   });
 
+  it("uses a stable label for Cloudflare's unnamed built-in email-code provider", async () => {
+    const client = {
+      request: vi.fn(async () => [{
+        id: "otp-provider",
+        name: "",
+        type: "onetimepin",
+      }]),
+    } as unknown as CloudflareClient;
+    expect(await listCloudflareIdentityProviders(client, accountId)).toEqual([{
+      id: "otp-provider",
+      name: "Email verification code",
+      type: "onetimepin",
+    }]);
+  });
+
+  it("uses the provider type when Cloudflare omits an optional display name", async () => {
+    const client = {
+      request: vi.fn(async () => [{
+        id: "github-provider",
+        name: null,
+        type: "github",
+      }]),
+    } as unknown as CloudflareClient;
+    expect(await listCloudflareIdentityProviders(client, accountId)).toEqual([{
+      id: "github-provider",
+      name: "Github",
+      type: "github",
+    }]);
+  });
+
   it("rejects unrestricted email-code access and invalid direct redirect", () => {
     expect(() => validatePrivateIdentityPlan({
       mode: "email-code",

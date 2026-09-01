@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import type { CloudflareClient } from "./client";
 
 const providerIdPattern = /^[A-Za-z0-9_-]{1,128}$/u;
+const providerTypePattern = /^[a-z0-9_-]{1,64}$/u;
 
 export interface CloudflareIdentityProviderSummary {
   readonly id: string;
@@ -38,6 +39,15 @@ const requiredString = (value: unknown, field: string, maximum: number): string 
   return value;
 };
 
+const providerDisplayName = (name: unknown, type: string): string => {
+  if (typeof name === "string" && name.length > 0 && name.length <= 128) return name;
+  if (type === "onetimepin") return "Email verification code";
+  return type.split(/[-_]/u)
+    .filter(Boolean)
+    .map((part) => `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`)
+    .join(" ");
+};
+
 export const listCloudflareIdentityProviders = async (
   client: CloudflareClient,
   accountId: string,
@@ -49,10 +59,12 @@ export const listCloudflareIdentityProviders = async (
     const candidate = record(item);
     const id = requiredString(candidate.id, "ID", 128);
     if (!providerIdPattern.test(id)) throw new Error("Cloudflare returned an invalid identity provider ID");
+    const type = requiredString(candidate.type, "type", 64).toLowerCase();
+    if (!providerTypePattern.test(type)) throw new Error("Cloudflare returned an invalid identity provider type");
     return {
       id,
-      name: requiredString(candidate.name, "name", 128),
-      type: requiredString(candidate.type, "type", 64).toLowerCase(),
+      name: providerDisplayName(candidate.name, type),
+      type,
     };
   }).sort((left, right) => left.name.localeCompare(right.name) || left.id.localeCompare(right.id));
 };
