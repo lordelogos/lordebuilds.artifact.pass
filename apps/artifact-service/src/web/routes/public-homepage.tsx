@@ -94,7 +94,7 @@ export const HomePage = ({ installCommand }: HomePageProps) => (
         <p className="modal-status" id="upload-status" role="status" aria-live="polite" hidden />
         <div className="upload-config" id="upload-config" hidden>
           <fieldset><legend>How long should the link work?</legend><div className="expiry-options"><label><input type="radio" name="expiry" value="900" defaultChecked /><span>15 min</span></label><label><input type="radio" name="expiry" value="1800" /><span>30 min</span></label><label><input type="radio" name="expiry" value="3600" /><span>60 min</span></label></div></fieldset>
-          <div className="auth-gate"><p>Sign in in a popup. This page stays open, and you still approve the upload before a link is created.</p><button className="continue-button" id="continue-upload" type="button">Continue to sign in</button></div>
+          <div className="auth-gate"><p>Sign in to continue. You still approve the upload before a link is created.</p><button className="continue-button" id="continue-upload" type="button">Continue to sign in</button></div>
         </div>
       </div>
     </dialog>
