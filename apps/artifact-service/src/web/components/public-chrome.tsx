@@ -1,7 +1,7 @@
 import { PlusSignIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
-import { GitHubIcon } from "./brand-icons";
+import { ArtifactPassIcon, GitHubIcon } from "./brand-icons";
 
 export type PublicTheme = "dark" | "light";
 
@@ -39,7 +39,7 @@ export const PublicNavigation = ({
   return (
     <header className="site-header">
       <a className="brand" href="/">
-        <span className="brand-mark" aria-hidden="true" />
+        <ArtifactPassIcon className="brand-mark" aria-hidden="true" focusable="false" />
         ArtifactPass
       </a>
       <div className="header-actions">

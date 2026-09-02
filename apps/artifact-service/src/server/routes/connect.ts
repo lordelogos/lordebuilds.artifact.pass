@@ -1,4 +1,6 @@
 import { Hono } from "hono";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 
 import {
   AGENT_TOKEN_LIFETIME_MS,
@@ -16,6 +18,7 @@ import {
 } from "../middleware/authorize";
 import { ArtifactError } from "../storage/artifact-error";
 import { sha256 } from "../storage/crypto";
+import { ArtifactPassIcon } from "../../web/components/brand-icons";
 
 interface DeviceAuthorizationRow {
   id: string;
@@ -41,6 +44,12 @@ const RESPONSE_HEADERS = {
 } as const;
 const DEVICE_RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
 const DEVICE_RATE_LIMIT_REQUESTS = 10;
+
+const artifactPassIconMarkup = renderToStaticMarkup(createElement(ArtifactPassIcon, {
+  "aria-hidden": true,
+  className: "brand-mark",
+  focusable: "false",
+}));
 
 const parseJson = async (request: Request): Promise<Record<string, unknown>> => {
   const value = await request.json().catch(() => null);
@@ -74,14 +83,15 @@ const approvalPage = (
 ): string => `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${approved ? "Connection approved" : "Approve ArtifactPass"}</title>
-<style nonce="${nonce}">html{color:#24241f;background:#f7f5ef;font-family:Avenir,"Helvetica Neue",sans-serif}body{margin:0;min-height:100vh;display:grid;place-items:center}.card{width:min(520px,calc(100% - 36px));padding:42px;background:#fffefa;border:1px solid #d8d5ca;border-radius:8px}h1{margin:0 0 14px;font:400 2.8rem/1 Georgia,serif;letter-spacing:-.04em}p{color:#66645e;line-height:1.6}.details{margin:22px 0;padding:16px;border:1px solid #d8d5ca;border-radius:6px;background:#f7f5ef}.details div{display:grid;grid-template-columns:110px 1fr;gap:10px;padding:5px 0;color:#66645e;font-size:.86rem}.details strong{color:#24241f}.code{display:block;margin:24px 0;padding:14px;background:#f1efe8;border:1px solid #d8d5ca;font:700 1rem/1.2 ui-monospace,monospace;letter-spacing:.08em;text-align:center}button{width:100%;padding:14px;border:0;border-radius:5px;background:#24241f;color:white;font:700 .9rem Avenir,sans-serif;cursor:pointer}button:focus-visible{outline:3px solid #1f6c9f;outline-offset:3px}</style></head>
-<body><main class="card"><h1>${approved ? "Connected." : "Approve this agent?"}</h1><p>${approved ? "The one-time code has been approved. Return to your agent; the scoped token and device key will be stored only on that device." : "Only approve a code you just requested from your own agent. This grants artifact:create access for 30 days."}</p>${approved ? "" : `<div class="details"><div><strong>Deployment</strong><span>${escapeHtml(deploymentHostname ?? "ArtifactPass")}</span></div><div><strong>Agent</strong><span>${escapeHtml(authorization?.agent_name ?? "ArtifactPass agent")}</span></div><div><strong>Workspace</strong><span>${escapeHtml(authorization?.workspace_identity ?? "Current workspace")}</span></div><div><strong>Scope</strong><span>artifact:create</span></div>${authorization?.device_key_id === null || authorization?.device_key_id === undefined ? "" : `<div><strong>Device key</strong><span>${escapeHtml(authorization.device_key_id.slice(0, 18))}…</span></div>`}</div><span class="code">${userCode}</span><form method="post" action="/connect/approve"><input type="hidden" name="user_code" value="${userCode}"><button type="submit">Approve connection</button></form>`}</main></body></html>`;
+<link rel="icon" href="/artifactpass-logo.svg" type="image/svg+xml">
+<style nonce="${nonce}">html{color:#24241f;background:#f7f5ef;font-family:Avenir,"Helvetica Neue",sans-serif}body{margin:0;min-height:100vh;display:grid;place-items:center}.card{width:min(520px,calc(100% - 36px));padding:42px;background:#fffefa;border:1px solid #d8d5ca;border-radius:8px}.brand{display:flex;align-items:center;margin:0 0 24px;font-size:.92rem;font-weight:700}.brand-mark{display:block;width:22px;height:22px;margin-right:9px;color:#24241f;flex:none}h1{margin:0 0 14px;font:400 2.8rem/1 Georgia,serif;letter-spacing:-.04em}p{color:#66645e;line-height:1.6}.details{margin:22px 0;padding:16px;border:1px solid #d8d5ca;border-radius:6px;background:#f7f5ef}.details div{display:grid;grid-template-columns:110px 1fr;gap:10px;padding:5px 0;color:#66645e;font-size:.86rem}.details strong{color:#24241f}.code{display:block;margin:24px 0;padding:14px;background:#f1efe8;border:1px solid #d8d5ca;font:700 1rem/1.2 ui-monospace,monospace;letter-spacing:.08em;text-align:center}button{width:100%;padding:14px;border:0;border-radius:5px;background:#24241f;color:white;font:700 .9rem Avenir,sans-serif;cursor:pointer}button:focus-visible{outline:3px solid #1f6c9f;outline-offset:3px}</style></head>
+<body><main class="card"><div class="brand">${artifactPassIconMarkup}ArtifactPass</div><h1>${approved ? "Connected." : "Approve this agent?"}</h1><p>${approved ? "The one-time code has been approved. Return to your agent; the scoped token and device key will be stored only on that device." : "Only approve a code you just requested from your own agent. This grants artifact:create access for 30 days."}</p>${approved ? "" : `<div class="details"><div><strong>Deployment</strong><span>${escapeHtml(deploymentHostname ?? "ArtifactPass")}</span></div><div><strong>Agent</strong><span>${escapeHtml(authorization?.agent_name ?? "ArtifactPass agent")}</span></div><div><strong>Workspace</strong><span>${escapeHtml(authorization?.workspace_identity ?? "Current workspace")}</span></div><div><strong>Scope</strong><span>artifact:create</span></div>${authorization?.device_key_id === null || authorization?.device_key_id === undefined ? "" : `<div><strong>Device key</strong><span>${escapeHtml(authorization.device_key_id.slice(0, 18))}…</span></div>`}</div><span class="code">${userCode}</span><form method="post" action="/connect/approve"><input type="hidden" name="user_code" value="${userCode}"><button type="submit">Approve connection</button></form>`}</main></body></html>`;
 
 const approvalHeaders = (nonce: string) => ({
   ...RESPONSE_HEADERS,
   "Referrer-Policy": "same-origin",
   "Content-Type": "text/html; charset=utf-8",
-  "Content-Security-Policy": `default-src 'none'; style-src 'nonce-${nonce}'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`,
+  "Content-Security-Policy": `default-src 'none'; style-src 'nonce-${nonce}'; img-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`,
 });
 
 const createApprovalNonce = (): string => {

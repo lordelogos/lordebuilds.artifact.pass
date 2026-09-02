@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="ArtifactPass">
+  <style>
+    path { fill: #17181a; }
+    @media (prefers-color-scheme: dark) { path { fill: #efefec; } }
+  </style>
+  <path d="M14 5h36l9 9v19h-8.7l-8-6.5H23.4L15 20H5v-6z"/>
+  <path d="M5 27h8.7l8 6.5h19L49 40h10v10l-9 9H14l-9-9z"/>
+</svg>

@@ -114,7 +114,7 @@ const viewerHeaders = (nonce: string) => ({
     `script-src 'nonce-${nonce}'`,
     "frame-src 'self'",
     "connect-src 'none'",
-    "img-src data:",
+    "img-src 'self' data:",
     "font-src 'none'",
     "object-src 'none'",
     "base-uri 'none'",

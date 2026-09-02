@@ -50,6 +50,8 @@ describe("public service pages", () => {
     expect(markup).toContain("theme-symbol");
     expect(markup).toContain('class="header-divider"');
     expect(markup).toContain('aria-label="View ArtifactPass on GitHub"');
+    expect(markup).toContain('data-artifactpass-mark="capability-corridor"');
+    expect(markup).toContain('rel="icon" href="/artifactpass-logo.svg"');
     expect(markup).toContain('class="header-action header-action--primary"');
     expect(markup).toContain('id="upload-dialog"');
     expect(markup).toContain('id="pending-file-input"');
@@ -59,6 +61,7 @@ describe("public service pages", () => {
     expect(markup).toContain("/auth/popup/complete");
     expect(policy).toContain("script-src 'nonce-");
     expect(policy).toContain("form-action 'self'");
+    expect(policy).toContain("img-src 'self'");
     expect(response.headers.get("cross-origin-opener-policy")).toBe("same-origin-allow-popups");
   });
 

@@ -92,10 +92,13 @@ describe("safe human viewers", () => {
     expect(viewer.status).toBe(200);
     expect(viewer.headers.get("referrer-policy")).toBe("no-referrer");
     expect(viewer.headers.get("content-security-policy")).toContain("default-src 'none'");
+    expect(viewer.headers.get("content-security-policy")).toContain("img-src 'self' data:");
     expect(html).toContain("<h1>Safe heading</h1>");
     expect(html).toContain('id="theme-toggle"');
     expect(html).toContain('data-expiry-countdown="true"');
     expect(html).toContain("Download exact file");
+    expect(html).toContain('data-artifactpass-mark="capability-corridor"');
+    expect(html).toContain('rel="icon" href="/artifactpass-logo.svg"');
     expect(html).toContain('data-viewer-mode="rendered"');
     expect(html).toContain('data-viewer-mode="raw"');
     expect(html).toContain("# Safe heading");

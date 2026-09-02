@@ -113,6 +113,7 @@ export const publicPageHeaders = (nonce: string) => ({
     `style-src 'nonce-${nonce}'`,
     `script-src 'nonce-${nonce}' 'self'`,
     "connect-src 'self'",
+    "img-src 'self'",
     "frame-ancestors 'none'",
     "base-uri 'none'",
     "form-action 'self'",
@@ -130,6 +131,7 @@ export const renderPublicPage = (page: PublicPage, nonce: string, requestUrl: st
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="referrer" content="no-referrer" />
         <meta name="theme-color" content="#0b0c0e" />
+        <link rel="icon" href="/artifactpass-logo.svg" type="image/svg+xml" />
         <title>{pageTitle(page)}</title>
         <script nonce={nonce} dangerouslySetInnerHTML={{ __html: homepageBootScript }} />
         <style nonce={nonce} dangerouslySetInnerHTML={{ __html: publicStyles }} />

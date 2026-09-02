@@ -228,6 +228,8 @@ describe("Cloudflare Access assertions", () => {
     expect(page.headers.get("referrer-policy")).toBe("same-origin");
     const markup = await page.text();
     expect(markup).toContain("Approve this agent?");
+    expect(markup).toContain('data-artifactpass-mark="capability-corridor"');
+    expect(markup).toContain('rel="icon" href="/artifactpass-logo.svg"');
     expect(markup).toContain(device.user_code);
     expect(markup).not.toContain("as_");
 

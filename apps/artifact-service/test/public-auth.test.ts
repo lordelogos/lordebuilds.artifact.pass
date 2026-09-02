@@ -176,6 +176,8 @@ describe("public ArtifactPass authentication", () => {
     expect(markup).toContain("Continue with GitHub");
     expect(markup).toContain('data-provider="google"><svg');
     expect(markup).toContain('data-provider="github"><svg');
+    expect(markup).toContain('data-artifactpass-mark="capability-corridor"');
+    expect(markup).toContain('rel="icon" href="/artifactpass-logo.svg"');
     expect(markup).not.toContain('aria-hidden="true">G</span>');
     expect(markup).not.toContain('aria-hidden="true">GH</span>');
     expect(markup).toContain('data-theme="light"');

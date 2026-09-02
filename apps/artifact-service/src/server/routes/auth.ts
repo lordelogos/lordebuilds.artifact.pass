@@ -20,7 +20,7 @@ import { consumeRequestRateLimit } from "../auth/rate-limit";
 import type { ArtifactHonoEnvironment } from "../middleware/authorize";
 import { ArtifactError } from "../storage/artifact-error";
 import { sha256 } from "../storage/crypto";
-import { GitHubIcon, GoogleIcon } from "../../web/components/brand-icons";
+import { ArtifactPassIcon, GitHubIcon, GoogleIcon } from "../../web/components/brand-icons";
 import { popupCancelledScript } from "../../web/popup-cancel";
 import { popupCompleteScript } from "../../web/popup-complete";
 
@@ -31,6 +31,12 @@ const providerIconMarkup = {
   github: renderToStaticMarkup(createElement(GitHubIcon, { "aria-hidden": true, focusable: "false" })),
   google: renderToStaticMarkup(createElement(GoogleIcon, { "aria-hidden": true, focusable: "false" })),
 } as const;
+
+const artifactPassIconMarkup = renderToStaticMarkup(createElement(ArtifactPassIcon, {
+  "aria-hidden": true,
+  className: "brand-mark",
+  focusable: "false",
+}));
 
 export interface AuthRouterOptions {
   readonly now?: () => number;
@@ -101,7 +107,7 @@ const authPageTheme = (value: string | undefined): AuthPageTheme => value === "l
 const authPageStyles = `
 :root{--void:#0b0c0e;--graphite:#121418;--panel:rgba(255,255,255,.055);--panel-strong:rgba(255,255,255,.085);--line:rgba(255,255,255,.13);--line-strong:rgba(255,255,255,.22);--bone:#efefec;--ash:#b8babd;--slate:#797d82;--white:#f9f9f7;--ink:#17181a;--sans:"Avenir Next",Avenir,"Helvetica Neue",Helvetica,sans-serif;--mono:"SFMono-Regular",Consolas,"Liberation Mono",monospace;color-scheme:dark}
 :root[data-theme="light"]{--void:#f3f3f0;--graphite:#fafaf8;--panel:rgba(23,24,26,.045);--panel-strong:rgba(23,24,26,.075);--line:rgba(23,24,26,.13);--line-strong:rgba(23,24,26,.23);--bone:#1b1c1e;--ash:#4f5358;--slate:#696e74;--white:#111214;--ink:#f8f8f5;color-scheme:light}
-*{box-sizing:border-box}html{min-width:320px;min-height:100%;color:var(--bone);background:var(--void);font-family:var(--sans);-webkit-font-smoothing:antialiased}body{min-height:100dvh;margin:0}.auth-shell{display:grid;width:min(440px,calc(100% - 32px));min-height:100dvh;margin:0 auto;padding:24px 0;align-content:center}.auth-brand{display:inline-flex;align-items:center;width:max-content;margin:0 0 16px;color:var(--bone);font-size:15px;font-weight:600;letter-spacing:-.03em}.brand-mark{position:relative;width:20px;height:20px;margin-right:9px;border:1px solid var(--line-strong);border-radius:6px}.brand-mark:before,.brand-mark:after{position:absolute;width:6px;height:6px;border:1px solid var(--ash);border-radius:2px;content:""}.brand-mark:before{top:3px;left:3px}.brand-mark:after{right:3px;bottom:3px}.auth-card{padding:28px;border:1px solid var(--line);border-radius:22px;background:var(--graphite);box-shadow:0 24px 70px rgba(0,0,0,.18)}.auth-eyebrow{display:flex;align-items:center;gap:9px;margin:0 0 20px;color:var(--slate);font:500 10px/1 var(--mono);text-transform:uppercase}.auth-eyebrow:before{width:18px;height:1px;background:linear-gradient(90deg,#b98458,#716de4,#557fbd);content:""}h1{margin:0;color:var(--bone);font-size:clamp(32px,8vw,42px);font-weight:500;line-height:1.02;letter-spacing:-.05em}.auth-copy{margin:18px 0 0;color:var(--ash);font-size:14px;line-height:1.55}.actions{display:grid;gap:10px;margin-top:26px}.provider{display:grid;grid-template-columns:30px 1fr auto;align-items:center;min-height:56px;padding:0 16px;border:1px solid var(--line-strong);border-radius:12px;color:var(--bone);background:var(--panel);text-decoration:none;font-size:13px;font-weight:500}.provider:hover{border-color:var(--bone);background:var(--panel-strong)}.provider:active{transform:translateY(1px) scale(.995)}.provider:focus-visible{outline:2px solid var(--bone);outline-offset:3px}.provider-icon{display:grid;width:18px;height:18px;color:var(--bone);place-items:center}.provider-icon svg{display:block;width:18px;height:18px}.provider-arrow{color:var(--slate);font:400 13px/1 var(--mono)}.privacy-note{margin:18px 0 0;padding-top:18px;border-top:1px solid var(--line);color:var(--slate);font-size:11px;line-height:1.5}.auth-footer{margin:14px 2px 0;color:var(--slate);font:400 9px/1 var(--mono);text-align:right}.complete-card{text-align:center}.complete-card .auth-eyebrow{justify-content:center}.complete-card p{margin:14px 0 0;color:var(--ash);font-size:13px;line-height:1.55}@media(max-width:480px){.auth-shell{width:calc(100% - 24px);padding:12px 0}.auth-card{padding:22px;border-radius:18px}.auth-brand{margin-left:2px}h1{font-size:34px}}@media(prefers-reduced-motion:reduce){*{transition-duration:0s!important}}
+*{box-sizing:border-box}html{min-width:320px;min-height:100%;color:var(--bone);background:var(--void);font-family:var(--sans);-webkit-font-smoothing:antialiased}body{min-height:100dvh;margin:0}.auth-shell{display:grid;width:min(440px,calc(100% - 32px));min-height:100dvh;margin:0 auto;padding:24px 0;align-content:center}.auth-brand{display:inline-flex;align-items:center;width:max-content;margin:0 0 16px;color:var(--bone);font-size:15px;font-weight:600;letter-spacing:-.03em}.brand-mark{display:block;width:20px;height:20px;margin-right:9px;color:var(--bone);flex:none}.auth-card{padding:28px;border:1px solid var(--line);border-radius:22px;background:var(--graphite);box-shadow:0 24px 70px rgba(0,0,0,.18)}.auth-eyebrow{display:flex;align-items:center;gap:9px;margin:0 0 20px;color:var(--slate);font:500 10px/1 var(--mono);text-transform:uppercase}.auth-eyebrow:before{width:18px;height:1px;background:linear-gradient(90deg,#b98458,#716de4,#557fbd);content:""}h1{margin:0;color:var(--bone);font-size:clamp(32px,8vw,42px);font-weight:500;line-height:1.02;letter-spacing:-.05em}.auth-copy{margin:18px 0 0;color:var(--ash);font-size:14px;line-height:1.55}.actions{display:grid;gap:10px;margin-top:26px}.provider{display:grid;grid-template-columns:30px 1fr auto;align-items:center;min-height:56px;padding:0 16px;border:1px solid var(--line-strong);border-radius:12px;color:var(--bone);background:var(--panel);text-decoration:none;font-size:13px;font-weight:500}.provider:hover{border-color:var(--bone);background:var(--panel-strong)}.provider:active{transform:translateY(1px) scale(.995)}.provider:focus-visible{outline:2px solid var(--bone);outline-offset:3px}.provider-icon{display:grid;width:18px;height:18px;color:var(--bone);place-items:center}.provider-icon svg{display:block;width:18px;height:18px}.provider-arrow{color:var(--slate);font:400 13px/1 var(--mono)}.privacy-note{margin:18px 0 0;padding-top:18px;border-top:1px solid var(--line);color:var(--slate);font-size:11px;line-height:1.5}.auth-footer{margin:14px 2px 0;color:var(--slate);font:400 9px/1 var(--mono);text-align:right}.complete-card{text-align:center}.complete-card .auth-eyebrow{justify-content:center}.complete-card p{margin:14px 0 0;color:var(--ash);font-size:13px;line-height:1.55}@media(max-width:480px){.auth-shell{width:calc(100% - 24px);padding:12px 0}.auth-card{padding:22px;border-radius:18px}.auth-brand{margin-left:2px}h1{font-size:34px}}@media(prefers-reduced-motion:reduce){*{transition-duration:0s!important}}
 `;
 
 const signInPage = (returnTo: string, theme: AuthPageTheme, cancelled = false): string => {
@@ -115,8 +121,9 @@ const signInPage = (returnTo: string, theme: AuthPageTheme, cancelled = false): 
   return `<!doctype html>
 <html lang="en" data-theme="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Sign in to ArtifactPass</title>
+<link rel="icon" href="/artifactpass-logo.svg" type="image/svg+xml">
 <style>${authPageStyles}</style></head>
-<body><main class="auth-shell"><header class="auth-brand"><span class="brand-mark" aria-hidden="true"></span>ArtifactPass</header><section class="auth-card"><p class="auth-eyebrow">Secure sign-in</p><h1>Continue to ArtifactPass.</h1><p class="auth-copy">${introduction}</p><div class="actions"><a class="provider" href="/auth/login/google?return_to=${encodedReturnTo}"><span class="provider-icon" data-provider="google">${providerIconMarkup.google}</span><span>Continue with Google</span><span class="provider-arrow" aria-hidden="true">→</span></a><a class="provider" href="/auth/login/github?return_to=${encodedReturnTo}"><span class="provider-icon" data-provider="github">${providerIconMarkup.github}</span><span>Continue with GitHub</span><span class="provider-arrow" aria-hidden="true">→</span></a></div><p class="privacy-note">ArtifactPass never receives your Google or GitHub password.</p></section><footer class="auth-footer">one file · one expiring URL</footer></main></body></html>`;
+<body><main class="auth-shell"><header class="auth-brand">${artifactPassIconMarkup}ArtifactPass</header><section class="auth-card"><p class="auth-eyebrow">Secure sign-in</p><h1>Continue to ArtifactPass.</h1><p class="auth-copy">${introduction}</p><div class="actions"><a class="provider" href="/auth/login/google?return_to=${encodedReturnTo}"><span class="provider-icon" data-provider="google">${providerIconMarkup.google}</span><span>Continue with Google</span><span class="provider-arrow" aria-hidden="true">→</span></a><a class="provider" href="/auth/login/github?return_to=${encodedReturnTo}"><span class="provider-icon" data-provider="github">${providerIconMarkup.github}</span><span>Continue with GitHub</span><span class="provider-arrow" aria-hidden="true">→</span></a></div><p class="privacy-note">ArtifactPass never receives your Google or GitHub password.</p></section><footer class="auth-footer">one file · one expiring URL</footer></main></body></html>`;
 };
 
 const returnActionStyles = ".return-action{display:block;width:100%;min-height:52px;margin-top:24px;padding:18px;border:1px solid var(--line-strong);border-radius:12px;color:var(--ink);background:var(--bone);font:600 14px/1 var(--sans);text-align:center;text-decoration:none;cursor:pointer}.return-action[hidden]{display:none}.return-action:hover{opacity:.9}.return-action:focus-visible{outline:2px solid var(--bone);outline-offset:3px}";
@@ -124,14 +131,16 @@ const returnActionStyles = ".return-action{display:block;width:100%;min-height:5
 const popupCompletePage = (theme: AuthPageTheme): string => `<!doctype html>
 <html lang="en" data-theme="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Signed in to ArtifactPass</title>
+<link rel="icon" href="/artifactpass-logo.svg" type="image/svg+xml">
 <style>${authPageStyles}${returnActionStyles}</style></head>
-<body><main class="auth-shell"><header class="auth-brand"><span class="brand-mark" aria-hidden="true"></span>ArtifactPass</header><section class="auth-card complete-card"><p class="auth-eyebrow">Authentication complete</p><h1>Signed in.</h1><p id="popup-status">Creating your temporary link…</p><a class="return-action" id="completion-fallback" href="/upload?pending=homepage&amp;publish=1" hidden>Continue in this tab</a></section></main><script src="/auth/popup-complete.js"></script></body></html>`;
+<body><main class="auth-shell"><header class="auth-brand">${artifactPassIconMarkup}ArtifactPass</header><section class="auth-card complete-card"><p class="auth-eyebrow">Authentication complete</p><h1>Signed in.</h1><p id="popup-status">Creating your temporary link…</p><a class="return-action" id="completion-fallback" href="/upload?pending=homepage&amp;publish=1" hidden>Continue in this tab</a></section></main><script src="/auth/popup-complete.js"></script></body></html>`;
 
 const popupCancelledPage = (theme: AuthPageTheme): string => `<!doctype html>
 <html lang="en" data-theme="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Return to ArtifactPass</title>
+<link rel="icon" href="/artifactpass-logo.svg" type="image/svg+xml">
 <style>${authPageStyles}${returnActionStyles}</style></head>
-<body><main class="auth-shell"><header class="auth-brand"><span class="brand-mark" aria-hidden="true"></span>ArtifactPass</header><section class="auth-card complete-card"><p class="auth-eyebrow">Sign-in cancelled</p><h1>Returning to ArtifactPass.</h1><p id="popup-status">Your document is still selected in the original tab.</p><button class="return-action" id="return-to-app" type="button">Return to ArtifactPass</button></section></main><script src="/auth/popup-cancel.js"></script></body></html>`;
+<body><main class="auth-shell"><header class="auth-brand">${artifactPassIconMarkup}ArtifactPass</header><section class="auth-card complete-card"><p class="auth-eyebrow">Sign-in cancelled</p><h1>Returning to ArtifactPass.</h1><p id="popup-status">Your document is still selected in the original tab.</p><button class="return-action" id="return-to-app" type="button">Return to ArtifactPass</button></section></main><script src="/auth/popup-cancel.js"></script></body></html>`;
 
 const authorizationUrl = (
   provider: OAuthProvider,
@@ -264,7 +273,7 @@ export const createAuthRouter = (options: AuthRouterOptions = {}) => {
     const theme = authPageTheme(context.req.query("theme"));
     return context.html(signInPage(returnTo, theme, context.req.query("cancelled") === "1"), 200, {
       ...RESPONSE_HEADERS,
-      "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'",
+      "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; frame-ancestors 'none'; base-uri 'none'",
     });
   });
 
@@ -272,7 +281,7 @@ export const createAuthRouter = (options: AuthRouterOptions = {}) => {
     authPageTheme(context.req.query("theme")),
   ), 200, {
     ...RESPONSE_HEADERS,
-    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'",
+    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'self'; img-src 'self'; frame-ancestors 'none'; base-uri 'none'",
   }));
 
   router.get("/popup-complete.js", (context) => context.body(popupCompleteScript, 200, {
@@ -285,7 +294,7 @@ export const createAuthRouter = (options: AuthRouterOptions = {}) => {
     authPageTheme(context.req.query("theme")),
   ), 200, {
     ...RESPONSE_HEADERS,
-    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'",
+    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'self'; img-src 'self'; frame-ancestors 'none'; base-uri 'none'",
   }));
 
   router.get("/popup-cancel.js", (context) => context.body(popupCancelledScript, 200, {

@@ -1,6 +1,24 @@
 import type { SVGAttributes } from "react";
 
+import {
+  ARTIFACTPASS_MARK_NAME,
+  ARTIFACTPASS_MARK_PATHS,
+  ARTIFACTPASS_MARK_VIEW_BOX,
+} from "../../brand/artifactpass-mark";
+
 type BrandIconProps = SVGAttributes<SVGSVGElement>;
+
+export const ArtifactPassIcon = (properties: BrandIconProps) => (
+  <svg
+    data-artifactpass-mark={ARTIFACTPASS_MARK_NAME}
+    viewBox={ARTIFACTPASS_MARK_VIEW_BOX}
+    {...properties}
+  >
+    {ARTIFACTPASS_MARK_PATHS.map((path) => (
+      <path key={path} fill="currentColor" d={path} />
+    ))}
+  </svg>
+);
 
 export const GitHubIcon = (properties: BrandIconProps) => (
   <svg viewBox="0 0 438.549 438.549" {...properties}>
