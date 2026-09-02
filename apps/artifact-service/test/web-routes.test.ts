@@ -96,7 +96,8 @@ describe("safe human viewers", () => {
     expect(html).toContain("<h1>Safe heading</h1>");
     expect(html).toContain('id="theme-toggle"');
     expect(html).toContain('data-expiry-countdown="true"');
-    expect(html).toContain("Download exact file");
+    expect(html).toContain(">Download</a>");
+    expect(html).toContain(".shell{width:100%;margin:0}");
     expect(html).toContain('data-artifactpass-mark="capability-corridor"');
     expect(html).toContain('rel="icon" href="/artifactpass-logo.svg"');
     expect(html).toContain('data-viewer-mode="rendered"');
@@ -135,6 +136,10 @@ describe("safe human viewers", () => {
     expect(html).toContain('sandbox=""');
     expect(html).toContain('data-viewer-mode="preview"');
     expect(html).toContain('data-viewer-mode="source"');
+    expect(html).toContain('aria-label="HTML preview zoom"');
+    expect(html).toContain('data-html-zoom="fit"');
+    expect(html).toContain('data-html-zoom="reset"');
+    expect(html).toContain('class="artifact-frame artifact-frame--html"');
     expect(html).toContain("parent.document.cookie");
     expect(html).not.toContain("allow-same-origin");
     expect(html).not.toContain("<script>parent.document.cookie</script>");
