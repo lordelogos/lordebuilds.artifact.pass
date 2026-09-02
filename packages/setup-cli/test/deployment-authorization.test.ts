@@ -4,7 +4,10 @@ import type { CredentialStore } from "agent-bridge";
 
 import { CLOUDFLARE_OAUTH_SCOPE_PROFILES } from "../src/cloudflare/oauth";
 import { resolveCloudflareOAuthClientConfiguration } from "../src/cloudflare/oauth-client-config";
-import { authorizePrivateDeployment } from "../src/private-deployment/deployment-authorization";
+import {
+  authorizePrivateDeployment,
+  privateDeploymentAccessTokenForInspection,
+} from "../src/private-deployment/deployment-authorization";
 import type { PrivateDeploymentState } from "../src/private-deployment/deployment-state";
 
 const deployment: PrivateDeploymentState = {
@@ -88,6 +91,41 @@ describe("private deployment authorization orchestration", () => {
     });
     expect(resumed.persisted).toBe(true);
     expect(browser).not.toHaveBeenCalled();
+  });
+
+  it("refreshes an expired stored grant for read-only Cloudflare inspection", async () => {
+    const store = memoryStore();
+    const fetchImplementation = vi.fn(async () => Response.json({
+      access_token: `refreshed-${"y".repeat(32)}`,
+      refresh_token: `refresh-${"y".repeat(32)}`,
+      expires_in: 3600,
+      scope: CLOUDFLARE_OAUTH_SCOPE_PROFILES.companyLogin.join(" "),
+      token_type: "bearer",
+    }));
+    store.value = JSON.stringify({
+      version: 1,
+      deployment_id: deployment.deployment_id,
+      client_environment: "staging",
+      client_id: "a".repeat(32),
+      profile: "companyLogin",
+      granted_scopes: CLOUDFLARE_OAUTH_SCOPE_PROFILES.companyLogin,
+      access_token: `expired-${"x".repeat(32)}`,
+      refresh_token: `refresh-${"x".repeat(32)}`,
+      expires_at: "2026-09-01T16:00:00.000Z",
+      created_at: "2026-09-01T15:00:00.000Z",
+      updated_at: "2026-09-01T15:00:00.000Z",
+    });
+
+    await expect(privateDeploymentAccessTokenForInspection(deployment, {
+      environment: {
+        ARTIFACTPASS_CLOUDFLARE_OAUTH_ENVIRONMENT: "staging",
+        ARTIFACTPASS_CLOUDFLARE_OAUTH_CLIENT_ID: "a".repeat(32),
+      },
+      credentialStore: store,
+      fetch: fetchImplementation,
+      now: () => new Date("2026-09-01T17:00:00.000Z"),
+    })).resolves.toContain("refreshed-");
+    expect(store.value).toContain("refreshed-");
   });
 
   it("revokes a no-save OAuth grant and leaves the credential store untouched", async () => {

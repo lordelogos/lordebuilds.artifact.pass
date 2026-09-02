@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import { privateArtifactStorageEvidence } from "../../../scripts/inspect-private-artifact-cleanup";
-import { publicResourceIdentityEvidence } from "../../../scripts/inspect-public-resource-inventory";
+import {
+  assertCompletePage,
+  publicResourceIdentityEvidence,
+  publicResourceMutableEvidence,
+} from "../../../scripts/inspect-public-resource-inventory";
 
 describe("private qualification inspectors", () => {
   it("requires a proven present state before cleanup", () => {
@@ -67,5 +71,93 @@ describe("private qualification inspectors", () => {
       scripts: [{ id: "lordebuilds-artifacts-share" }],
       accessApps: [{ domain: "artifactpass.com" }],
     })).toThrow("Expected 1 public d1 resource but found 0");
+  });
+
+  it("binds public mutable configuration to a redacted digest", () => {
+    const evidence = publicResourceMutableEvidence({
+      identities: {
+        databases: [{ uuid: "d1-secret-id", name: "lordebuilds-artifacts-share" }],
+        buckets: [{ name: "lordebuilds-artifacts-share" }],
+        scripts: [{ id: "lordebuilds-artifacts-share" }],
+        accessApps: [{ id: "access-secret-id", domain: "artifactpass.com" }],
+      },
+      workerSettings: { bindings: [{ name: "ARTIFACT_DB", type: "d1" }] },
+      workerDomains: [{ hostname: "artifactpass.com", service: "lordebuilds-artifacts-share" }],
+      d1Schema: [{ name: "artifacts", type: "table", sql: "CREATE TABLE artifacts" }],
+      r2Lifecycle: { rules: [] },
+      r2Objects: [{ key: "public-object", etag: "etag" }],
+      accessPolicies: [{ name: "Artifact Share uploaders", decision: "allow" }],
+      dnsRecords: [{ name: "artifactpass.com", type: "A", content: "192.0.2.1" }],
+      grantedScopes: ["workers-scripts.write", "d1.write"],
+      expectedScopes: ["d1.write", "workers-scripts.write"],
+    });
+    const serialized = JSON.stringify(evidence);
+
+    expect(evidence.mutable_state_digest).toMatch(/^[a-f0-9]{64}$/u);
+    expect(evidence.oauth_client_mutation_scope_present).toBe(false);
+    expect(serialized).not.toContain("d1-secret-id");
+    expect(serialized).not.toContain("public-object");
+  });
+
+  it("rejects incomplete Cloudflare pages and unproven OAuth scope authority", () => {
+    const identities = {
+      databases: [{ name: "lordebuilds-artifacts-share" }],
+      buckets: [{ name: "lordebuilds-artifacts-share" }],
+      scripts: [{ id: "lordebuilds-artifacts-share" }],
+      accessApps: [{ domain: "artifactpass.com" }],
+    };
+    const base = {
+      identities,
+      workerSettings: {},
+      workerDomains: [],
+      d1Schema: [],
+      r2Lifecycle: {},
+      accessPolicies: [],
+      dnsRecords: [],
+    };
+    expect(() => assertCompletePage("public R2 object", {
+      result: [],
+      resultInfo: { cursor: "next-page", is_truncated: true },
+    }, 1000)).toThrow("truncated");
+    expect(() => publicResourceMutableEvidence({
+      ...base,
+      r2Objects: [],
+      grantedScopes: [],
+      expectedScopes: ["workers-scripts.write"],
+    })).toThrow("approved profile");
+    expect(() => publicResourceMutableEvidence({
+      ...base,
+      r2Objects: [],
+      grantedScopes: ["workers-scripts.write", "unknown.write"],
+      expectedScopes: ["workers-scripts.write"],
+    })).toThrow("approved profile");
+  });
+
+  it("treats Access policy ordering as mutable state", () => {
+    const input = {
+      identities: {
+        databases: [{ name: "lordebuilds-artifacts-share" }],
+        buckets: [{ name: "lordebuilds-artifacts-share" }],
+        scripts: [{ id: "lordebuilds-artifacts-share" }],
+        accessApps: [{ domain: "artifactpass.com" }],
+      },
+      workerSettings: {},
+      workerDomains: [],
+      d1Schema: [],
+      r2Lifecycle: {},
+      r2Objects: [],
+      accessPolicies: [{ id: "first" }, { id: "second" }],
+      dnsRecords: [],
+      grantedScopes: ["workers-scripts.write"],
+      expectedScopes: ["workers-scripts.write"],
+    } as const;
+
+    const original = publicResourceMutableEvidence(input);
+    const reordered = publicResourceMutableEvidence({
+      ...input,
+      accessPolicies: [...input.accessPolicies].reverse(),
+    });
+
+    expect(reordered.mutable_state_digest).not.toBe(original.mutable_state_digest);
   });
 });

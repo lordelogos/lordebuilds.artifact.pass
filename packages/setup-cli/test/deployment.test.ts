@@ -11,6 +11,7 @@ import {
   deployArtifactShare,
   describeCloudflareFailure,
   deploymentPlan,
+  DeploymentMutationError,
   type DeployInput,
 } from "../src/cloudflare/deployment";
 
@@ -195,6 +196,21 @@ describe("Cloudflare deployment", () => {
     const mutationClient = new CloudflareClient({ token: "cloudflare-secret", fetch: mutationFetch, sleep });
     await expect(mutationClient.request("/zones", { method: "POST" })).rejects.toMatchObject({ status: 503 });
     expect(mutationFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves Cloudflare pagination metadata for fail-closed inspectors", async () => {
+    const fetch = vi.fn(async () => Response.json({
+      success: true,
+      result: [{ id: "first" }],
+      result_info: { cursor: "next-page", is_truncated: true, per_page: 1 },
+    }));
+    const client = new CloudflareClient({ token: "cloudflare-secret", fetch });
+
+    await expect(client.requestPage<readonly { readonly id: string }[]>("/objects"))
+      .resolves.toEqual({
+        result: [{ id: "first" }],
+        resultInfo: { cursor: "next-page", is_truncated: true, per_page: 1 },
+      });
   });
 
   it("turns permission denials into the least-privilege checklist", () => {
@@ -1088,7 +1104,9 @@ describe("Cloudflare deployment", () => {
       runner: vi.fn(async () => ({ stdout: "", stderr: "" })),
       fetch,
       sleep,
-    })).resolves.toMatchObject({ changed: ["Worker deployment", "Access application removal"] });
+    })).resolves.toMatchObject({
+      changed: ["Worker deployment", "Access application removal"],
+    });
 
     expect(sleep).toHaveBeenCalledTimes(2);
     expect(fetch).toHaveBeenCalledTimes(7);
@@ -1149,5 +1167,22 @@ describe("Cloudflare deployment", () => {
       runner,
     })).rejects.toThrow("migration failed");
     expect(JSON.stringify(mutableSeen)).not.toContain("cloudflare-secret");
+  });
+
+  it("does not report idempotent storage preparation as a resource change", async () => {
+    const client = fakeClient({ existing: true });
+    const runner = vi.fn(async (_command: string, args: readonly string[]) => {
+      if (args[0] === "deploy") throw new Error("injected Worker failure");
+      return { stdout: "", stderr: "" };
+    });
+
+    const failure = await deployArtifactShare(input, {
+      client: client.client,
+      deploymentRoot: await deploymentRoot(),
+      runner,
+    }).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(DeploymentMutationError);
+    expect((failure as DeploymentMutationError).changed).toEqual([]);
   });
 });

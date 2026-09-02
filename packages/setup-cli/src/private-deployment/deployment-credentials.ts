@@ -191,8 +191,8 @@ export class DeploymentCredentialManager {
 
   public async accessTokenForInspection(): Promise<string | null> {
     const credential = await this.read();
-    if (credential === null || Date.parse(credential.expires_at) <= this.now().getTime()) return null;
-    return credential.access_token;
+    if (credential === null) return null;
+    return this.resolveAccessToken();
   }
 
   public async resolveAccessToken(): Promise<string> {

@@ -2,6 +2,22 @@ export interface CloudflareEnvelope<T> {
   readonly success: boolean;
   readonly result: T;
   readonly errors?: readonly { readonly code: number; readonly message: string }[];
+  readonly result_info?: CloudflareResultInfo;
+}
+
+export interface CloudflareResultInfo {
+  readonly count?: number;
+  readonly page?: number;
+  readonly per_page?: number;
+  readonly total_count?: number;
+  readonly total_pages?: number;
+  readonly cursor?: string;
+  readonly is_truncated?: boolean;
+}
+
+export interface CloudflarePage<T> {
+  readonly result: T;
+  readonly resultInfo?: CloudflareResultInfo;
 }
 
 export interface CloudflareClientOptions {
@@ -36,7 +52,7 @@ export class CloudflareClient {
     this.apiOrigin = options.apiOrigin ?? "https://api.cloudflare.com/client/v4/";
   }
 
-  public async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  private async requestEnvelope<T>(path: string, init: RequestInit = {}): Promise<CloudflareEnvelope<T>> {
     const token = this.options.resolveToken === undefined
       ? this.options.token as string
       : await this.options.resolveToken();
@@ -52,7 +68,7 @@ export class CloudflareClient {
         redirect: "error",
       });
       const envelope = await response.json().catch(() => null) as CloudflareEnvelope<T> | null;
-      if (response.ok && envelope?.success === true) return envelope.result;
+      if (response.ok && envelope?.success === true) return envelope;
       const delay = method === "GET" && (response.status === 429 || response.status >= 500)
         ? readRetryDelays[attempt]
         : undefined;
@@ -68,6 +84,18 @@ export class CloudflareClient {
         first?.code,
       );
     }
+  }
+
+  public async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+    return (await this.requestEnvelope<T>(path, init)).result;
+  }
+
+  public async requestPage<T>(path: string, init: RequestInit = {}): Promise<CloudflarePage<T>> {
+    const envelope = await this.requestEnvelope<T>(path, init);
+    return {
+      result: envelope.result,
+      ...(envelope.result_info === undefined ? {} : { resultInfo: envelope.result_info }),
+    };
   }
 
   public async verifyToken(): Promise<{ readonly status: string }> {

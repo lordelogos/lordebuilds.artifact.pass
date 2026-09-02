@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "recorded_at": "2026-09-02T10:37:15.636Z",
+  "environment": "isolated-private-staging",
+  "deployment_reference": "33b4d5a1",
+  "command": "ARTIFACTPASS_CLOUDFLARE_OAUTH_ENVIRONMENT=staging pnpm test:private-resilience:live -- --resume private-qualification-staging.artifactpass.com",
+  "deployment_bundle_sha256": "f177d4ddc36b8fa364f912e37b7bf68234d0babcb0e6654c41996eb72085f0d5",
+  "checkpoint_reload": {
+    "status": "passed",
+    "event": "private-checkpoint-reload-passed",
+    "checkpoints_reloaded": 14,
+    "separate_process_per_checkpoint": true,
+    "unrelated_working_directory": true,
+    "resolved_from_hostname": true,
+    "remote_snapshot_digest": "8dad89aa49656f669d5a37d131cef176ff7a9c1341ad4cc9d941475a64c300fc"
+  },
+  "manifest_drift": {
+    "status": "passed",
+    "event": "private-manifest-drift-refused",
+    "mutation_started": false,
+    "approved_remote_digest": "8dad89aa49656f669d5a37d131cef176ff7a9c1341ad4cc9d941475a64c300fc"
+  },
+  "pre_worker_failure_containment": {
+    "status": "passed",
+    "event": "private-pre-worker-failure-containment-passed",
+    "completed_operations": [
+      "d1 migrations apply",
+      "r2 bucket lifecycle"
+    ],
+    "changed_resources": [],
+    "worker_replacement_started": false,
+    "worker_unchanged": true,
+    "worker_healthy": true,
+    "rollback_required": false,
+    "containment": "idempotent storage preparation completed; Worker replacement did not start"
+  },
+  "public_resource_isolation": {
+    "status": "passed",
+    "before": {
+      "identity_digest": "011ac1fae0023ca7e0d20f629ffd4d31b06cc79b5902b82c0b7ed6900bba5807",
+      "mutable_state_digest": "ed2bd8c445df88f80f3bb59934482f12c36b792f26b4b2673a96206e3bb4eee0"
+    },
+    "after": {
+      "identity_digest": "011ac1fae0023ca7e0d20f629ffd4d31b06cc79b5902b82c0b7ed6900bba5807",
+      "mutable_state_digest": "ed2bd8c445df88f80f3bb59934482f12c36b792f26b4b2673a96206e3bb4eee0"
+    },
+    "resource_counts": {
+      "d1": 1,
+      "r2": 1,
+      "workers": 1,
+      "access": 1
+    },
+    "oauth_client_mutation_scope_present": false
+  },
+  "secrets_or_live_capabilities_recorded": false
+}
