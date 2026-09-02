@@ -92,6 +92,21 @@ const waitForConnection = async () => {
   return state;
 };
 
+const readSource = async (shareUrl) => {
+  const chunks = [];
+  let cursor;
+  do {
+    const chunk = await call("read_artifact", {
+      share_url: shareUrl,
+      representation: "source",
+      ...(cursor === undefined ? {} : { cursor }),
+    });
+    chunks.push(Buffer.from(chunk.data, "base64"));
+    cursor = chunk.next_cursor ?? undefined;
+  } while (cursor !== undefined);
+  return Buffer.concat(chunks);
+};
+
 try {
   await writeFile(fixturePath, fixtureBytes, { flag: "wx", mode: 0o600 });
   await client.connect(transport, { timeout: 15_000 });
@@ -110,18 +125,7 @@ try {
     path: fixturePath,
     expires_in_seconds: 900,
   }, 60_000);
-  const chunks = [];
-  let cursor;
-  do {
-    const chunk = await call("read_artifact", {
-      share_url: published.share_url,
-      representation: "source",
-      ...(cursor === undefined ? {} : { cursor }),
-    });
-    chunks.push(Buffer.from(chunk.data, "base64"));
-    cursor = chunk.next_cursor ?? undefined;
-  } while (cursor !== undefined);
-  const received = Buffer.concat(chunks);
+  const received = await readSource(published.share_url);
   const sourceSha256 = createHash("sha256").update(fixtureBytes).digest("hex");
   if (capabilityPath !== undefined) {
     await writeFile(capabilityPath, published.share_url, { encoding: "utf8", flag: "wx", mode: 0o600 });
@@ -146,8 +150,13 @@ try {
   process.stdout.write(`${JSON.stringify(evidence)}\n`);
 
   if (awaitExpiry) {
-    const waitMilliseconds = Math.max(0, Date.parse(published.manifest.expires_at) - Date.now() + 2_000);
-    await sleep(waitMilliseconds);
+    const expiresAt = Date.parse(published.manifest.expires_at);
+    await sleep(Math.max(0, expiresAt - Date.now() - 30_000));
+    const immediatelyBeforeExpiry = await readSource(published.share_url);
+    if (!immediatelyBeforeExpiry.equals(fixtureBytes)) {
+      throw new Error("The private artifact was unavailable before its expiry cutoff");
+    }
+    await sleep(Math.max(0, expiresAt - Date.now() + 2_000));
     const expiredRead = await client.callTool({
       name: "read_artifact",
       arguments: { share_url: published.share_url, representation: "source" },
@@ -155,7 +164,9 @@ try {
     const expiredDetail = expiredRead.content
       ?.map((item) => item.type === "text" ? item.text : "")
       .join("\n") ?? "";
-    if (expiredRead.isError !== true || !expiredDetail.includes("ArtifactPass request failed: expired")) {
+    const inaccessibleAfterExpiry = expiredDetail.includes("ArtifactPass request failed: expired") ||
+      expiredDetail.includes("ArtifactPass request failed: not_found");
+    if (expiredRead.isError !== true || !inaccessibleAfterExpiry) {
       throw new Error("An expired private artifact remained accessible");
     }
     const health = await fetch(new URL("/health", connection.origin), { redirect: "error" });
