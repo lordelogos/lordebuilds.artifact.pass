@@ -517,7 +517,22 @@ export const withPrivateDeploymentLock = async <Result>(
     } catch (error) {
       if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
       const metadata = await stat(path);
-      if (now() - metadata.mtimeMs <= staleLockMilliseconds) {
+      let ownerIsAlive: boolean | null = null;
+      try {
+        const lock = JSON.parse(await readFile(path, "utf8")) as { readonly pid?: unknown };
+        if (Number.isInteger(lock.pid) && Number(lock.pid) > 0) {
+          try {
+            process.kill(Number(lock.pid), 0);
+            ownerIsAlive = true;
+          } catch (ownerError) {
+            const code = ownerError instanceof Error && "code" in ownerError ? ownerError.code : undefined;
+            ownerIsAlive = code === "EPERM" ? true : code === "ESRCH" ? false : null;
+          }
+        }
+      } catch {
+        ownerIsAlive = null;
+      }
+      if (ownerIsAlive === true || (ownerIsAlive === null && now() - metadata.mtimeMs <= staleLockMilliseconds)) {
         throw new Error(`ArtifactPass deployment ${deploymentId} is already open in another process`);
       }
       await rm(path, { force: true });

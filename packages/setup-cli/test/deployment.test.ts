@@ -1183,6 +1183,40 @@ describe("Cloudflare deployment", () => {
     }).catch((error: unknown) => error);
 
     expect(failure).toBeInstanceOf(DeploymentMutationError);
+    expect((failure as DeploymentMutationError).message).toBe("injected Worker failure");
     expect((failure as DeploymentMutationError).changed).toEqual([]);
+  });
+
+  it("restores the approved R2 lifecycle after a later deployment failure", async () => {
+    const root = await deploymentRoot();
+    const manifestRoot = await mkdtemp(resolve(tmpdir(), "artifactpass-rollback-approval-"));
+    const manifestPath = resolve(manifestRoot, "approval.json");
+    const client = fakeClient({ existing: true });
+    const rollbackInput = { ...input, allowedExpirySeconds: [900] } as const;
+    await deployArtifactShare({ ...rollbackInput, writeApprovalManifest: manifestPath }, {
+      client: client.client,
+      deploymentRoot: root,
+    });
+    expect(JSON.parse(await readFile(manifestPath, "utf8"))).toMatchObject({
+      binding: { remote: { lifecycle: { rules: [{ id: "lifecycle-v1" }] } } },
+    });
+    const failure = await deployArtifactShare({ ...rollbackInput, approveManifest: manifestPath }, {
+      client: client.client,
+      deploymentRoot: root,
+      runner: vi.fn(async (_command: string, args: readonly string[]) => {
+        if (args[0] === "deploy") throw new Error("injected Worker failure");
+        return { stdout: "", stderr: "" };
+      }),
+    }).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(DeploymentMutationError);
+    expect((failure as DeploymentMutationError).message).toBe("injected Worker failure");
+    expect((failure as DeploymentMutationError).changed).toContain("R2 lifecycle");
+    expect((failure as DeploymentMutationError).rolledBack).toEqual(["R2 lifecycle"]);
+    expect((failure as DeploymentMutationError).rollbackFailures).toEqual([]);
+    const rollback = client.requests.find(({ path, init }) =>
+      path.endsWith("/lifecycle") && init.method === "PUT"
+    );
+    expect(JSON.parse(String(rollback?.init.body))).toEqual({ rules: [{ id: "lifecycle-v1" }] });
   });
 });

@@ -192,6 +192,7 @@ describe("private deployment approval flow", () => {
         ["D1 database", "R2 bucket"],
         { d1_database_id: "db-id", r2_bucket_name: "artifactpass-11111111" },
         new Error("unavailable"),
+        ["R2 bucket"],
       );
     });
     const result = await runPrivateDeploymentApproval(state, {
@@ -206,6 +207,8 @@ describe("private deployment approval flow", () => {
     expect(result.state.stage).toBe("repair-required");
     expect(result.state.checkpoints["deployment-failure"]?.evidence).toMatchObject({
       changed: ["D1 database", "R2 bucket"],
+      rolled_back: ["R2 bucket"],
+      rollback_failures: [],
       resources: { d1_database_id: "db-id" },
     });
   });

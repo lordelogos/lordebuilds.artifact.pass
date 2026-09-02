@@ -64,11 +64,16 @@ const clientFor = (options: { r2?: "ready" | "pending"; zeroTrust?: "ready" | "p
 
 describe("private deployment prerequisite flow", () => {
   it("reaches ready using an active account, zone, R2, Zero Trust, and Workers subdomain", async () => {
+    const persistedStages: string[] = [];
     const result = await runPrivateDeploymentPrerequisites(state, {
       client: clientFor(),
       prompt: promptWith(["1"]).prompt,
       openBrowser: vi.fn(),
       now: () => now,
+      persist: async (nextState) => {
+        persistedStages.push(nextState.stage);
+        return nextState;
+      },
     });
     expect(result.status).toBe("ready");
     expect(result.state).toMatchObject({
@@ -85,6 +90,7 @@ describe("private deployment prerequisite flow", () => {
         workers_subdomain_action: "reuse",
       },
     });
+    expect(persistedStages).toEqual(["account-selected", "zone-active", "prerequisites-ready"]);
   });
 
   it("saves a pending domain handoff without changing Cloudflare", async () => {

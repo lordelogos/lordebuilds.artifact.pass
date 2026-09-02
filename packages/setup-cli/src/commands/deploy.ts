@@ -114,6 +114,8 @@ export const runDeployCommand = async (
         error.changed,
         error.resources,
         error.cause,
+        error.rolledBack,
+        error.rollbackFailures,
       );
     }
     throw new Error(describeCloudflareFailure(error));

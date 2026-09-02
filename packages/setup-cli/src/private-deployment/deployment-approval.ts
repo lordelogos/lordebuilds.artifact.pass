@@ -247,6 +247,8 @@ export const runPrivateDeploymentApproval = async (
     state = provePrivateDeploymentCheckpoint(state, "deployment-failure", {
       reason,
       changed: error instanceof DeploymentMutationError ? error.changed : [],
+      rolled_back: error instanceof DeploymentMutationError ? error.rolledBack : [],
+      rollback_failures: error instanceof DeploymentMutationError ? error.rollbackFailures : [],
       resources: error instanceof DeploymentMutationError ? error.resources : {},
       recovery: ["retry-safely", "run-doctor", "save-and-exit", "view-repair-instructions"],
     }, "repair-required", now());

@@ -73,6 +73,8 @@ export class DeploymentMutationError extends Error {
     readonly changed: readonly string[],
     readonly resources: Readonly<Record<string, string>>,
     cause: unknown,
+    readonly rolledBack: readonly string[] = [],
+    readonly rollbackFailures: readonly string[] = [],
   ) {
     super(message, { cause });
     this.name = "DeploymentMutationError";
@@ -266,6 +268,12 @@ const identityIncludes = (identities: readonly IdentityRule[]) => identities.map
 
 const canonicalJson = (value: readonly unknown[]): string =>
   JSON.stringify([...value].sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right))));
+
+export const canonicalCloudflareValue = (value: unknown): string => JSON.stringify(value, (_key, nested) => {
+  if (nested === null || typeof nested !== "object" || Array.isArray(nested)) return nested;
+  return Object.fromEntries(Object.entries(nested as Record<string, unknown>).sort(([left], [right]) =>
+    left.localeCompare(right)));
+});
 
 const restoreLegacyAccess = async (
   input: DeployInput,
@@ -571,8 +579,10 @@ export const deployArtifactShare = async (
 
   const runner = dependencies.runner ?? runProcess;
   const changed: string[] = [];
+  const rollbackActions: { readonly resource: string; readonly run: () => Promise<void> }[] = [];
   const resourceIdentities: Record<string, string> = {};
   let approvedBindingDigest: string | undefined;
+  let approvedRemoteLifecycle: unknown;
   const verified = await dependencies.client.verifyToken();
   if (verified.status !== "active") throw new Error("Cloudflare API token is not active");
   if (input.writeApprovalManifest !== undefined || input.approveManifest !== undefined) {
@@ -598,6 +608,7 @@ export const deployArtifactShare = async (
       throw new Error("Hosted approval manifest no longer matches the deployment bundle or Cloudflare state");
     }
     approvedBindingDigest = createHash("sha256").update(JSON.stringify(approved.binding)).digest("hex");
+    approvedRemoteLifecycle = (approved.binding.remote as { readonly lifecycle?: unknown } | null)?.lifecycle;
   }
   try {
   let privateAccess = input.privateAccess;
@@ -875,6 +886,25 @@ export const deployArtifactShare = async (
       "r2", "bucket", "lifecycle", "set", serviceName,
       "--file", lifecyclePath, "--force",
     ], { env: commandEnvironment });
+    const desiredLifecycle = input.allowedExpirySeconds === undefined
+      ? JSON.parse(await readFile(lifecyclePath, "utf8")) as unknown
+      : storageLifecycleForMaximumExpiry(input.allowedExpirySeconds.at(-1) as number);
+    if (
+      input.approveManifest !== undefined &&
+      approvedRemoteLifecycle !== undefined &&
+      canonicalCloudflareValue(approvedRemoteLifecycle) !== canonicalCloudflareValue(desiredLifecycle)
+    ) {
+      changed.push("R2 lifecycle");
+      rollbackActions.push({
+        resource: "R2 lifecycle",
+        run: async () => {
+          await dependencies.client.request(
+            `/accounts/${input.accountId}/r2/buckets/${encodeURIComponent(serviceName)}/lifecycle`,
+            { method: "PUT", body: JSON.stringify(approvedRemoteLifecycle) },
+          );
+        },
+      });
+    }
     if (input.deploymentId !== undefined && approvedBindingDigest !== undefined && bucketCreated) {
       const marker: DeploymentMarker = {
         version: 1,
@@ -1068,11 +1098,25 @@ export const deployArtifactShare = async (
   };
   } catch (error) {
     if (changed.length === 0 && Object.keys(resourceIdentities).length === 0) throw error;
+    const rolledBack: string[] = [];
+    const rollbackFailures: string[] = [];
+    for (const action of [...rollbackActions].reverse()) {
+      try {
+        await action.run();
+        rolledBack.push(action.resource);
+      } catch (rollbackError) {
+        rollbackFailures.push(
+          `${action.resource}: ${rollbackError instanceof Error ? rollbackError.message : "rollback failed"}`,
+        );
+      }
+    }
     throw new DeploymentMutationError(
       error instanceof Error ? error.message : "Cloudflare deployment failed after mutation started",
       [...changed],
       { ...resourceIdentities },
       error,
+      rolledBack,
+      rollbackFailures,
     );
   }
 };

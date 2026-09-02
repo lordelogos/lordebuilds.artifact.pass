@@ -2,9 +2,9 @@
 
 Date: 2026-09-01
 
-Implementation status: core flow complete; U8 qualification partial
+Implementation status: core flow complete; U8 engineering qualification complete
 
-Release readiness: blocked-on-remaining-U8-live-qualification
+Release readiness: blocked-on-production-OAuth-qualification
 
 This record covers the isolated staging rehearsal for private ArtifactPass onboarding. It proves the implementation against real Cloudflare resources under the existing ArtifactPass account and domain. It does not claim the unrelated-account, fresh-domain journey required for release.
 
@@ -28,8 +28,7 @@ The Git commit containing this record is the source commit for the qualified evi
 - Hostname: `private-qualification-staging.artifactpass.com`
 - Deployment ID: `33b4d5a1-83e5-4187-9a9f-a3938ab20013`
 - Worker service: `artifactpass-33b4d5a1`
-- Worker script tag after the final idempotent rerun: `9f84c55f9b334d1e99dc616db6662009`
-- Hosted verification after the final idempotent rerun: `2026-09-02T01:05:58.130Z`
+- Hosted verification was repeated successfully during the real interruption qualification on 2026-09-02.
 - Identity: Cloudflare Access email-code login
 - Retention choices: 15 minutes, 30 minutes, 60 minutes, 24 hours, and 7 days
 - Doctor result: `healthy`
@@ -53,9 +52,10 @@ No account ID, zone ID, email address, OAuth material, device code, token, priva
 - The earlier live Cloudflare 503 occurred before any resource mutation, recorded zero changed resources, and the same deployment subsequently resumed and passed hosted verification. This proves failure-before-mutation containment, not the post-mutation rollback path.
 - An earlier identity-only comparison proved the expected public D1, R2, Worker, and Access resources remained present. The final resilience run extended that check to the mutable configuration listed below.
 - Doctor reattested the deployment as healthy after the rerun.
-- Every one of the 14 checkpoint shapes derived from the completed staging state was reloaded by a fresh child process from an unrelated working directory and resolved by hostname. A fresh read-only digest of the live Cloudflare state was recorded in the same run. This proves process-independent persistence and lookup, not actual wizard interruption and continuation at every checkpoint.
+- The real wizard was terminated with `SIGKILL` and resumed in a fresh process from an unrelated working directory at each of its 14 saved checkpoints. It advanced from `started` through `hosted-verification` and ended complete. The run also exposed and fixed immediate recovery from a dead process lock.
 - A changed deployment bundle was rejected against its approved manifest before any mutation command started.
-- A deliberate failure after real D1 migration and R2 lifecycle preparation commands stopped before Worker replacement and left the previously verified Worker unchanged and healthy. The deployment ledger correctly reported zero changed resources because both operations were idempotent and already matched the approved deployment. This proves pre-Worker failure containment, not rollback after a resource mutation.
+- A deliberate failure after real D1 migration and R2 lifecycle preparation commands stopped before Worker replacement and left the previously verified Worker unchanged and healthy.
+- A separate qualification changed the dedicated private R2 lifecycle, injected failure before Worker replacement, recorded the lifecycle as changed, restored the exact prior lifecycle, and reported zero rollback failures. The harness then restored the original qualification baseline and verified it exactly.
 - Before and after the resilience run, the existing public deployment produced the same resource identity digest (`011ac1fae0023ca7e0d20f629ffd4d31b06cc79b5902b82c0b7ed6900bba5807`) and mutable-state digest (`ed2bd8c445df88f80f3bb59934482f12c36b792f26b4b2673a96206e3bb4eee0`). The snapshot covers the public Worker settings and domains, D1 schema, R2 lifecycle and object metadata, ordered Access policies, public DNS answers for `artifactpass.com` and `www.artifactpass.com`, and exact D1/R2/Worker/Access counts. The private OAuth grant exactly matched the approved staging scope profile and contains no OAuth-client mutation scope.
 
 The staging rehearsal also exposed a short-lived macOS negative-DNS-cache failure immediately after hostname activation. The product fix now retries only DNS-not-found and temporary-DNS errors through Cloudflare's public resolver, preserves TLS hostname verification, rejects private fallback addresses, refuses redirects, and caps fallback responses at 2 MiB. The live agent connection and publish/read flow passed after that fix.
@@ -68,7 +68,7 @@ The staging rehearsal also exposed a short-lived macOS negative-DNS-cache failur
 - `pnpm test:agent-contract`: passed with the stdio MCP smoke test and five portability tests.
 - `pnpm test:agent-hosts`: passed for Codex and Claude Code using the same five-file portable package.
 - Candidate-digest configuration test: passed after the portable integration digest was updated.
-- Setup CLI suite: 207 tests passed, including saved-checkpoint resume, authorization loss, manifest drift refusal before mutation, rollback containment, and installer rollback.
+- Setup CLI suite: 209 tests passed, including immediate dead-process lock recovery, intermediate prerequisite persistence, manifest drift refusal, real lifecycle rollback behavior, and approval failure reporting.
 - External host acceptance lab: 118 tests passed after the Claude publisher was allowed the complete connection lifecycle (`connection_status`, `connect_artifactpass`, then `publish_artifact`).
 
 The local build warns that the public Google and GitHub OAuth client secrets are absent. That warning is expected for this private-mode build and did not bypass or weaken the private Cloudflare Access checks.
@@ -84,13 +84,9 @@ This run used isolated names under the current ArtifactPass Cloudflare account a
 
 Those claims remain assigned to U9. Any package, OAuth-client, service, evaluator, or product-code change after the U9 candidate is frozen invalidates that external evidence and requires a complete rerun.
 
-Live staging proved cross-folder resume of the completed deployment, authorization revocation and recovery, approved-manifest drift refusal before mutation, pre-Worker failure containment with the prior Worker unchanged, scheduled D1/R2 deletion, and stable public resource identities and mutable state. The resilience harness separately proved that every persisted checkpoint shape can be resolved and parsed in a fresh process.
+Live staging proved cross-folder resume, authorization revocation and recovery, approved-manifest drift refusal before mutation, real interruption and continuation at all 14 wizard checkpoints, post-mutation lifecycle rollback, pre-Worker failure containment with the prior Worker unchanged, scheduled D1/R2 deletion, and stable public resource identities and mutable state.
 
-The remaining U8 blockers are:
-
-- actual interruption and continuation of the real wizard at every saved checkpoint; the current child-process harness proves persistence and lookup only;
-- rollback containment after a real private resource mutation; the current live injection completed only idempotent storage preparation and therefore had nothing to roll back;
-- completion and qualification of the production Cloudflare OAuth client. The package still has no production client ID, the current production site returns `404` for `/privacy`, `/terms`, and a hosted logo asset, and the existing staging OAuth client remains private with domain verification in progress.
+The remaining U8 blocker is completion and qualification of the production Cloudflare OAuth client. The package still has no production client ID, the current production site returns `404` for `/privacy`, `/terms`, and a hosted logo asset, and the existing staging OAuth client remains private with domain verification in progress.
 
 The production client must use the loopback PKCE redirect, exact required scopes, verified ArtifactPass domain, visual identity, privacy and terms URLs, and support contact before U8 can become implementation-complete.
 
@@ -98,4 +94,4 @@ The cross-agent run used the locally packed candidate because the published `0.1
 
 ## Decision
 
-The core private deployment flow and the live staging behaviors listed above are proven. U8 remains partial because real interruption at every wizard checkpoint, rollback after an actual resource mutation, and the human-owned production OAuth client qualification are unfinished. U9 must not begin until all three blockers are closed, the DNS transport fix is issued under a new candidate version, and a new implementation-complete candidate record is sealed. The eventual external procedure is documented in [private deployment release qualification](../private-deployment-qualification.md).
+The core private deployment flow and its engineering qualification are proven. The only unfinished U8 gate is the human-owned production OAuth client qualification. U9 must not begin until that client is complete, the DNS transport fix is issued under a new candidate version, and a new implementation-complete candidate record is sealed. The eventual external procedure is documented in [private deployment release qualification](../private-deployment-qualification.md).

@@ -1,16 +1,28 @@
 import { createHash } from "node:crypto";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
 import { runDeployCommand } from "../packages/setup-cli/src/commands/deploy";
 import { CloudflareClient } from "../packages/setup-cli/src/cloudflare/client";
-import { DeploymentMutationError } from "../packages/setup-cli/src/cloudflare/deployment";
+import {
+  canonicalCloudflareValue,
+  DeploymentMutationError,
+} from "../packages/setup-cli/src/cloudflare/deployment";
 import { runProcess, type ProcessRunner } from "../packages/setup-cli/src/process";
 import { privateDeploymentAccessTokenForInspection } from "../packages/setup-cli/src/private-deployment/deployment-authorization";
+import { runPrivateDeploymentApproval } from "../packages/setup-cli/src/private-deployment/deployment-approval";
+import {
+  parsePrivateDeploymentWizardArguments,
+  runPrivateDeploymentWizard,
+  type PrivateDeploymentPrompt,
+} from "../packages/setup-cli/src/private-deployment/deploy-wizard";
+import { runPrivateIdentitySetup } from "../packages/setup-cli/src/private-deployment/identity-setup";
+import { runPrivateDeploymentPrerequisites } from "../packages/setup-cli/src/private-deployment/prerequisites";
+import { PRIVATE_RETENTION_PRESETS, runPrivateRetentionSetup } from "../packages/setup-cli/src/private-deployment/retention";
 import {
   compilePrivateDeploymentSpecification,
   deploymentInputFromPrivateSpecification,
@@ -56,6 +68,152 @@ const digest = (value: unknown): string => createHash("sha256")
   .digest("hex");
 
 const execFileAsync = promisify(execFile);
+
+const waitForever = async (): Promise<never> => await new Promise<never>(() => {
+  setInterval(() => undefined, 60_000);
+});
+
+const answerForWizardQuestion = (message: string, source: PrivateDeploymentState): string => {
+  if (message.startsWith("Continue?")) return "1";
+  if (message.startsWith("Do you control the domain")) return "1";
+  if (message.startsWith("How should people sign in?")) return source.sign_in_mode === "company-login" ? "2" : "1";
+  if (message.startsWith("Which Cloudflare account")) {
+    const line = message.split("\n").findIndex((value) => value.includes(source.cloudflare?.account_name ?? "\0"));
+    return String(line);
+  }
+  if (message.startsWith("Which domain should ArtifactPass use?")) {
+    const line = message.split("\n").findIndex((value) => value.includes(source.cloudflare?.zone_name ?? "\0"));
+    return String(line);
+  }
+  if (message.startsWith("Who may publish")) {
+    const rules = JSON.parse(source.resources.access_identity_rules ?? "[]") as { readonly kind: string; readonly value: string }[];
+    return rules.every(({ kind }) => kind === "domain") ? "1" : "2";
+  }
+  if (message.startsWith("Approved email domains")) {
+    return (JSON.parse(source.resources.access_identity_rules ?? "[]") as { readonly value: string }[])
+      .map(({ value }) => value).join(",");
+  }
+  if (message.startsWith("Approved email addresses")) {
+    return (JSON.parse(source.resources.access_identity_rules ?? "[]") as { readonly value: string }[])
+      .map(({ value }) => value).join(",");
+  }
+  if (message.startsWith("Which link lifetimes")) {
+    return (source.retention_seconds ?? []).map((seconds) =>
+      PRIVATE_RETENTION_PRESETS.findIndex((preset) => preset.seconds === seconds) + 1).join(",");
+  }
+  if (message.startsWith("Where should this private ArtifactPass deployment live?")) return "3";
+  if (message.startsWith("Deployment hostname:")) return source.hostname ?? qualificationHostname;
+  if (message.startsWith("What should ArtifactPass do?")) return "1";
+  throw new Error(`Unexpected qualification prompt: ${message.split("\n")[0]}`);
+};
+
+const runWizardInterruptionChild = async (): Promise<void> => {
+  const target = valueAfter("--wizard-child");
+  const root = valueAfter("--state-root");
+  const selector = valueAfter("--source");
+  const source = await resolvePrivateDeploymentState(privateDeploymentStateRoot(), selector);
+  const deploymentRoot = valueAfter("--deployment-root");
+  const hasTarget = async (): Promise<boolean> => {
+    try {
+      return (await resolvePrivateDeploymentState(root, source.deployment_id, source.last_written_by_cli_version))
+        .checkpoints[target] !== undefined;
+    } catch {
+      return false;
+    }
+  };
+  const pauseAtTarget = async (): Promise<void> => {
+    if (await hasTarget()) await waitForever();
+  };
+  const prompt: PrivateDeploymentPrompt = {
+    interactive: true,
+    question: async (message) => {
+      await pauseAtTarget();
+      return answerForWizardQuestion(message, source);
+    },
+    write: () => undefined,
+  };
+  const resolveAccessToken = async (): Promise<string> => {
+    const token = await privateDeploymentAccessTokenForInspection(source);
+    if (token === null) throw new Error("The source qualification authorization is unavailable");
+    return token;
+  };
+  const authorization = {
+    persisted: true,
+    source: "oauth" as const,
+    client: { environment: "staging" as const, clientId: "qualification-client" },
+    profile: source.sign_in_mode === "company-login" ? "companyLogin" as const : "emailCode" as const,
+    grantedScopes: source.checkpoints["cloudflare-authorized"]?.evidence.granted_scopes as readonly string[],
+    resolveAccessToken,
+    close: async () => undefined,
+  };
+  const persist = async (state: PrivateDeploymentState): Promise<PrivateDeploymentState> => {
+    const stored = await writePrivateDeploymentState(root, state, source.last_written_by_cli_version);
+    if (stored.checkpoints[target] !== undefined) await waitForever();
+    return stored;
+  };
+  const existing = await (async () => {
+    try {
+      return await resolvePrivateDeploymentState(root, source.deployment_id, source.last_written_by_cli_version);
+    } catch {
+      return null;
+    }
+  })();
+  const result = await runPrivateDeploymentWizard(
+    parsePrivateDeploymentWizardArguments(existing === null ? ["--new"] : ["--resume", source.deployment_id]),
+    {
+      root,
+      cliVersion: source.last_written_by_cli_version,
+      createId: () => source.deployment_id,
+      prompt,
+      authorizeDeployment: async () => {
+        await pauseAtTarget();
+        return authorization;
+      },
+      runPrerequisites: async (state) => {
+        await pauseAtTarget();
+        const client = new CloudflareClient({ resolveToken: resolveAccessToken });
+        const prerequisites = await runPrivateDeploymentPrerequisites(state, {
+          client,
+          prompt,
+          openBrowser: async () => { throw new Error("Qualification unexpectedly required a browser handoff"); },
+          persist,
+        });
+        if (prerequisites.status !== "ready") return prerequisites;
+        const identity = await runPrivateIdentitySetup(prerequisites.state, {
+          client,
+          prompt,
+          openBrowser: async () => { throw new Error("Qualification unexpectedly required an identity handoff"); },
+        });
+        if (identity.status !== "ready") return identity;
+        const identityState = await persist(identity.state);
+        const retention = await runPrivateRetentionSetup(identityState, prompt);
+        return {
+          status: "ready" as const,
+          state: await persist(retention.state),
+          message: "Qualification preparation is ready.",
+        };
+      },
+    },
+  );
+  await pauseAtTarget();
+  if (result.action !== "retention-ready" || result.deployment === null || result.authorization === undefined) {
+    await waitForever();
+  }
+  await runPrivateDeploymentApproval(result.deployment, {
+    root,
+    cliVersion: source.last_written_by_cli_version,
+    deploymentRoot,
+    prompt,
+    authorization: result.authorization,
+    runDeploy: async (input, dependencies) => {
+      if (input.writeApprovalManifest !== undefined && target === "specification-ready") await waitForever();
+      if (input.approveManifest !== undefined && target === "deployment-started") await waitForever();
+      return runDeployCommand(input, dependencies);
+    },
+  });
+  await pauseAtTarget();
+  await waitForever();
+};
 
 export const inspectPersistedCheckpoint = async (
   root: string,
@@ -172,6 +330,74 @@ const proveCheckpointReload = async (
   }
 };
 
+const proveWizardInterruption = async (
+  state: PrivateDeploymentState,
+): Promise<Record<string, unknown>> => {
+  const root = await mkdtemp(resolve(tmpdir(), "artifactpass-real-wizard-resume-"));
+  const entry = fileURLToPath(import.meta.url);
+  const deploymentRoot = resolve("packages/setup-cli/dist/deployment");
+  const interrupted: string[] = [];
+  try {
+    for (let index = 0; index < checkpointOrder.length; index += 1) {
+      const [checkpoint, stage] = checkpointOrder[index] as (typeof checkpointOrder)[number];
+      const child = spawn(process.execPath, [entry,
+        "--wizard-child", checkpoint,
+        "--state-root", root,
+        "--source", state.hostname ?? state.deployment_id,
+        "--deployment-root", deploymentRoot,
+      ], {
+        cwd: resolve(root),
+        env: { ...process.env, ARTIFACTPASS_CLOUDFLARE_OAUTH_ENVIRONMENT: "staging" },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      let stderr = "";
+      child.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString("utf8"); });
+      const deadline = Date.now() + (checkpoint === "hosted-verification" ? 240_000 : 60_000);
+      let persisted: PrivateDeploymentState | null = null;
+      while (Date.now() < deadline) {
+        if (child.exitCode !== null) {
+          throw new Error(`Wizard process exited before ${checkpoint}: ${stderr.slice(-1_000)}`);
+        }
+        try {
+          const candidate = await resolvePrivateDeploymentState(root, state.deployment_id, state.last_written_by_cli_version);
+          if (candidate.checkpoints[checkpoint] !== undefined) {
+            persisted = candidate;
+            break;
+          }
+        } catch {
+          // The first child may not have created its atomic state file yet.
+        }
+        await new Promise((resolveDelay) => setTimeout(resolveDelay, 20));
+      }
+      if (persisted === null) {
+        child.kill("SIGKILL");
+        throw new Error(`Timed out waiting for the real wizard checkpoint ${checkpoint}: ${stderr.slice(-1_000)}`);
+      }
+      child.kill("SIGKILL");
+      await new Promise<void>((resolveExit) => child.once("close", () => resolveExit()));
+      const resumed = await resolvePrivateDeploymentState(root, state.deployment_id, state.last_written_by_cli_version);
+      if (resumed.stage !== stage || resumed.checkpoints[checkpoint] === undefined) {
+        throw new Error(`The interrupted wizard did not preserve ${checkpoint}`);
+      }
+      const next = checkpointOrder[index + 1]?.[0];
+      if (next !== undefined && resumed.checkpoints[next] !== undefined) {
+        throw new Error(`The interrupted wizard advanced beyond ${checkpoint}`);
+      }
+      interrupted.push(checkpoint);
+    }
+    return {
+      event: "private-real-wizard-interruption-passed",
+      checkpoints_interrupted_and_resumed: interrupted,
+      process_signal: "SIGKILL",
+      fresh_process_per_resume: true,
+      unrelated_working_directory: true,
+      final_stage: "complete",
+    };
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+};
+
 export const runPrivateResilienceQualification = async (): Promise<void> => {
   const selector = valueAfter("--resume");
   const evidencePathIndex = process.argv.indexOf("--evidence-path");
@@ -204,14 +430,23 @@ export const runPrivateResilienceQualification = async (): Promise<void> => {
       dryRun: false,
       writeApprovalManifest: approvalPath,
     }), { deploymentRoot, resolveToken });
-    const approval = JSON.parse(await readFile(approvalPath, "utf8")) as {
+    let approval = JSON.parse(await readFile(approvalPath, "utf8")) as {
       readonly binding?: { readonly bundleSha256?: unknown; readonly remote?: unknown };
     };
     if (typeof approval.binding?.bundleSha256 !== "string" || !/^[a-f0-9]{64}$/u.test(approval.binding.bundleSha256)) {
       throw new Error("The qualification approval manifest lacks a valid deployment bundle digest");
     }
-    const remoteDigest = digest(approval.binding?.remote ?? null);
+    let remoteDigest = digest(approval.binding?.remote ?? null);
     const checkpointEvidence = await proveCheckpointReload(state, remoteDigest);
+    const interruptionEvidence = await proveWizardInterruption(state);
+    await runDeployCommand(deploymentInputFromPrivateSpecification(specification, {
+      dryRun: false,
+      writeApprovalManifest: approvalPath,
+    }), { deploymentRoot, resolveToken });
+    approval = JSON.parse(await readFile(approvalPath, "utf8")) as {
+      readonly binding?: { readonly bundleSha256?: unknown; readonly remote?: unknown };
+    };
+    remoteDigest = digest(approval.binding?.remote ?? null);
 
     const changedBundle = resolve(root, "changed-deployment");
     await cp(deploymentRoot, changedBundle, { recursive: true });
@@ -285,6 +520,72 @@ export const runPrivateResilienceQualification = async (): Promise<void> => {
       rollback_required: false,
       containment: "idempotent storage preparation completed; Worker replacement did not start",
     } as const;
+
+    const lifecyclePath = `/accounts/${accountId}/r2/buckets/${encodeURIComponent(serviceName)}/lifecycle`;
+    const baselineLifecycle = await client.request<{ readonly rules?: readonly unknown[] }>(lifecyclePath);
+    const sentinelRuleId = "artifactpass-qualification-rollback-sentinel";
+    const sentinelLifecycle = {
+      ...baselineLifecycle,
+      rules: [
+        ...(baselineLifecycle.rules ?? []).filter((rule) =>
+          (rule as { readonly id?: unknown }).id !== sentinelRuleId),
+        {
+          id: sentinelRuleId,
+          enabled: true,
+          conditions: { prefix: ".artifactpass-qualification-never/" },
+          deleteObjectsTransition: { condition: { type: "Age", maxAge: 2_592_000 } },
+        },
+      ],
+    };
+    let rollbackEvidence: Record<string, unknown>;
+    try {
+      await client.request(lifecyclePath, { method: "PUT", body: JSON.stringify(sentinelLifecycle) });
+      const rollbackApprovalPath = resolve(root, "rollback-approval.json");
+      await runDeployCommand(deploymentInputFromPrivateSpecification(specification, {
+        dryRun: false,
+        writeApprovalManifest: rollbackApprovalPath,
+      }), { deploymentRoot, resolveToken });
+      let rollbackFailure: DeploymentMutationError | undefined;
+      await runDeployCommand(deploymentInputFromPrivateSpecification(specification, {
+        dryRun: false,
+        approveManifest: rollbackApprovalPath,
+      }), {
+        deploymentRoot,
+        resolveToken,
+        runner: async (command, args, options) => {
+          if (args[0] === "deploy") throw new Error("qualification failure after R2 lifecycle mutation");
+          return runProcess(command, args, options);
+        },
+      }).catch((error: unknown) => {
+        if (!(error instanceof DeploymentMutationError)) throw error;
+        rollbackFailure = error;
+      });
+      if (rollbackFailure === undefined) throw new Error("The post-mutation failure was not injected");
+      if (!rollbackFailure.changed.includes("R2 lifecycle")) {
+        throw new Error("The real R2 lifecycle mutation was not recorded");
+      }
+      if (JSON.stringify(rollbackFailure.rolledBack) !== JSON.stringify(["R2 lifecycle"]) || rollbackFailure.rollbackFailures.length > 0) {
+        throw new Error("The real R2 lifecycle mutation was not rolled back cleanly");
+      }
+      const restoredSentinel = await client.request<{ readonly rules?: readonly { readonly id?: string }[] }>(lifecyclePath);
+      if (!restoredSentinel.rules?.some(({ id }) => id === sentinelRuleId)) {
+        throw new Error("Rollback did not restore the exact pre-deployment lifecycle state");
+      }
+      rollbackEvidence = {
+        event: "private-post-mutation-rollback-passed",
+        changed_resources: rollbackFailure.changed,
+        rolled_back_resources: rollbackFailure.rolledBack,
+        rollback_failures: rollbackFailure.rollbackFailures,
+        worker_replacement_started: false,
+        prior_lifecycle_restored: true,
+      };
+    } finally {
+      await client.request(lifecyclePath, { method: "PUT", body: JSON.stringify(baselineLifecycle) });
+    }
+    const restoredBaseline = await client.request(lifecyclePath);
+    if (canonicalCloudflareValue(restoredBaseline) !== canonicalCloudflareValue(baselineLifecycle)) {
+      throw new Error("Qualification cleanup did not restore the baseline R2 lifecycle");
+    }
     const publicAfter = await capturePublicResourceMutableEvidence(state, client);
     if (
       publicBefore.identity_digest !== publicAfter.identity_digest ||
@@ -301,8 +602,10 @@ export const runPrivateResilienceQualification = async (): Promise<void> => {
       command: `ARTIFACTPASS_CLOUDFLARE_OAUTH_ENVIRONMENT=staging pnpm test:private-resilience:live -- --resume ${selector}`,
       deployment_bundle_sha256: approval.binding.bundleSha256,
       checkpoint_reload: { status: "passed", ...checkpointEvidence },
+      wizard_interruption: { status: "passed", ...interruptionEvidence },
       manifest_drift: { status: "passed", ...driftEvidence },
       pre_worker_failure_containment: { status: "passed", ...containmentEvidence },
+      post_mutation_rollback: { status: "passed", ...rollbackEvidence },
       public_resource_isolation: {
         status: "passed",
         before: {
@@ -327,5 +630,6 @@ export const runPrivateResilienceQualification = async (): Promise<void> => {
 };
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  await runPrivateResilienceQualification();
+  if (process.argv.includes("--wizard-child")) await runWizardInterruptionChild();
+  else await runPrivateResilienceQualification();
 }

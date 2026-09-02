@@ -118,6 +118,16 @@ describe("private deployment state", () => {
     )).resolves.toBe("recovered");
   });
 
+  it("recovers immediately when an interrupted lock owner no longer exists", async () => {
+    const root = await temporaryRoot("deployment-dead-lock");
+    const lockPath = resolve(root, "locks", `${deploymentId}.lock`);
+    await mkdir(dirname(lockPath), { recursive: true });
+    await writeFile(lockPath, JSON.stringify({ deployment_id: deploymentId, pid: 2_147_483_647 }));
+
+    await expect(withPrivateDeploymentLock(root, deploymentId, async () => "resumed"))
+      .resolves.toBe("resumed");
+  });
+
   it("invalidates dependent checkpoints and approval when an earlier answer changes", async () => {
     const root = await temporaryRoot("deployment-invalidation");
     let state = await createPrivateDeploymentState({ root, cliVersion, createId: () => deploymentId, now: () => instant });

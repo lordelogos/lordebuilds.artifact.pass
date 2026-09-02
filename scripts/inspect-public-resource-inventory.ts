@@ -298,6 +298,10 @@ export const runPublicResourceIdentityInspection = async (): Promise<void> => {
   process.stdout.write(`${JSON.stringify(evidence)}\n`);
 };
 
-if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (
+  process.argv[1] !== undefined &&
+  import.meta.url === pathToFileURL(process.argv[1]).href &&
+  !process.argv.includes("--wizard-child")
+) {
   await runPublicResourceIdentityInspection();
 }

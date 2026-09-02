@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "recorded_at": "2026-09-02T10:37:15.636Z",
+  "recorded_at": "2026-09-02T11:10:38.979Z",
   "environment": "isolated-private-staging",
   "deployment_reference": "33b4d5a1",
   "command": "ARTIFACTPASS_CLOUDFLARE_OAUTH_ENVIRONMENT=staging pnpm test:private-resilience:live -- --resume private-qualification-staging.artifactpass.com",
@@ -12,13 +12,37 @@
     "separate_process_per_checkpoint": true,
     "unrelated_working_directory": true,
     "resolved_from_hostname": true,
-    "remote_snapshot_digest": "8dad89aa49656f669d5a37d131cef176ff7a9c1341ad4cc9d941475a64c300fc"
+    "remote_snapshot_digest": "ebb8a7423813bd9810a0ecac745cd7adbc4cded7f66b6f9d02dbb2d242f3b2a7"
+  },
+  "wizard_interruption": {
+    "status": "passed",
+    "event": "private-real-wizard-interruption-passed",
+    "checkpoints_interrupted_and_resumed": [
+      "started",
+      "setup-introduction-accepted",
+      "registrar-authority-confirmed",
+      "sign-in-mode-selected",
+      "cloudflare-authorized",
+      "account-selected",
+      "zone-active",
+      "prerequisites-ready",
+      "identity-ready",
+      "retention-ready",
+      "specification-ready",
+      "approval-ready",
+      "deployment-started",
+      "hosted-verification"
+    ],
+    "process_signal": "SIGKILL",
+    "fresh_process_per_resume": true,
+    "unrelated_working_directory": true,
+    "final_stage": "complete"
   },
   "manifest_drift": {
     "status": "passed",
     "event": "private-manifest-drift-refused",
     "mutation_started": false,
-    "approved_remote_digest": "8dad89aa49656f669d5a37d131cef176ff7a9c1341ad4cc9d941475a64c300fc"
+    "approved_remote_digest": "d78c4561a550c557e877ff8c86e7df6b93615cbe40253ad92c3d2ddbc0795c6f"
   },
   "pre_worker_failure_containment": {
     "status": "passed",
@@ -33,6 +57,19 @@
     "worker_healthy": true,
     "rollback_required": false,
     "containment": "idempotent storage preparation completed; Worker replacement did not start"
+  },
+  "post_mutation_rollback": {
+    "status": "passed",
+    "event": "private-post-mutation-rollback-passed",
+    "changed_resources": [
+      "R2 lifecycle"
+    ],
+    "rolled_back_resources": [
+      "R2 lifecycle"
+    ],
+    "rollback_failures": [],
+    "worker_replacement_started": false,
+    "prior_lifecycle_restored": true
   },
   "public_resource_isolation": {
     "status": "passed",

@@ -46,6 +46,8 @@ import {
 import {
   privateDeploymentStateRoot,
   resolvePrivateDeploymentState,
+  withPrivateDeploymentLock,
+  writePrivateDeploymentState,
 } from "./private-deployment/deployment-state";
 import { runPrivateDeploymentPrerequisites } from "./private-deployment/prerequisites";
 import { runPrivateIdentitySetup } from "./private-deployment/identity-setup";
@@ -381,10 +383,21 @@ const main = async (): Promise<void> => {
           ),
           runPrerequisites: async (state, authorization) => {
             const client = new CloudflareClient({ resolveToken: authorization.resolveAccessToken });
+            const stateRoot = privateDeploymentStateRoot();
+            const persistPreparation = async (nextState: typeof state) => withPrivateDeploymentLock(
+              stateRoot,
+              nextState.deployment_id,
+              async () => writePrivateDeploymentState(
+                stateRoot,
+                nextState,
+                nextState.last_written_by_cli_version,
+              ),
+            );
             const prerequisites = await runPrivateDeploymentPrerequisites(state, {
               client,
               prompt: promptSession.prompt,
               openBrowser,
+              persist: persistPreparation,
             });
             if (prerequisites.status !== "ready") return prerequisites;
             const identity = await runPrivateIdentitySetup(prerequisites.state, {
@@ -399,10 +412,12 @@ const main = async (): Promise<void> => {
                 message: identity.message,
               };
             }
-            const retention = await runPrivateRetentionSetup(identity.state, promptSession.prompt);
+            const identityState = await persistPreparation(identity.state);
+            const retention = await runPrivateRetentionSetup(identityState, promptSession.prompt);
+            const retentionState = await persistPreparation(retention.state);
             return {
               status: "ready",
-              state: retention.state,
+              state: retentionState,
               message: "Cloudflare prerequisites, private login, publisher access, and link retention are ready for deployment approval.",
             };
           },

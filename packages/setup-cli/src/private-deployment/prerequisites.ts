@@ -20,6 +20,7 @@ export interface PrivateDeploymentPrerequisiteDependencies {
   readonly openBrowser: (url: string) => Promise<void>;
   readonly copyLink?: (url: string) => Promise<void>;
   readonly now?: () => Date;
+  readonly persist?: (state: PrivateDeploymentState) => Promise<PrivateDeploymentState>;
 }
 
 export interface PrivateDeploymentPrerequisiteResult {
@@ -252,10 +253,15 @@ export const runPrivateDeploymentPrerequisites = async (
   initialState: PrivateDeploymentState,
   dependencies: PrivateDeploymentPrerequisiteDependencies,
 ): Promise<PrivateDeploymentPrerequisiteResult> => {
-  const account = await chooseAccount(initialState, dependencies);
+  const persist = dependencies.persist ?? (async (state: PrivateDeploymentState) => state);
+  const selectedAccount = await chooseAccount(initialState, dependencies);
+  const account = {
+    ...selectedAccount,
+    state: await persist(selectedAccount.state),
+  };
   const zoneResult = await ensureActiveZone(account.state, dependencies);
   if ("status" in zoneResult) return zoneResult;
-  let state = zoneResult.state;
+  let state = await persist(zoneResult.state);
   const accountId = state.cloudflare?.account_id as string;
   let snapshot = await inspectCloudflarePrerequisites(dependencies.client, accountId);
   if (snapshot.d1.status !== "ready") {
@@ -296,6 +302,7 @@ export const runPrivateDeploymentPrerequisites = async (
     "prerequisites-ready",
     (dependencies.now ?? (() => new Date()))(),
   );
+  state = await persist(state);
   return {
     status: "ready",
     state,
