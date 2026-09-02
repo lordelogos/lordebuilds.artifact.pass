@@ -1,0 +1,57 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "artifactpass-staging",
+  "account_id": "f6fe4d3cfdb44e35b801c8f62b1bc14c",
+  "main": "src/server/index.ts",
+  "compatibility_date": "2026-08-16",
+  "routes": [
+    {
+      "pattern": "staging.artifactpass.com",
+      "custom_domain": true
+    }
+  ],
+  "vars": {
+    "ALLOWED_EXPIRY_SECONDS": "900,1800,3600",
+    "GITHUB_OAUTH_CLIENT_ID": "Ov23liaallG65ujYPSbW",
+    "GOOGLE_OAUTH_CLIENT_ID": "1074225717708-3b3ukl02sp8kml0hecneshou6kefsipd.apps.googleusercontent.com",
+    "HUMAN_AUTH_MODE": "artifactpass",
+    "MAX_ARTIFACT_BYTES": "26214400",
+    "MAX_EXPIRY_SECONDS": "3600",
+    "PDF_PROVENANCE_KEY_ID": "artifactpass-staging",
+    "PDF_PROVENANCE_PUBLIC_KEYS": "{\"artifactpass-staging\":\"0D1hr9U4gfEhK1HLcyzNy2RdPWUsRaf+6esef5pHIeQ=\"}",
+    "PDF_PROVENANCE_RENDERERS": "artifact-share-qualified-pdf@1"
+  },
+  "d1_databases": [
+    {
+      "binding": "ARTIFACT_DB",
+      "database_name": "artifactpass-staging",
+      "database_id": "6525f0a1-9606-4f98-987f-73f94ec942b3",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "ARTIFACTS",
+      "bucket_name": "artifactpass-staging"
+    }
+  ],
+  "triggers": {
+    "crons": ["* * * * *"]
+  },
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "dist/client",
+    "run_worker_first": [
+      "/",
+      "/privacy",
+      "/terms",
+      "/health",
+      "/auth/*",
+      "/upload",
+      "/upload/*",
+      "/connect/*",
+      "/api/*",
+      "/a/*"
+    ]
+  }
+}
