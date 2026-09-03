@@ -235,10 +235,8 @@ export const createBridgeServer = (
     return { configuration, ...resources };
   };
 
-  const runtimeForWorkspacePath = (workspacePath?: string): BridgeRuntime =>
-    runtimeFor(workspacePath === undefined
-      ? source.defaultConfiguration()
-      : source.forWorkspacePath(workspacePath));
+  const runtimeForWorkspacePath = (workspacePath: string): BridgeRuntime =>
+    runtimeFor(source.forWorkspacePath(workspacePath));
 
   const connectionResult = (state: Awaited<ReturnType<ConnectionController["status"]>>) => ({
     content: [{ type: "text" as const, text: JSON.stringify(state) }],

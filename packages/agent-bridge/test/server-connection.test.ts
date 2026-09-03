@@ -88,18 +88,27 @@ describe("plugin-native connection through MCP", () => {
       await server.connect(serverTransport);
       await client.connect(clientTransport);
 
-      await expect(client.callTool({ name: "connection_status", arguments: {} }))
+      await expect(client.callTool({
+        name: "connection_status",
+        arguments: { workspace_path: root },
+      }))
         .resolves.toMatchObject({ structuredContent: { status: "disconnected" } });
       await expect(client.callTool({ name: "publish_artifact", arguments: { path } }))
         .resolves.toMatchObject({ isError: true });
 
-      await expect(client.callTool({ name: "connect_artifactpass", arguments: {} }))
+      await expect(client.callTool({
+        name: "connect_artifactpass",
+        arguments: { workspace_path: root },
+      }))
         .resolves.toMatchObject({ structuredContent: { status: "connecting" } });
       expect(openBrowser).toHaveBeenCalledWith(authorization.approvalUrl);
 
       approve?.({ accessToken: `as_${"a".repeat(43)}`, expiresIn: 3600 });
       await vi.waitFor(async () => {
-        const status = await client.callTool({ name: "connection_status", arguments: {} });
+        const status = await client.callTool({
+          name: "connection_status",
+          arguments: { workspace_path: root },
+        });
         expect(status.structuredContent).toMatchObject({ status: "connected" });
       });
 
@@ -107,6 +116,54 @@ describe("plugin-native connection through MCP", () => {
       expect(published.isError).not.toBe(true);
       expect(published.structuredContent).toMatchObject({ share_url: shareUrl });
       expect(fetch).toHaveBeenCalledTimes(1);
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it("requires a workspace path before selecting a connection deployment", async () => {
+    const status = vi.fn().mockResolvedValue({
+      status: "connected" as const,
+      profile: "production",
+      origin: "https://artifactpass.com",
+    });
+    const connect = vi.fn();
+    const configuration: BridgeConfiguration = {
+      profileName: "production",
+      baseUrl: new URL("https://artifactpass.com"),
+      workspaceRoots: [process.cwd()],
+      headless: true,
+      environmentStore: {
+        get: vi.fn().mockResolvedValue(`as_${"a".repeat(43)}`),
+        set: vi.fn(),
+        delete: vi.fn(),
+      },
+      connectionController: {
+        status,
+        connect,
+      },
+    };
+    const server = createBridgeServer(configuration);
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: "artifactpass-required-workspace-test", version: "0.0.0" });
+
+    try {
+      await server.connect(serverTransport);
+      await client.connect(clientTransport);
+
+      await expect(client.callTool({ name: "connection_status", arguments: {} }))
+        .resolves.toMatchObject({
+          isError: true,
+          content: [{ text: expect.stringMatching(/workspace_path/u) }],
+        });
+      await expect(client.callTool({ name: "connect_artifactpass", arguments: {} }))
+        .resolves.toMatchObject({
+          isError: true,
+          content: [{ text: expect.stringMatching(/workspace_path/u) }],
+        });
+      expect(status).not.toHaveBeenCalled();
+      expect(connect).not.toHaveBeenCalled();
     } finally {
       await client.close();
       await server.close();
