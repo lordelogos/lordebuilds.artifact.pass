@@ -15,6 +15,7 @@ describe("browser upload components", () => {
     expect(html).toContain('accept=".html,.htm,.md,.markdown,.pdf,text/html,text/markdown,application/pdf"');
     expect(html).not.toContain("multiple");
     expect(html).toContain("Choose a file");
+    expect(html).toContain("Drop a document here");
   });
 
   it("derives every expiry choice from deployment policy", () => {
@@ -28,7 +29,7 @@ describe("browser upload components", () => {
     );
 
     expect(html).toContain('value="900"');
-    expect(html).toContain('value="1800" selected=""');
+    expect(html).toContain('checked="" value="1800"');
     expect(html).toContain('value="3600"');
     expect(html).not.toContain('value="86400"');
   });

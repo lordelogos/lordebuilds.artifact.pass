@@ -312,11 +312,11 @@ test.describe("local upload page preview", () => {
 
     await page.goto(uploadUrl);
     await expect(page.getByText("handoff.md")).toBeVisible();
-    await expect(page.getByText("Drop one artifact here")).toBeHidden();
+    await expect(page.getByText("Drop a document here")).toBeHidden();
     await expect(page.getByText("Selected document")).toBeVisible();
     await expect(page.getByRole("button", { name: "Replace document" })).toBeVisible();
     await expect(page.getByText("Signed in. Review the document and expiry, then create the link.")).toBeVisible();
-    await expect(page.getByLabel("Link expires after")).toHaveValue("1800");
+    await expect(page.getByRole("radio", { name: "30 minutes" })).toBeChecked();
     await page.screenshot({ path: "test-results/u4-upload-restored.png", fullPage: true });
     expect(uploadCount).toBe(0);
   });
@@ -325,7 +325,7 @@ test.describe("local upload page preview", () => {
     await mockUploadService(page);
     await page.goto(uploadUrl);
     await expect(page.getByRole("heading", { name: /Share the work/ })).toBeVisible();
-    await expect(page.getByText("Drop one artifact here")).toBeVisible();
+    await expect(page.getByText("Drop a document here")).toBeVisible();
     await expect(page.getByRole("link", { name: "View ArtifactPass on GitHub" })).toBeVisible();
     await page.screenshot({ path: "test-results/u4-upload-desktop.png", fullPage: true });
 
@@ -334,7 +334,9 @@ test.describe("local upload page preview", () => {
     await page.screenshot({ path: "test-results/u4-upload-light.png", fullPage: true });
     await page.getByRole("button", { name: "Switch to dark mode" }).click();
 
-    await page.setViewportSize({ width: 390, height: 844 });
+    await page.setViewportSize({ width: 340, height: 844 });
+    await expect(page.getByRole("group", { name: "How long should the link work?" })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.screenshot({ path: "test-results/u4-upload-mobile.png", fullPage: true });
   });
 
@@ -360,7 +362,7 @@ test.describe("local upload page preview", () => {
     expect(multipartBody).not.toContain('name="extraction_status"');
 
     await page.getByRole("button", { name: "Share another document" }).click();
-    await expect(page.getByText("Drop one artifact here")).toBeVisible();
+    await expect(page.getByText("Drop a document here")).toBeVisible();
   });
 
   test("uploads an image-only browser PDF through the same human-only path", async ({ page }) => {

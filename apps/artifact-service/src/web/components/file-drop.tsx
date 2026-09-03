@@ -27,6 +27,10 @@ export function FileDrop({ disabled, file, onFile }: FileDropProps) {
   return (
     <div
       className={`file-drop${file === null ? "" : " file-drop--selected"}${isDragging ? " file-drop--active" : ""}`}
+      aria-disabled={disabled}
+      onClick={() => {
+        if (!disabled) input.current?.click();
+      }}
       onDragEnter={(event) => {
         event.preventDefault();
         if (!disabled) setIsDragging(true);
@@ -51,7 +55,7 @@ export function FileDrop({ disabled, file, onFile }: FileDropProps) {
       <div className="file-drop__mark" aria-hidden="true">{file === null ? "+" : fileKind(file)}</div>
       {file === null ? (
         <>
-          <p className="file-drop__title">Drop one artifact here</p>
+          <p className="file-drop__title">Drop a document here</p>
           <p className="file-drop__detail">HTML, Markdown, or PDF</p>
         </>
       ) : (
@@ -65,7 +69,10 @@ export function FileDrop({ disabled, file, onFile }: FileDropProps) {
         className="text-button"
         type="button"
         disabled={disabled}
-        onClick={() => input.current?.click()}
+        onClick={(event) => {
+          event.stopPropagation();
+          input.current?.click();
+        }}
       >
         {file === null ? "Choose a file" : "Replace document"}
       </button>

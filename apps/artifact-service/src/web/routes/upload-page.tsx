@@ -419,7 +419,17 @@ export function UploadPage() {
           )}
 
           {result === null && !automaticPublish && (
-            <>
+            <header className="upload-card-header">
+              <div>
+                <h2>Create a temporary link</h2>
+                <p>One document. You choose when access ends.</p>
+              </div>
+              <span>HTML · MD · PDF</span>
+            </header>
+          )}
+
+          {result === null && !automaticPublish && (
+            <div className="upload-form-body">
               <FileDrop disabled={busy || policy === null} file={file} onFile={(nextFile) => void chooseFile(nextFile)} />
 
               {restoredFromSignIn && (
@@ -446,12 +456,31 @@ export function UploadPage() {
                   </p>
                 </div>
               )}
-            </>
+
+              {error !== null && <p className="message message--error" role="alert">{error}</p>}
+
+              {busy && (
+                <div className="progress" role="status" aria-live="polite">
+                  <div className="progress__line">
+                    <span>{statusCopy[stage]}</span>
+                    {stage === "uploading" && progress < 100 && <span>{progress}%</span>}
+                  </div>
+                  <progress max="100" value={stage === "uploading" && progress < 100 ? progress : undefined} />
+                </div>
+              )}
+
+              <div className="upload-action-row">
+                <p>Private until you create the link.</p>
+                <button className="primary-button" type="submit" disabled={file === null || policy === null || busy}>
+                  Create temporary link
+                </button>
+              </div>
+            </div>
           )}
 
-          {error !== null && <p className="message message--error" role="alert">{error}</p>}
+          {automaticPublish && error !== null && <p className="message message--error" role="alert">{error}</p>}
 
-          {busy && (
+          {automaticPublish && busy && (
             <div className="progress" role="status" aria-live="polite">
               <div className="progress__line">
                 <span>{statusCopy[stage]}</span>
@@ -459,12 +488,6 @@ export function UploadPage() {
               </div>
               <progress max="100" value={stage === "uploading" && progress < 100 ? progress : undefined} />
             </div>
-          )}
-
-          {result === null && !automaticPublish && (
-            <button className="primary-button" type="submit" disabled={file === null || policy === null || busy}>
-              Create temporary link
-            </button>
           )}
 
           {result === null && automaticPublish && error !== null && file !== null && policy !== null && !busy && (
