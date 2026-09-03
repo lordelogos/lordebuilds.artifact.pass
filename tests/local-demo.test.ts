@@ -297,7 +297,7 @@ describe("real persistent local Cloudflare lifecycle", () => {
     await page.goto(`${baseUrl}/upload`);
     await expectPage(page.getByRole("heading", { name: /Share the work/ })).toBeVisible();
     await expectPage(page.getByRole("button", { name: "Choose a file" })).toBeVisible();
-    await expectPage(page.getByLabel("Link expires after")).toBeVisible();
+    await expectPage(page.getByRole("group", { name: "How long should the link work?" })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
     const markdownBytes = Buffer.from([

@@ -44,7 +44,7 @@ test.describe("authenticated browser sharing", () => {
       mimeType: "text/markdown",
       buffer: Buffer.from("# Browser handoff\n\nExact source from the authenticated page.\n"),
     });
-    await page.getByLabel("Link expires after").selectOption("1800");
+    await page.getByRole("radio", { name: "30 minutes" }).check();
     await page.getByRole("button", { name: "Create temporary link" }).click();
 
     const shareField = page.getByLabel("Share URL");

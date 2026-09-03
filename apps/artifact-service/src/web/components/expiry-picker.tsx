@@ -1,3 +1,5 @@
+import { useId } from "react";
+
 export interface ExpiryPickerProps {
   readonly disabled: boolean;
   readonly options: readonly number[];
@@ -12,20 +14,26 @@ export const formatDuration = (seconds: number): string => {
 };
 
 export function ExpiryPicker({ disabled, options, value, onChange }: ExpiryPickerProps) {
+  const name = useId();
+
   return (
-    <label className="field-label">
-      <span>Link expires after</span>
-      <select
-        value={value}
-        disabled={disabled}
-        onChange={(event) => onChange(Number(event.currentTarget.value))}
-      >
+    <fieldset className="expiry-picker">
+      <legend>How long should the link work?</legend>
+      <div className="expiry-picker__options">
         {options.map((seconds) => (
-          <option key={seconds} value={seconds}>
-            {formatDuration(seconds)}
-          </option>
+          <label key={seconds}>
+            <input
+              type="radio"
+              name={name}
+              value={seconds}
+              checked={value === seconds}
+              disabled={disabled}
+              onChange={() => onChange(seconds)}
+            />
+            <span>{formatDuration(seconds)}</span>
+          </label>
         ))}
-      </select>
-    </label>
+      </div>
+    </fieldset>
   );
 }
