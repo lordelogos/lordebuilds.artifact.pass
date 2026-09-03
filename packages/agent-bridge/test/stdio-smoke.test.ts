@@ -46,6 +46,10 @@ describe("built stdio bridge", () => {
       ]));
       expect(listed.tools.find((tool) => tool.name === "publish_artifact")?.annotations)
         .not.toHaveProperty("idempotentHint");
+      expect(listed.tools.find((tool) => tool.name === "connection_status")?.inputSchema)
+        .toMatchObject({ required: ["workspace_path"] });
+      expect(listed.tools.find((tool) => tool.name === "connect_artifactpass")?.inputSchema)
+        .toMatchObject({ required: ["workspace_path"] });
       for (const tool of listed.tools) {
         expect(tool.description).toContain("profile production");
         expect(tool.description).toContain("https://artifacts.example.test");
@@ -53,7 +57,7 @@ describe("built stdio bridge", () => {
 
       const connection = await client.callTool({
         name: "connection_status",
-        arguments: {},
+        arguments: { workspace_path: process.cwd() },
       });
       expect(connection.isError).not.toBe(true);
       expect(connection.structuredContent).toMatchObject({

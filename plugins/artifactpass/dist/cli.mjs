@@ -93320,7 +93320,7 @@ var webUrlSchema = external_exports.url({ protocol: /^https?$/u });
 var sha256Schema2 = external_exports.string().regex(/^[a-f0-9]{64}$/u);
 var opaqueCursorSchema = external_exports.string().regex(/^[A-Za-z0-9_-]{16,256}$/u);
 var connectionInputSchema = external_exports.object({
-  workspace_path: external_exports.string().min(1).optional().describe(
+  workspace_path: external_exports.string().min(1).describe(
     "Absolute artifact or workspace path used to select the deployment configured for this workspace."
   )
 }).strict();
@@ -93515,7 +93515,7 @@ var createBridgeServer = (configurationOrSource) => {
     }
     return { configuration, ...resources };
   };
-  const runtimeForWorkspacePath = (workspacePath) => runtimeFor(workspacePath === void 0 ? source.defaultConfiguration() : source.forWorkspacePath(workspacePath));
+  const runtimeForWorkspacePath = (workspacePath) => runtimeFor(source.forWorkspacePath(workspacePath));
   const connectionResult = (state) => ({
     content: [{ type: "text", text: JSON.stringify(state) }],
     structuredContent: state

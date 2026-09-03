@@ -18,7 +18,7 @@ export const ARTIFACTPASS_MCP_TOOL_NAMES = [
 ] as const;
 
 export const connectionInputSchema = z.object({
-  workspace_path: z.string().min(1).optional().describe(
+  workspace_path: z.string().min(1).describe(
     "Absolute artifact or workspace path used to select the deployment configured for this workspace.",
   ),
 }).strict();

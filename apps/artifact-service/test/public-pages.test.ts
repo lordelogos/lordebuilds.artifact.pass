@@ -14,7 +14,7 @@ const request = (path: string): Promise<Response> =>
 
 describe("public service pages", () => {
   it.each([
-    ["/", "ArtifactPass", "Pass work between agents."],
+    ["/", "ArtifactPass", "Pass work between agents, teammates, and humans."],
     ["/privacy", "Privacy", "Google and GitHub"],
     ["/terms", "Terms", "temporary bearer link"],
   ])("serves %s without authentication", async (path, title, copy) => {
