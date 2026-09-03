@@ -37,5 +37,8 @@ describe("npm release-candidate publishing", () => {
     }
     expect(workflow).not.toContain("NODE_AUTH_TOKEN");
     expect(workflow).not.toContain("secrets.");
+    expect(workflow).toContain("github.event.repository.visibility");
+    expect(workflow).toContain('npm publish "$package_archive" --tag rc --access public --provenance');
+    expect(workflow).toContain('npm publish "$package_archive" --tag rc --access public\n');
   });
 });

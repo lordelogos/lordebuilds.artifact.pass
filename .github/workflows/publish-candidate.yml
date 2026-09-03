@@ -52,4 +52,8 @@ jobs:
       - name: Publish candidate through npm trusted publishing
         run: |
           package_archive="$(find "$RUNNER_TEMP/artifactpass-release" -maxdepth 1 -name '*.tgz' -print -quit)"
-          npm publish "$package_archive" --tag rc --access public --provenance
+          if [ "${{ github.event.repository.visibility }}" = "public" ]; then
+            npm publish "$package_archive" --tag rc --access public --provenance
+          else
+            npm publish "$package_archive" --tag rc --access public
+          fi
