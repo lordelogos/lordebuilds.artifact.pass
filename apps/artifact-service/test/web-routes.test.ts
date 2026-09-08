@@ -95,6 +95,8 @@ describe("safe human viewers", () => {
     expect(viewer.headers.get("content-security-policy")).toContain("img-src 'self' data:");
     expect(html).toContain("<h1>Safe heading</h1>");
     expect(html).toContain('id="theme-toggle"');
+    expect(html).toContain('aria-label="Switch to light mode"');
+    expect(html).not.toContain("Exact uploaded source");
     expect(html).toContain('data-expiry-countdown="true"');
     expect(html).toContain(">Download</a>");
     expect(html).toContain(".shell{width:100%;margin:0}");
@@ -103,7 +105,9 @@ describe("safe human viewers", () => {
     expect(html).toContain('data-viewer-mode="rendered"');
     expect(html).toContain('data-viewer-mode="raw"');
     expect(html).toContain("# Safe heading");
-    expect(html).toContain('class="site-header"');
+    expect(html).toContain('class="viewer-home"');
+    expect(html).toContain('aria-label="ArtifactPass home"');
+    expect(html).not.toContain('class="site-header"');
     expect(html).not.toContain("Georgia");
     expect(html).not.toContain("<script>document.cookie");
     expect(html).not.toContain('src="https://leak.example');
@@ -136,6 +140,9 @@ describe("safe human viewers", () => {
     expect(html).toContain('sandbox=""');
     expect(html).toContain('data-viewer-mode="preview"');
     expect(html).toContain('data-viewer-mode="source"');
+    expect(html).toContain("This file contains JavaScript");
+    expect(html).toContain("Enable JavaScript");
+    expect(html).toContain('data-html-interactive-url=');
     expect(html).toContain('aria-label="HTML preview zoom"');
     expect(html).toContain('data-html-zoom="fit"');
     expect(html).toContain('data-html-zoom="reset"');
@@ -172,9 +179,31 @@ describe("safe human viewers", () => {
     expect(preview.headers.get("content-security-policy")).toContain("default-src 'none'");
     expect(preview.headers.get("content-security-policy")).toContain("style-src 'unsafe-inline'");
     expect(preview.headers.get("content-security-policy")).toContain("frame-ancestors 'self'");
+
+    const interactive = await fetch(`${created.share_url}/interactive`, undefined, request);
+    expect(await interactive.text()).toBe(source);
+    expect(interactive.headers.get("content-security-policy")).toContain("sandbox allow-scripts");
+    expect(interactive.headers.get("content-security-policy")).toContain("script-src 'unsafe-inline' blob:");
+    expect(interactive.headers.get("content-security-policy")).toContain("connect-src 'none'");
+    expect(interactive.headers.get("content-security-policy")).toContain("form-action 'none'");
+    expect(interactive.headers.get("content-security-policy")).toContain("frame-src 'none'");
+    expect(interactive.headers.get("content-security-policy")).not.toContain("allow-same-origin");
     const raw = await fetch(`${created.share_url}/raw`, undefined, request);
     expect(await raw.text()).toBe(source);
     expect(raw.headers.get("content-disposition")).toContain("attachment");
+  });
+
+  it("does not show an interactive-mode control for static HTML", async () => {
+    const created = await upload(
+      "static.html",
+      "text/html",
+      "<!doctype html><html><body><h1>Static page</h1></body></html>",
+    );
+    const html = await (await fetch(created.share_url, undefined, request)).text();
+
+    expect(html).toContain("html-preview html-preview--static");
+    expect(html).not.toContain("This file contains JavaScript");
+    expect(html).not.toContain("data-html-interactive-url");
   });
 
   it("embeds an inline PDF, supports ranges, and keeps exact download separate", async () => {
@@ -186,7 +215,7 @@ describe("safe human viewers", () => {
     expect(html).toContain('title="PDF document"');
     expect(html).toContain(`${new URL(created.share_url).pathname}/content`);
     expect(html).not.toContain('role="tablist"');
-    expect(html).not.toContain("sandbox");
+    expect(html).toContain('class="artifact-frame artifact-frame--pdf" title="PDF document" referrerPolicy="no-referrer"');
 
     const fullContent = await fetch(`${created.share_url}/content`, undefined, request);
     expect(fullContent.status).toBe(200);
@@ -233,6 +262,7 @@ describe("safe human viewers", () => {
     expect((await fetch(created.share_url, undefined, request)).status).toBe(404);
     expect((await fetch(`${created.share_url}/content`, undefined, request)).status).toBe(404);
     expect((await fetch(`${created.share_url}/preview`, undefined, request)).status).toBe(404);
+    expect((await fetch(`${created.share_url}/interactive`, undefined, request)).status).toBe(404);
   });
 
   it.each(["/dashboard", "/history", "/settings"])("does not expose %s", async (path) => {

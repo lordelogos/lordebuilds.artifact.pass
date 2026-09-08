@@ -34,8 +34,25 @@ describe("public service pages", () => {
     const markup = await (await request("/")).text();
 
     expect(markup).toContain('href="/upload"');
+    expect(markup).toContain('href="#how"');
     expect(markup).toContain('href="/privacy"');
     expect(markup).toContain('href="/terms"');
+  });
+
+  it("explains the product in plain language for people and AI agents", async () => {
+    const markup = await (await request("/")).text();
+
+    expect(markup).toContain('id="how"');
+    expect(markup).toContain("How ArtifactPass works");
+    expect(markup).toContain("A temporary link for your work.");
+    expect(markup).toContain("Pick a file.");
+    expect(markup).toContain("Pick a time.");
+    expect(markup).toContain("Send the link.");
+    expect(markup).toContain("One agent shares the file.");
+    expect(markup).toContain("The next agent opens the exact file.");
+    expect(markup).toContain("No copy-pasting. No lost formatting.");
+    expect(markup).toContain("Sign in to share.");
+    expect(markup).toContain("No sign-in to open.");
   });
 
   it("serves the approved setup-first homepage with nonce-protected interactions", async () => {

@@ -20,6 +20,25 @@ export const ArtifactPassIcon = (properties: BrandIconProps) => (
   </svg>
 );
 
+export const ThemeIcon = (properties: BrandIconProps) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    {...properties}
+  >
+    <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+    <path d="M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0-18 0" />
+    <path d="M12 3v18" />
+    <path d="m12 9 4.65-4.65" />
+    <path d="m12 14.3 7.37-7.37" />
+    <path d="m12 19.6 8.85-8.85" />
+  </svg>
+);
+
 export const GitHubIcon = (properties: BrandIconProps) => (
   <svg viewBox="0 0 438.549 438.549" {...properties}>
     <path

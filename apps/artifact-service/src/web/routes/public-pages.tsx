@@ -138,7 +138,10 @@ export const renderPublicPage = (page: PublicPage, nonce: string, requestUrl: st
       </head>
       <body>
         <div className="shell">
-          <PublicNavigation installHref={page === "home" ? "#install" : "/#install"} />
+          <PublicNavigation
+            howHref={page === "home" ? "#how" : "/#how"}
+            installHref={page === "home" ? "#install" : "/#install"}
+          />
           {pageContent(page, url)}
           <PublicFooter />
         </div>

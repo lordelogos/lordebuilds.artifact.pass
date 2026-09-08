@@ -188,6 +188,16 @@ const neutralizePreviewNode = (node: RootContent): readonly RootContent[] => {
   return [neutralized];
 };
 
+const containsJavaScript = (node: RootContent): boolean => {
+  if (node.type !== "element") return false;
+  if (node.tagName === "script") return true;
+  const hasExecutableProperty = Object.entries(node.properties).some(([name, value]) =>
+    name.toLowerCase().startsWith("on")
+    || (typeof value === "string" && /^\s*javascript:/iu.test(value))
+  );
+  return hasExecutableProperty || node.children.some((child) => containsJavaScript(child));
+};
+
 export const renderSafeMarkdown = (source: string): string => {
   const rendered = marked.parse(source, {
     async: false,
@@ -202,4 +212,9 @@ export const renderSafeHtmlPreview = (source: string): string => {
     type: "root",
     children: parsed.children.flatMap((node) => neutralizePreviewNode(node)),
   });
+};
+
+export const htmlContainsJavaScript = (source: string): boolean => {
+  const parsed = fromHtml(source);
+  return parsed.children.some((node) => containsJavaScript(node));
 };
