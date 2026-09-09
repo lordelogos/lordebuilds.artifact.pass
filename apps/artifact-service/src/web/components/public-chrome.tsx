@@ -1,7 +1,7 @@
 import { PlusSignIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
-import { ArtifactPassIcon, GitHubIcon } from "./brand-icons";
+import { ArtifactPassIcon, GitHubIcon, ThemeIcon } from "./brand-icons";
 
 export type PublicTheme = "dark" | "light";
 
@@ -23,12 +23,14 @@ export const applyPublicTheme = (theme: PublicTheme): void => {
 };
 
 export interface PublicNavigationProps {
+  readonly howHref?: string;
   readonly installHref?: string;
   readonly onThemeToggle?: () => void;
   readonly theme?: PublicTheme;
 }
 
 export const PublicNavigation = ({
+  howHref = "/#how",
   installHref = "/#install",
   onThemeToggle,
   theme,
@@ -43,6 +45,14 @@ export const PublicNavigation = ({
         ArtifactPass
       </a>
       <div className="header-actions">
+        <a
+          className="header-action header-action--how"
+          href={howHref}
+          aria-label="How ArtifactPass works"
+        >
+          <span className="header-action-label">How it works</span>
+        </a>
+        <span className="header-divider header-divider--how" aria-hidden="true" />
         <a
           className="header-action header-action--github"
           href="https://github.com/lordelogos/lordebuilds.artifact.pass"
@@ -62,14 +72,7 @@ export const PublicNavigation = ({
           title={`Switch to ${targetTheme} mode`}
           onClick={onThemeToggle}
         >
-          <svg className="theme-symbol" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path stroke="none" d="M0 0h24v24H0z" fill="none" />
-            <path d="M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0-18 0" />
-            <path d="M12 3v18" />
-            <path d="m12 9 4.65-4.65" />
-            <path d="m12 14.3 7.37-7.37" />
-            <path d="m12 19.6 8.85-8.85" />
-          </svg>
+          <ThemeIcon className="theme-symbol" aria-hidden="true" focusable="false" />
         </button>
         <span className="header-divider" aria-hidden="true" />
         <a className="header-action header-action--primary" href={installHref} aria-label="Set up ArtifactPass" title="Set up">

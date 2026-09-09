@@ -17,10 +17,14 @@ import { ArtifactError } from "../storage/artifact-error";
 import type { ArtifactRecord, ArtifactPolicy } from "../storage/artifact-types";
 import { renderSharePage, type ShareRepresentation } from "../../web/routes/share-page";
 import {
+  htmlContainsJavaScript,
   renderSafeHtmlPreview,
   renderSafeMarkdown,
 } from "../../web/viewers/content-sanitizer";
-import { HTML_PREVIEW_CONTENT_SECURITY_POLICY } from "../../web/viewers/html-preview-policy";
+import {
+  HTML_INTERACTIVE_CONTENT_SECURITY_POLICY,
+  HTML_PREVIEW_CONTENT_SECURITY_POLICY,
+} from "../../web/viewers/html-preview-policy";
 
 type ServiceFactory = (bindings: ArtifactServiceBindings) => ArtifactApplicationService;
 type PolicyFactory = (bindings: ArtifactServiceBindings) => ArtifactPolicy;
@@ -136,7 +140,12 @@ const representationFor = async (
   const source = new TextDecoder("utf-8", { fatal: true }).decode(await object.arrayBuffer());
   return artifact.mimeType === "text/markdown"
     ? { kind: "markdown", html: renderSafeMarkdown(source), source }
-    : { kind: "html", previewUrl: `${sharePath}/preview`, source };
+    : {
+        kind: "html",
+        interactiveUrl: htmlContainsJavaScript(source) ? `${sharePath}/interactive` : undefined,
+        previewUrl: `${sharePath}/preview`,
+        source,
+      };
 };
 
 type SourceDisposition = "attachment" | "inline";
@@ -150,6 +159,13 @@ const HTML_PREVIEW_HEADERS = {
   ...PUBLIC_RESPONSE_HEADERS,
   "Content-Security-Policy": HTML_PREVIEW_CONTENT_SECURITY_POLICY,
   "Content-Type": "text/html; charset=utf-8",
+} as const;
+
+const HTML_INTERACTIVE_HEADERS = {
+  ...PUBLIC_RESPONSE_HEADERS,
+  "Content-Security-Policy": HTML_INTERACTIVE_CONTENT_SECURITY_POLICY,
+  "Content-Type": "text/html; charset=utf-8",
+  "Permissions-Policy": "accelerometer=(), camera=(), geolocation=(), gyroscope=(), microphone=(), payment=(), usb=()",
 } as const;
 
 const sourceHeaders = (responseDisposition: SourceDisposition) =>
@@ -345,6 +361,22 @@ export const createSharesRouter = (
       headers: {
         ...HTML_PREVIEW_HEADERS,
         "Content-Length": String(new TextEncoder().encode(preview).byteLength),
+        "Content-Disposition": `inline; filename*=UTF-8''${encodeURIComponent(artifact.filename)}`,
+      },
+    });
+  });
+
+  router.get("/:shareToken/interactive", async (context) => {
+    const service = createService(context.env);
+    const artifact = await service.resolve(context.get("shareToken"));
+    if (artifact.mimeType !== "text/html") {
+      throw new ArtifactError("not_found", "Artifact is unavailable", 404);
+    }
+    const object = await service.getSource(artifact);
+    return new Response(object.body, {
+      headers: {
+        ...HTML_INTERACTIVE_HEADERS,
+        "Content-Length": String(artifact.byteSize),
         "Content-Disposition": `inline; filename*=UTF-8''${encodeURIComponent(artifact.filename)}`,
       },
     });

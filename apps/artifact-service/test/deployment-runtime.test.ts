@@ -34,7 +34,7 @@ describe("deployment runtime", () => {
       main?: string;
     };
     const demoConfig = JSON.parse(demoConfigSource) as {
-      assets?: { binding?: string };
+      assets?: { binding?: string; run_worker_first?: readonly string[] };
       main?: string;
     };
 
@@ -47,7 +47,10 @@ describe("deployment runtime", () => {
     });
     expect(demoConfig).toMatchObject({
       main: "src/demo/index.ts",
-      assets: { binding: "ASSETS" },
+      assets: {
+        binding: "ASSETS",
+        run_worker_first: expect.arrayContaining(["/", "/privacy", "/terms"]),
+      },
     });
   });
 

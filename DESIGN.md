@@ -68,6 +68,17 @@ Security and infrastructure are important, but they should support the task inst
 
 Do not use fear-based copy or oversized security claims.
 
+### Plain-language explanation
+
+The homepage includes a compact `How ArtifactPass works` section below the primary product demonstration. It explains the product to people who do not already know what an MCP or agent handoff is:
+
+- Pick one Markdown, HTML, or PDF file.
+- Pick a 15, 30, or 60 minute lifetime.
+- Send the temporary link. Opening it requires no account.
+- An AI agent can share the file and another agent can open the exact source without copy-pasting or losing formatting.
+
+Keep this section to two balanced columns on desktop and one column on small screens. Its desktop bullet marks are decorative structure, not required meaning, and disappear below `680px` because the column division already supplies hierarchy.
+
 ## 3. Composition and layout
 
 ### Page frame
@@ -343,9 +354,16 @@ Metadata is useful but must not push the artifact below an oversized hero.
 - A neutralized preview copy stays inside a sandboxed iframe with no permissions.
 - Scripts, executable embeds, navigation attributes, refreshes, form submission, and external resources are removed or disabled in the preview copy.
 - Inline layout and styling may remain when they do not create an external request.
-- `Source` and `Download exact file` expose the untouched original. Never rewrite the durable artifact to make the preview safe.
+- JavaScript is always disabled on first load. It never runs merely because the uploaded file contains it.
+- When the source contains JavaScript, show one compact, flat banner above the artifact. Use a small `JS` badge, the literal title `This file contains JavaScript`, and no explanatory subtext or gradient.
+- The inactive action says `Enable JavaScript`; the active action says `Disable JavaScript`. Only the active `JS` badge uses the success color.
+- Enabling JavaScript replaces the neutralized frame with a new opaque-origin frame using `sandbox="allow-scripts"`. Never grant `allow-same-origin`, top navigation, forms, popups, downloads, or storage permissions.
+- The interactive response applies a second CSP boundary that denies connections, child frames, forms, objects, and non-inline resources. ArtifactPass controls always remain outside the frame.
+- Do not call the state an “interactive preview” or add redundant enabled/disabled status copy. Do not claim absolute browser or network isolation.
+- `Preview` and `Source` remain available while JavaScript is enabled. Switching views preserves the running frame.
+- Disabling JavaScript destroys the interactive frame and creates a fresh neutralized frame. This resets all running state.
+- `Source` and `Download` expose the untouched original. Never rewrite the durable artifact to make the preview safe.
 - The frame receives the largest practical viewport.
-- ArtifactPass controls remain outside the sandbox.
 - The surrounding frame follows the ArtifactPass theme without altering the artifact itself.
 
 ### PDF
