@@ -33,6 +33,63 @@ const portableFixture = async (root: string) => {
 };
 
 describe("one-command ArtifactPass installer", () => {
+  it("recovers immediately from a fresh lock whose installer process no longer exists", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifactpass-installer-dead-lock-"));
+    const workspace = resolve(root, "workspace");
+    await mkdir(workspace);
+    const configPath = resolve(root, "config", "config.json");
+    await mkdir(resolve(root, "config"), { recursive: true });
+    await writeFile(`${configPath}.install.lock`, JSON.stringify({
+      pid: 987_654_321,
+      created_at: Date.now(),
+    }));
+    const portable = await portableFixture(root);
+
+    const receipt = await runArtifactpassInstall({
+      marketplaceSource: "/package/marketplace",
+      workspaceRoot: workspace,
+      configPath,
+      connectAfterInstall: false,
+      installKnownHostAdapters: false,
+    }, {
+      connectDependencies: { deviceFlowDependencies: { openBrowser: async () => undefined } },
+      installPortable: vi.fn().mockResolvedValue(portable),
+      smoke: vi.fn().mockResolvedValue({
+        negotiated: true,
+        tools: ["connect_artifactpass", "connection_status", "publish_artifact", "read_artifact"],
+        representativeInvocation: true,
+      }),
+      operationId: () => "recovered-operation",
+    });
+
+    expect(receipt.status).toBe("success");
+    await expect(stat(`${configPath}.install.lock`)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("keeps a fresh lock while its installer process is still running", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifactpass-installer-live-lock-"));
+    const workspace = resolve(root, "workspace");
+    await mkdir(workspace);
+    const configPath = resolve(root, "config.json");
+    await writeFile(`${configPath}.install.lock`, JSON.stringify({
+      pid: 123_456,
+      created_at: Date.now(),
+    }));
+
+    await expect(runArtifactpassInstall({
+      marketplaceSource: "/package/marketplace",
+      workspaceRoot: workspace,
+      configPath,
+      connectAfterInstall: false,
+      installKnownHostAdapters: false,
+    }, {
+      connectDependencies: { deviceFlowDependencies: { openBrowser: async () => undefined } },
+      isProcessAlive: () => true,
+    })).rejects.toThrow("Another ArtifactPass installation is already running");
+
+    await expect(stat(`${configPath}.install.lock`)).resolves.toBeDefined();
+  });
+
   it("installs the plugin and MCP without starting authentication", async () => {
     const root = await mkdtemp(resolve(tmpdir(), "artifactpass-installer-disconnected-"));
     const workspace = resolve(root, "workspace");
