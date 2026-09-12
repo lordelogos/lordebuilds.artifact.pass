@@ -16,7 +16,7 @@ import {
 
 import packageMetadata from "../package.json" with { type: "json" };
 import { connectHost, type ConnectDependencies } from "./commands/connect";
-import { detectHosts, installPluginForHosts, type HostInstallation } from "./hosts";
+import { detectHosts, installPluginForHosts, type AgentHost, type HostInstallation } from "./hosts";
 import { smokeArtifactpassMcp, type McpSmokeResult } from "./mcp-smoke";
 import {
   defaultPortableIntegrationDirectory,
@@ -168,6 +168,7 @@ export interface ArtifactpassInstallInput {
   readonly receiptDirectory?: string;
   readonly openDevelopment?: boolean;
   readonly installKnownHostAdapters?: boolean;
+  readonly hosts?: readonly AgentHost[];
   readonly connectAfterInstall?: boolean;
 }
 
@@ -178,6 +179,7 @@ export interface ArtifactpassInstallDependencies {
   readonly portableWasCreated?: typeof portableIntegrationWasCreated;
   readonly smoke?: typeof smokeArtifactpassMcp;
   readonly runner?: ProcessRunner;
+  readonly installHosts?: typeof installPluginForHosts;
   readonly platform?: NodeJS.Platform;
   readonly homeDirectory?: string;
   readonly now?: () => number;
@@ -384,6 +386,7 @@ export const runArtifactpassInstall = async (
   let connectResult: Awaited<ReturnType<typeof connectHost>> | undefined;
   let hostInstallation: HostInstallation | undefined;
   let hostRegistrationAttempted = false;
+  let attemptedHosts: readonly AgentHost[] = input.hosts ?? [];
   let configSnapshot: { readonly existed: boolean; readonly bytes?: Buffer } | undefined;
   let previousSettings: LocalBridgeSettings | null = null;
   const outcomes: string[] = [];
@@ -452,6 +455,7 @@ export const runArtifactpassInstall = async (
         marketplaceSource: installedPortable.marketplaceDirectory,
         openDevelopment: input.openDevelopment === true,
         installKnownHostAdapters: input.installKnownHostAdapters !== false,
+        ...(input.hosts === undefined ? {} : { hosts: input.hosts }),
         ...(input.configPath === undefined ? {} : { configPath }),
       }, {
         ...dependencies.connectDependencies,
@@ -476,11 +480,18 @@ export const runArtifactpassInstall = async (
         workspaceRoot,
       }, input.openDevelopment === true));
       const runner = dependencies.runner ?? runProcess;
-      const hosts = input.installKnownHostAdapters === false ? [] : await detectHosts(runner);
+      const hosts = input.installKnownHostAdapters === false
+        ? []
+        : (input.hosts ?? await detectHosts(runner));
+      attemptedHosts = hosts;
       hostRegistrationAttempted = hosts.length > 0;
       hostInstallation = hosts.length === 0
         ? undefined
-        : await installPluginForHosts(hosts, installedPortable.marketplaceDirectory, runner);
+        : await (dependencies.installHosts ?? installPluginForHosts)(
+          hosts,
+          installedPortable.marketplaceDirectory,
+          runner,
+        );
       [smoke, skills] = await Promise.all([
         (dependencies.smoke ?? smokeArtifactpassMcp)({
           mcpConfigPath: installedPortable.mcpConfig,
@@ -556,6 +567,9 @@ export const runArtifactpassInstall = async (
     return receipt;
   } catch (error) {
     const rollbackFailures: string[] = [];
+    const hostRollbackWasIncomplete = error instanceof AggregateError &&
+      error.message === "ArtifactPass host installation failed and rollback was incomplete";
+    if (hostRollbackWasIncomplete) rollbackFailures.push("host-registration");
     let hostRollbackComplete = !hostRegistrationAttempted;
     if (hostInstallation !== undefined) {
       await hostInstallation.rollback()
@@ -596,7 +610,7 @@ export const runArtifactpassInstall = async (
       profile: profileName,
       origin,
       workspace_roots: [workspaceRoot],
-      adapters: connectResult?.hosts ?? [],
+      adapters: connectResult?.hosts ?? attemptedHosts,
       portable_bundle: {
         sha256: portable?.digest ?? "",
         host_registration: "not-reached",
