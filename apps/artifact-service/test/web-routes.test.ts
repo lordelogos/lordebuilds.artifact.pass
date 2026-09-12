@@ -268,6 +268,18 @@ describe("safe human viewers", () => {
   it.each(["/dashboard", "/history", "/settings"])("does not expose %s", async (path) => {
     expect((await request(path)).status).toBe(404);
   });
+
+  it("rate-limits public capability reads by network source", async () => {
+    const created = await upload("rate-limit.md", "text/markdown", "# Limited");
+    const sharePath = new URL(created.share_url).pathname;
+    const application = createArtifactApplication({ now: Date.now, publicReadMaximumRequests: 1 });
+    const read = (suffix: string) => application.fetch(new Request(`https://artifacts.example${sharePath}${suffix}`, {
+      headers: { "cf-connecting-ip": "203.0.113.90" },
+    }), env);
+
+    expect((await read("/manifest")).status).toBe(200);
+    expect((await read("/source")).status).toBe(429);
+  });
 });
 
 // Keep requests inside the same local Worker application rather than reaching the network.

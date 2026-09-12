@@ -103,6 +103,8 @@ interface AccessPolicy {
 interface AccessOrganization { readonly auth_domain: string }
 interface WorkerDomain { readonly hostname: string; readonly service: string }
 interface WorkerScript { readonly id: string; readonly modified_on?: string; readonly etag?: string }
+interface WorkerRoute { readonly id: string; readonly pattern: string; readonly script?: string }
+interface WorkerSubdomainConfiguration { readonly enabled: boolean; readonly previews_enabled: boolean }
 interface DeploymentMarker {
   readonly version: 1;
   readonly deployment_id: string;
@@ -409,10 +411,11 @@ const approvalBinding = async (
   serviceName: string,
   dependencies: DeployDependencies,
 ): Promise<ApprovalManifest["binding"]> => {
-  const [workersSubdomain, zone, domains, databases, buckets, applications, identityProviders] = await Promise.all([
+  const [workersSubdomain, zone, domains, zoneRoutes, databases, buckets, applications, identityProviders] = await Promise.all([
     readWorkersSubdomain(input, dependencies),
     dependencies.client.request<{ readonly name: string; readonly status: string }>(`/zones/${input.zoneId}`),
     dependencies.client.request<readonly WorkerDomain[]>(`/accounts/${input.accountId}/workers/domains`),
+    dependencies.client.request<readonly WorkerRoute[]>(`/zones/${input.zoneId}/workers/routes`),
     dependencies.client.request<readonly Database[]>(
       `/accounts/${input.accountId}/d1/database?name=${encodeURIComponent(serviceName)}`,
     ),
@@ -492,9 +495,16 @@ const approvalBinding = async (
   if (input.deploymentId !== undefined && bucket !== null && r2Marker?.deployment_id !== input.deploymentId) {
     throw new Error("Existing R2 bucket is not owned by this ArtifactPass deployment");
   }
+  const worker = scripts.find((candidate) => candidate.id === serviceName);
+  const workerSubdomain = worker === undefined
+    ? null
+    : await dependencies.client.request<WorkerSubdomainConfiguration>(
+        `/accounts/${input.accountId}/workers/scripts/${encodeURIComponent(serviceName)}/subdomain`,
+      );
   if (input.productionExistingResources === true) {
     const domain = domains.find((candidate) => candidate.hostname === input.hostname);
-    const worker = scripts.find((candidate) => candidate.id === serviceName);
+    const serviceDomains = domains.filter((candidate) => candidate.service === serviceName);
+    const serviceRoutes = zoneRoutes.filter((candidate) => candidate.script === serviceName);
     const destinations = application?.destinations ?? [];
     if (
       workersSubdomain?.subdomain !== input.workersSubdomain ||
@@ -505,7 +515,11 @@ const approvalBinding = async (
       bucket === null ||
       worker === undefined ||
       application === undefined ||
-      canonicalJson(destinations) !== canonicalJson(expectedDestinations(input.hostname))
+      canonicalJson(destinations) !== canonicalJson(expectedDestinations(input.hostname)) ||
+      serviceDomains.length !== 1 ||
+      serviceRoutes.length !== 0 ||
+      workerSubdomain?.enabled !== false ||
+      workerSubdomain.previews_enabled !== false
     ) {
       throw new Error(
         "Production requires the approved existing Worker, D1, R2, custom domain, and Access application",
@@ -565,7 +579,10 @@ const approvalBinding = async (
       bucket,
       lifecycle,
       r2Marker,
-      worker: scripts.find((candidate) => candidate.id === serviceName) ?? null,
+      worker: worker ?? null,
+      workerDomains: domains.filter((candidate) => candidate.service === serviceName),
+      workerRoutes: zoneRoutes.filter((candidate) => candidate.script === serviceName),
+      workerSubdomain,
       organization,
       application: application ?? null,
       policy: policies.find((candidate) => candidate.name === "Artifact Share uploaders") ?? null,

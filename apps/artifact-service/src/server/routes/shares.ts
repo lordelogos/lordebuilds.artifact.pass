@@ -2,7 +2,7 @@ import {
   PROTOCOL_VERSION,
   sourceChunkSchema,
 } from "artifact-protocol";
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 
 import type { ArtifactServiceBindings } from "../adapters/cloudflare-bindings";
 import {
@@ -14,6 +14,7 @@ import {
   artifactRecordToManifest,
 } from "../storage/artifact-service";
 import { ArtifactError } from "../storage/artifact-error";
+import { consumeRequestRateLimit } from "../auth/rate-limit";
 import type { ArtifactRecord, ArtifactPolicy } from "../storage/artifact-types";
 import { renderSharePage, type ShareRepresentation } from "../../web/routes/share-page";
 import {
@@ -28,6 +29,15 @@ import {
 
 type ServiceFactory = (bindings: ArtifactServiceBindings) => ArtifactApplicationService;
 type PolicyFactory = (bindings: ArtifactServiceBindings) => ArtifactPolicy;
+
+const PUBLIC_READ_WINDOW_MILLISECONDS = 10 * 60 * 1_000;
+const PUBLIC_READ_MAXIMUM_REQUESTS = 600;
+
+export interface PublicReadOptions {
+  readonly now?: () => number;
+  readonly windowMilliseconds?: number;
+  readonly maximumRequests?: number;
+}
 
 export const PUBLIC_RESPONSE_HEADERS = {
   "Cache-Control": "private, no-store, max-age=0",
@@ -230,11 +240,31 @@ const sourceResponse = async (
 export const createSharesRouter = (
   createService: ServiceFactory,
   createPolicy: PolicyFactory,
+  publicReadOptions: PublicReadOptions = {},
 ) => {
   const router = new Hono<ArtifactHonoEnvironment>();
 
   router.use("/:shareToken/*", requirePublicCapability());
   router.use("/:shareToken", requirePublicCapability());
+  const consumePublicRead = async (context: Context<ArtifactHonoEnvironment>) => {
+    await consumeRequestRateLimit({
+      database: context.env.ARTIFACT_DB,
+      namespace: "public-capability-read-network",
+      source: context.req.header("cf-connecting-ip") ?? "unknown",
+      timestamp: (publicReadOptions.now ?? Date.now)(),
+      windowMilliseconds: publicReadOptions.windowMilliseconds ?? PUBLIC_READ_WINDOW_MILLISECONDS,
+      maximumRequests: publicReadOptions.maximumRequests ?? PUBLIC_READ_MAXIMUM_REQUESTS,
+      errorMessage: "Public artifact read limit exceeded; try again later",
+    });
+  };
+  router.use("/:shareToken/*", async (context, next) => {
+    await consumePublicRead(context);
+    await next();
+  });
+  router.use("/:shareToken", async (context, next) => {
+    await consumePublicRead(context);
+    await next();
+  });
 
   router.get("/:shareToken", async (context) => {
     const service = createService(context.env);

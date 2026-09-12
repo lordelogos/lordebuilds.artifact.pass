@@ -26,6 +26,7 @@ import { ArtifactApplicationService } from "./storage/artifact-service";
 import { ArtifactError } from "./storage/artifact-error";
 import { R2ArtifactObjectStore } from "./storage/r2-object-store";
 import { artifactPolicyFromBindings } from "./storage/validation";
+import { redactRequestPath } from "./observability/redact-request-path";
 import {
   publicPageHeaders,
   renderPublicPage,
@@ -40,6 +41,8 @@ export interface ArtifactApplicationOptions {
   readonly publicUploadWindowMilliseconds?: number;
   readonly publicUploadMaximumRequests?: number;
   readonly publicUploadMaximumBytes?: number;
+  readonly publicReadWindowMilliseconds?: number;
+  readonly publicReadMaximumRequests?: number;
 }
 
 const createService = (
@@ -211,6 +214,15 @@ export const createArtifactApplication = (options: ArtifactApplicationOptions = 
     createSharesRouter(
       (bindings) => createService(bindings, options),
       artifactPolicyFromBindings,
+      {
+        ...(options.now === undefined ? {} : { now: options.now }),
+        ...(options.publicReadWindowMilliseconds === undefined
+          ? {}
+          : { windowMilliseconds: options.publicReadWindowMilliseconds }),
+        ...(options.publicReadMaximumRequests === undefined
+          ? {}
+          : { maximumRequests: options.publicReadMaximumRequests }),
+      },
     ),
   );
 
@@ -230,7 +242,7 @@ export const createArtifactApplication = (options: ArtifactApplicationOptions = 
       event: "artifactpass.request_failed",
       request_id: requestId,
       method: context.req.method,
-      path: new URL(context.req.url).pathname,
+      path: redactRequestPath(new URL(context.req.url).pathname),
       error_name: error instanceof Error ? error.name : "UnknownError",
       error_message: error instanceof Error ? error.message : String(error),
       ...(error instanceof Error && error.stack !== undefined ? { stack: error.stack } : {}),

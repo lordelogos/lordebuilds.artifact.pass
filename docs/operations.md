@@ -12,6 +12,8 @@ The response must identify `lordebuilds.artifacts.share` with status `ok`, `huma
 
 Monitor Worker error rate, D1 failures, R2 failures, provider callback failures, rejected approval attempts, and scheduled cleanup failures. Do not enable request-body logging or record full `/a/` paths. Cleanup runs every minute in batches of 100 and retries records left in `cleanup_pending`.
 
+The public release limits are part of the reviewed Worker build: OAuth starts allow 20 requests per IP per 10 minutes; device authorization starts allow 10 per IP per 10 minutes; publication allows 10 attempts and 64 MiB per identity and per IP per 10 minutes; capability reads allow 600 requests per IP per 10 minutes. Rejections return `429`. Alert before activation if D1 or R2 usage reaches 70% of its daily allowance, or if `cleanup_pending` remains above 100 records for two consecutive scheduled runs.
+
 ## Public deployment checklist
 
 1. Confirm the Google and GitHub OAuth applications use the exact callbacks in [deployment](deployment.md).

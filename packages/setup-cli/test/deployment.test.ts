@@ -65,6 +65,9 @@ const fakeClient = (options: {
   serviceName?: string;
   ownershipDeploymentId?: string;
   appliedMigrations?: readonly string[];
+  workersDevEnabled?: boolean;
+  previewUrlsEnabled?: boolean;
+  workerRoutes?: readonly { readonly id: string; readonly pattern: string; readonly script?: string }[];
 } = {}) => {
   const hostname = options.hostname ?? "artifacts.example.com";
   const serviceName = options.serviceName ?? "lordebuilds-artifacts-share";
@@ -85,6 +88,13 @@ const fakeClient = (options: {
       id: serviceName,
       modified_on: options.remoteState?.workerVersion ?? "worker-v1",
     }] : [];
+    if (path.endsWith(`/workers/scripts/${serviceName}/subdomain`)) {
+      return {
+        enabled: options.workersDevEnabled ?? false,
+        previews_enabled: options.previewUrlsEnabled ?? false,
+      };
+    }
+    if (path === `/zones/${zoneId}/workers/routes`) return options.workerRoutes ?? [];
     if (path === `/zones/${zoneId}`) return { name: "example.com", status: "active" };
     if (path.includes("/d1/database?")) return options.existing ? [{ uuid: "db-id", name: serviceName }] : [];
     if (path.endsWith("/d1/database")) return { uuid: "db-id", name: serviceName };
@@ -824,6 +834,29 @@ describe("Cloudflare deployment", () => {
       writeApprovalManifest: resolve(root, "production-approval.json"),
     }, { client: client.client, deploymentRoot: root, runner })).rejects.toThrow(
       "exactly 0009-cleanup-indexes.sql",
+    );
+
+    expect(runner).not.toHaveBeenCalled();
+  });
+
+  it("stops before mutation when production has an alternate Worker ingress", async () => {
+    const root = await deploymentRoot();
+    const client = fakeClient({ existing: true, workersDevEnabled: true });
+    const runner = vi.fn();
+
+    await expect(deployArtifactShare({
+      ...input,
+      identities: [],
+      productionExistingResources: true,
+      publicAuth: {
+        googleClientId: "google-client-id",
+        googleClientSecret: "google-client-secret",
+        githubClientId: "github-client-id",
+        githubClientSecret: "github-client-secret",
+      },
+      writeApprovalManifest: resolve(root, "production-approval.json"),
+    }, { client: client.client, deploymentRoot: root, runner })).rejects.toThrow(
+      "existing Worker, D1, R2, custom domain, and Access application",
     );
 
     expect(runner).not.toHaveBeenCalled();
