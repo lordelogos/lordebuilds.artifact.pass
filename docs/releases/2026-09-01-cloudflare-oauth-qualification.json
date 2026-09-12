@@ -3,7 +3,7 @@
   "decision": "go",
   "environment": "staging",
   "client_id_sha256": "c0e6751a9596e3d02b41f3f205f1ec03a705ebf1e4ea030f7eba1abcacaea54f",
-  "account_alias": "Paulehiks@gmail.com's Account",
+  "account_alias": "artifactpass-staging-account",
   "zone_alias": "artifactpass.com",
   "profile": "companyLogin+emailCode",
   "registered_redirect": "http://127.0.0.1:8976/oauth/callback",
@@ -211,7 +211,7 @@
       "started_at": "2026-09-01T16:35:05.160Z",
       "completed_at": "2026-09-01T16:35:06.137Z",
       "detail": {
-        "account_alias": "Paulehiks@gmail.com's Account"
+        "account_alias": "artifactpass-staging-account"
       }
     },
     {
