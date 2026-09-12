@@ -441,10 +441,28 @@ describe("public ArtifactPass authentication", () => {
 
   it("uses a verified primary GitHub email", async () => {
     const start = await request("/auth/login/github?return_to=%2Fupload", { redirect: "manual" });
-    const state = new URL(start.headers.get("location") ?? "").searchParams.get("state");
-    const oauthFetch = vi.fn<typeof fetch>(async (input) => {
+    const authorization = new URL(start.headers.get("location") ?? "");
+    const state = authorization.searchParams.get("state");
+    const codeChallenge = authorization.searchParams.get("code_challenge");
+    expect(codeChallenge).toMatch(/^[A-Za-z0-9_-]{43}$/u);
+    expect(authorization.searchParams.get("code_challenge_method")).toBe("S256");
+    const oauthFetch = vi.fn<typeof fetch>(async (input, init) => {
       const url = new URL(input instanceof Request ? input.url : input.toString());
       if (url.pathname === "/login/oauth/access_token") {
+        const body = new URLSearchParams(input instanceof Request
+          ? await input.text()
+          : init?.body instanceof URLSearchParams
+            ? init.body
+            : typeof init?.body === "string"
+              ? init.body
+              : "");
+        const codeVerifier = body.get("code_verifier");
+        expect(codeVerifier).toMatch(/^[A-Za-z0-9_-]{43}$/u);
+        const digest = await crypto.subtle.digest(
+          "SHA-256",
+          new TextEncoder().encode(codeVerifier ?? ""),
+        );
+        expect(base64Url(new Uint8Array(digest))).toBe(codeChallenge);
         return Response.json({ access_token: "github-access", token_type: "bearer" });
       }
       if (url.pathname === "/user") return Response.json({ id: 456, login: "octo" });
@@ -468,6 +486,68 @@ describe("public ArtifactPass authentication", () => {
       identity_subject: "github:456",
       identity_email: "octo@example.com",
     });
+  });
+
+  it("rejects a GitHub callback when its browser-bound PKCE verifier is missing", async () => {
+    const start = await request("/auth/login/github?return_to=%2Fupload", { redirect: "manual" });
+    const state = new URL(start.headers.get("location") ?? "").searchParams.get("state");
+    const oauthFetch = vi.fn<typeof fetch>();
+
+    const callback = await request(
+      `/auth/callback/github?code=authorization-code&state=${state ?? ""}`,
+      {
+        redirect: "manual",
+        headers: { cookie: `__Host-artifactpass_oauth=${state ?? ""}` },
+      },
+      oauthFetch,
+    );
+
+    expect(callback.status).toBe(400);
+    expect(oauthFetch).not.toHaveBeenCalled();
+    expect(await env.ARTIFACT_DB.prepare(
+      "SELECT COUNT(*) AS count FROM oauth_transactions",
+    ).first("count")).toBe(1);
+  });
+
+  it("rejects an expired OAuth callback before contacting the provider", async () => {
+    const start = await request("/auth/login/google?return_to=%2Fupload", { redirect: "manual" });
+    const state = new URL(start.headers.get("location") ?? "").searchParams.get("state");
+    vi.setSystemTime(now + 11 * 60 * 1000);
+    const oauthFetch = vi.fn<typeof fetch>();
+
+    const callback = await request(
+      `/auth/callback/google?code=authorization-code&state=${state ?? ""}`,
+      { redirect: "manual", headers: { cookie: oauthCookie(start) } },
+      oauthFetch,
+    );
+
+    expect(callback.status).toBe(400);
+    expect(oauthFetch).not.toHaveBeenCalled();
+  });
+
+  it("rejects a replayed OAuth callback before contacting the provider again", async () => {
+    const start = await request("/auth/login/google?return_to=%2Fupload", { redirect: "manual" });
+    const state = new URL(start.headers.get("location") ?? "").searchParams.get("state");
+    const oauthFetch = vi.fn<typeof fetch>(async (input) => {
+      const url = new URL(input instanceof Request ? input.url : input.toString());
+      if (url.hostname === "oauth2.googleapis.com") {
+        return Response.json({ access_token: "google-access", token_type: "Bearer" });
+      }
+      if (url.hostname === "openidconnect.googleapis.com") {
+        return Response.json({
+          sub: "google-user-123",
+          email: "person@example.com",
+          email_verified: true,
+        });
+      }
+      throw new Error(`Unexpected OAuth request: ${url.toString()}`);
+    });
+    const callbackPath = `/auth/callback/google?code=authorization-code&state=${state ?? ""}`;
+    const init = { redirect: "manual" as const, headers: { cookie: oauthCookie(start) } };
+
+    expect((await request(callbackPath, init, oauthFetch)).status).toBe(302);
+    expect((await request(callbackPath, init, oauthFetch)).status).toBe(400);
+    expect(oauthFetch).toHaveBeenCalledTimes(2);
   });
 
   it("lets a signed-in person upload while rejecting cross-origin form posts", async () => {

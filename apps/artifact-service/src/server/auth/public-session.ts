@@ -12,6 +12,11 @@ export interface HumanIdentity {
   readonly email: string;
 }
 
+export interface PublicOAuthCookie {
+  readonly state: string;
+  readonly codeVerifier?: string;
+}
+
 const cookieValue = (request: Request, name: string): string | null => {
   for (const part of (request.headers.get("cookie") ?? "").split(";")) {
     const separator = part.indexOf("=");
@@ -21,9 +26,19 @@ const cookieValue = (request: Request, name: string): string | null => {
   return null;
 };
 
-export const readPublicOAuthState = (request: Request): string | null => {
-  const state = cookieValue(request, PUBLIC_OAUTH_COOKIE);
-  return state !== null && /^[A-Za-z0-9_-]{43}$/u.test(state) ? state : null;
+export const readPublicOAuthCookie = (request: Request): PublicOAuthCookie | null => {
+  const value = cookieValue(request, PUBLIC_OAUTH_COOKIE);
+  if (value === null) return null;
+  const [state, codeVerifier, ...unexpected] = value.split(".");
+  if (
+    unexpected.length > 0 ||
+    state === undefined ||
+    !/^[A-Za-z0-9_-]{43}$/u.test(state) ||
+    (codeVerifier !== undefined && !/^[A-Za-z0-9_-]{43}$/u.test(codeVerifier))
+  ) {
+    return null;
+  }
+  return { state, ...(codeVerifier === undefined ? {} : { codeVerifier }) };
 };
 
 export const readPublicSession = async (
@@ -58,8 +73,12 @@ export const createPublicSession = async (
 export const publicSessionCookie = (token: string, expiresAt: number): string =>
   `${PUBLIC_SESSION_COOKIE}=${token}; Path=/; Expires=${new Date(expiresAt).toUTCString()}; HttpOnly; Secure; SameSite=Lax`;
 
-export const publicOAuthCookie = (state: string, expiresAt: number): string =>
-  `${PUBLIC_OAUTH_COOKIE}=${state}; Path=/; Expires=${new Date(expiresAt).toUTCString()}; HttpOnly; Secure; SameSite=Lax`;
+export const publicOAuthCookie = (
+  state: string,
+  expiresAt: number,
+  codeVerifier?: string,
+): string =>
+  `${PUBLIC_OAUTH_COOKIE}=${state}${codeVerifier === undefined ? "" : `.${codeVerifier}`}; Path=/; Expires=${new Date(expiresAt).toUTCString()}; HttpOnly; Secure; SameSite=Lax`;
 
 export const expiredPublicOAuthCookie = (): string =>
   `${PUBLIC_OAUTH_COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`;
