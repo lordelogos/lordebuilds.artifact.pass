@@ -20,7 +20,7 @@
     "drizzle-orm": "^0.45.2",
     "hast-util-from-html": "^2.0.3",
     "hast-util-to-html": "^9.0.5",
-    "hono": "^4.13.2",
+    "hono": "^4.13.7",
     "jose": "^6.2.9",
     "marked": "^18.0.9",
     "pdfjs-dist": "^6.2.108",

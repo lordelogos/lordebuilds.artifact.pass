@@ -3,7 +3,10 @@ import { reset } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { ARTIFACT_SCHEMA_SQL } from "../src/server/db/schema";
-import { expireIdentityState } from "../src/server/jobs/expire-identity-state";
+import {
+  expireIdentityState,
+  type IdentityStateDatabase,
+} from "../src/server/jobs/expire-identity-state";
 
 describe("expired identity cleanup", () => {
   beforeEach(async () => {
@@ -45,5 +48,74 @@ describe("expired identity cleanup", () => {
       oauthTransactions: 1,
       webSessions: 1,
     });
+  });
+
+  it("uses indexes for expired or revoked token and session cleanup", async () => {
+    const preparedQueries: string[] = [];
+    const recordingDatabase: IdentityStateDatabase = {
+      prepare(query: string) {
+        preparedQueries.push(query);
+        return env.ARTIFACT_DB.prepare(query);
+      },
+    };
+
+    await expireIdentityState(recordingDatabase, 3, 10);
+
+    for (const table of ["agent_tokens", "web_sessions"] as const) {
+      const query = preparedQueries.find((candidate) => candidate.includes(`FROM ${table}`));
+      expect(query).toBeDefined();
+      expect(query?.match(/LIMIT \?/gu)).toHaveLength(3);
+      const plan = await env.ARTIFACT_DB.prepare(`EXPLAIN QUERY PLAN ${query}`).bind(10, 3, 10, 10)
+        .all<{ readonly detail: string }>();
+      expect(plan.results.map((row) => row.detail).join("\n")).not.toContain(`SCAN ${table}`);
+    }
+  });
+
+  it("prioritizes revoked state while keeping each cleanup result within the batch limit", async () => {
+    const statements: D1PreparedStatement[] = [];
+    for (const index of [1, 2, 3, 4]) {
+      statements.push(
+        env.ARTIFACT_DB.prepare(
+          `INSERT INTO agent_tokens
+            (id, token_hash, identity_subject, identity_email, scope, created_at, expires_at)
+           VALUES (?, ?, 'subject', 'person@example.test', 'artifact:create', 1, 2)`,
+        ).bind(`expired-token-${index}`, `expired-token-hash-${index}`),
+        env.ARTIFACT_DB.prepare(
+          `INSERT INTO web_sessions
+            (token_hash, identity_subject, identity_email, created_at, expires_at)
+           VALUES (?, 'google:user', 'person@example.test', 1, 2)`,
+        ).bind(`expired-session-${index}`),
+      );
+    }
+    statements.push(
+      env.ARTIFACT_DB.prepare(
+        `INSERT INTO agent_tokens
+          (id, token_hash, identity_subject, identity_email, scope, created_at, expires_at, revoked_at)
+         VALUES ('revoked-token', 'revoked-token-hash', 'subject', 'person@example.test', 'artifact:create', 1, 999999, 2)`,
+      ),
+      env.ARTIFACT_DB.prepare(
+        `INSERT INTO web_sessions
+          (token_hash, identity_subject, identity_email, created_at, expires_at, revoked_at)
+         VALUES ('revoked-session', 'google:user', 'person@example.test', 1, 999999, 2)`,
+      ),
+    );
+    await env.ARTIFACT_DB.batch(statements);
+
+    const result = await expireIdentityState(env.ARTIFACT_DB, 3, 2);
+
+    expect(result.agentTokens).toBe(2);
+    expect(result.webSessions).toBe(2);
+    await expect(env.ARTIFACT_DB.prepare(
+      "SELECT id FROM agent_tokens WHERE id = 'revoked-token'",
+    ).first()).resolves.toBeNull();
+    await expect(env.ARTIFACT_DB.prepare(
+      "SELECT token_hash FROM web_sessions WHERE token_hash = 'revoked-session'",
+    ).first()).resolves.toBeNull();
+    await expect(env.ARTIFACT_DB.prepare(
+      "SELECT COUNT(*) AS count FROM agent_tokens",
+    ).first<{ readonly count: number }>()).resolves.toEqual({ count: 3 });
+    await expect(env.ARTIFACT_DB.prepare(
+      "SELECT COUNT(*) AS count FROM web_sessions",
+    ).first<{ readonly count: number }>()).resolves.toEqual({ count: 3 });
   });
 });
