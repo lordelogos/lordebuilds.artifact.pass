@@ -1,20 +1,76 @@
 import { selectLocalBridgeProfile, type LocalBridgeSettings } from "agent-bridge";
 
+import type { AgentHost } from "./hosts";
+
 export interface ConnectArguments {
   readonly deploymentUrl?: string;
 }
 
-export const INSTALL_VALUE_OPTIONS: ReadonlySet<string> = new Set([
+export const WORKSPACE_VALUE_OPTIONS: ReadonlySet<string> = new Set([
   "--base-url",
   "--profile",
   "--workspace-root",
 ]);
+
+export const INSTALL_VALUE_OPTIONS: ReadonlySet<string> = new Set([
+  "--agent",
+  ...WORKSPACE_VALUE_OPTIONS,
+]);
+
+export type InstallAgent = AgentHost | "both";
+export type InstallPrompt = (question: string) => Promise<string>;
+
+export const parseInstallAgent = (args: readonly string[]): InstallAgent | undefined => {
+  const indexes = args.flatMap((argument, index) => argument === "--agent" ? [index] : []);
+  if (indexes.length > 1) throw new Error("--agent may be provided once");
+  const index = indexes[0];
+  if (index === undefined) return undefined;
+  const selected = args[index + 1];
+  if (selected === undefined || selected.startsWith("--")) throw new Error("--agent requires a value");
+  if (selected !== "codex" && selected !== "claude" && selected !== "both") {
+    throw new Error("--agent must be codex, claude, or both");
+  }
+  return selected;
+};
+
+const hostsForAgent = (agent: InstallAgent): readonly AgentHost[] =>
+  agent === "both" ? ["codex", "claude"] : [agent];
+
+export const resolveInstallAgent = async (
+  requested: InstallAgent | undefined,
+  interactive: boolean,
+  prompt: InstallPrompt,
+): Promise<readonly AgentHost[] | undefined> => {
+  if (requested !== undefined) return hostsForAgent(requested);
+  if (!interactive) return undefined;
+  const answer = (await prompt(
+    "Which agent are you installing ArtifactPass for?\n" +
+    "  1. Codex\n" +
+    "  2. Claude Code\n" +
+    "  3. Both\n" +
+    "Answer: ",
+  )).trim();
+  if (answer === "1") return ["codex"];
+  if (answer === "2") return ["claude"];
+  if (answer === "3") return ["codex", "claude"];
+  throw new Error("Enter 1, 2, or 3");
+};
 
 export const INSTALL_BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   "--open-development",
   "--no-host-install",
   "--json",
 ]);
+
+export const firstUnknownOption = (
+  args: readonly string[],
+  valueOptions: ReadonlySet<string>,
+  booleanOptions: ReadonlySet<string>,
+): string | undefined => args.find((argument, index) =>
+  !booleanOptions.has(argument) &&
+  !valueOptions.has(argument) &&
+  (index === 0 || !valueOptions.has(args[index - 1] ?? ""))
+);
 
 export const isInstallInvocation = (command: string | undefined): boolean =>
   command === undefined ||

@@ -20,8 +20,12 @@ import { disconnectHost, selectDisconnectProfile } from "./commands/disconnect";
 import {
   INSTALL_BOOLEAN_OPTIONS,
   INSTALL_VALUE_OPTIONS,
+  WORKSPACE_VALUE_OPTIONS,
+  firstUnknownOption,
   isInstallInvocation,
   parseConnectArguments,
+  parseInstallAgent,
+  resolveInstallAgent,
   resolveConnectDeploymentUrl,
 } from "./cli-arguments";
 import { CloudflareClient } from "./cloudflare/client";
@@ -112,7 +116,7 @@ const help = `ArtifactPass setup
 
 Commands:
   artifactpass [--json]
-  install [--base-url <url>] [--profile <name>] [--workspace-root <path>] [--open-development] [--no-host-install] [--json]
+  install [--agent codex|claude|both] [--base-url <url>] [--profile <name>] [--workspace-root <path>] [--open-development] [--no-host-install] [--json]
   configure [--base-url <url>] [--profile <name>] [--workspace-root <path>] [--open-development] [--json]
   deploy-public --account-id <id> --zone-id <id> --hostname <host> [--service-name <name>] --workers-subdomain <name> --pdf-key-id <id> --pdf-public-key <base64> --google-client-id <id> --github-client-id <id> (--dry-run | --write-approval-manifest <path> | --approve-manifest <path>)
   deploy [--resume <hostname-or-id> | --new] [--status] [--abandon] [--no-save-authorization] [--non-interactive] [--json]
@@ -179,24 +183,25 @@ const privateDeploymentPrompt = (): { readonly prompt: PrivateDeploymentPrompt; 
 const resolveCliWorkspaceConfiguration = async (
   args: readonly string[],
   forceInteractive: boolean,
+  providedPrompt?: WorkspaceConfigurationPrompt,
 ) => {
   const baseUrl = optionalValue(args, "--base-url");
   const profileName = optionalValue(args, "--profile");
   const workspaceRoot = resolve(optionalValue(args, "--workspace-root") ?? process.cwd());
   const openDevelopment = booleanFlag(args, "--open-development");
   const settings = await readSavedSettings();
-  const interactive = baseUrl === undefined && profileName === undefined &&
-    process.stdin.isTTY === true && process.stderr.isTTY === true && !jsonOutputRequested;
+  const terminalIsInteractive = process.stdin.isTTY === true && process.stderr.isTTY === true && !jsonOutputRequested;
+  const interactive = baseUrl === undefined && profileName === undefined && terminalIsInteractive;
   if (forceInteractive && !interactive && baseUrl === undefined && profileName === undefined) {
     throw new Error("ArtifactPass configure needs an interactive terminal or --base-url");
   }
-  const promptSession = interactive ? workspacePrompt() : undefined;
+  const promptSession = interactive && providedPrompt === undefined ? workspacePrompt() : undefined;
   try {
     const resolved = await resolveWorkspaceConfiguration({
       workspaceRoot,
       settings,
       interactive,
-      prompt: promptSession?.prompt ?? (async () => ""),
+      prompt: providedPrompt ?? promptSession?.prompt ?? (async () => ""),
       ...(baseUrl === undefined ? {} : { baseUrl }),
       ...(profileName === undefined ? {} : { profileName }),
       openDevelopment,
@@ -207,17 +212,36 @@ const resolveCliWorkspaceConfiguration = async (
   }
 };
 
+const resolveCliInstallConfiguration = async (args: readonly string[]) => {
+  const requestedAgent = parseInstallAgent(args);
+  const installKnownHostAdapters = !booleanFlag(args, "--no-host-install");
+  if (!installKnownHostAdapters && requestedAgent !== undefined) {
+    throw new Error("--agent cannot be combined with --no-host-install");
+  }
+  const terminalIsInteractive = process.stdin.isTTY === true && process.stderr.isTTY === true && !jsonOutputRequested;
+  const agentInteractive = installKnownHostAdapters && requestedAgent === undefined && terminalIsInteractive;
+  const workspaceInteractive = optionalValue(args, "--base-url") === undefined &&
+    optionalValue(args, "--profile") === undefined && terminalIsInteractive;
+  const promptSession = agentInteractive || workspaceInteractive ? workspacePrompt() : undefined;
+  try {
+    const hosts = installKnownHostAdapters
+      ? await resolveInstallAgent(requestedAgent, agentInteractive, promptSession?.prompt ?? (async () => ""))
+      : undefined;
+    const workspace = await resolveCliWorkspaceConfiguration(args, false, promptSession?.prompt);
+    return { ...workspace, hosts };
+  } finally {
+    promptSession?.close();
+  }
+};
+
 const main = async (): Promise<void> => {
   const [command, ...args] = process.argv.slice(2);
   if (isInstallInvocation(command)) {
     const installArgs = command === "install" ? args : process.argv.slice(2);
     jsonOutputRequested = booleanFlag(installArgs, "--json");
-    const unexpected = installArgs.filter((argument, index) => {
-      if (INSTALL_BOOLEAN_OPTIONS.has(argument) || INSTALL_VALUE_OPTIONS.has(argument)) return false;
-      return index === 0 || !INSTALL_VALUE_OPTIONS.has(installArgs[index - 1] ?? "");
-    });
-    if (unexpected.length > 0) throw new Error(`Unknown install option: ${unexpected[0]}`);
-    const configuration = await resolveCliWorkspaceConfiguration(installArgs, false);
+    const unexpected = firstUnknownOption(installArgs, INSTALL_VALUE_OPTIONS, INSTALL_BOOLEAN_OPTIONS);
+    if (unexpected !== undefined) throw new Error(`Unknown install option: ${unexpected}`);
+    const configuration = await resolveCliInstallConfiguration(installArgs);
     const receipt = await runArtifactpassInstall({
       marketplaceSource: defaultMarketplace,
       baseUrl: configuration.resolved.baseUrl,
@@ -226,6 +250,7 @@ const main = async (): Promise<void> => {
       openDevelopment: configuration.openDevelopment,
       connectAfterInstall: false,
       installKnownHostAdapters: !booleanFlag(installArgs, "--no-host-install"),
+      ...(configuration.hosts === undefined ? {} : { hosts: configuration.hosts }),
     }, {
       connectDependencies: {
         deviceFlowDependencies: {
@@ -241,12 +266,9 @@ const main = async (): Promise<void> => {
   }
   if (command === "configure") {
     jsonOutputRequested = booleanFlag(args, "--json");
-    const supportedOptions = new Set([...INSTALL_VALUE_OPTIONS, "--open-development", "--json"]);
-    const unexpected = args.filter((argument, index) => {
-      if (supportedOptions.has(argument)) return false;
-      return index === 0 || !INSTALL_VALUE_OPTIONS.has(args[index - 1] ?? "");
-    });
-    if (unexpected.length > 0) throw new Error(`Unknown configure option: ${unexpected[0]}`);
+    const configureBooleanOptions = new Set(["--open-development", "--json"]);
+    const unexpected = firstUnknownOption(args, WORKSPACE_VALUE_OPTIONS, configureBooleanOptions);
+    if (unexpected !== undefined) throw new Error(`Unknown configure option: ${unexpected}`);
     const configuration = await resolveCliWorkspaceConfiguration(args, true);
     const updated = applyWorkspaceConfiguration(
       configuration.settings,

@@ -228,8 +228,60 @@ describe("one-command ArtifactPass installer", () => {
     expect(renderInstallReceipt(receipt)).toContain("choose Connect ArtifactPass");
   });
 
-  it("registers a detected host from the durable marketplace without authentication", async () => {
+  it("registers only the selected host from the durable marketplace without authentication", async () => {
     const root = await mkdtemp(resolve(tmpdir(), "artifactpass-installer-host-disconnected-"));
+    const workspace = resolve(root, "workspace");
+    await mkdir(workspace);
+    const portable = await portableFixture(root);
+    const runner = vi.fn(async (command: string, args: readonly string[]) => {
+      const joined = args.join(" ");
+      if (joined === "--version") throw new Error("host detection must not run");
+      if (command === "claude" && joined === "plugin marketplace list --json") {
+        return { stdout: "[]", stderr: "" };
+      }
+      if (command === "claude" && joined === "plugin list --json") {
+        return { stdout: "[]", stderr: "" };
+      }
+      if (command === "claude" && joined === "mcp list") {
+        return { stdout: "", stderr: "" };
+      }
+      return { stdout: "{}", stderr: "" };
+    });
+
+    const receipt = await runArtifactpassInstall({
+      marketplaceSource: "/temporary/package/marketplace",
+      workspaceRoot: workspace,
+      configPath: resolve(root, "config", "config.json"),
+      connectAfterInstall: false,
+      hosts: ["claude"],
+    }, {
+      runner,
+      connectDependencies: { deviceFlowDependencies: { openBrowser: async () => undefined } },
+      installPortable: vi.fn().mockResolvedValue(portable),
+      smoke: vi.fn().mockResolvedValue({
+        negotiated: true,
+        tools: ["connect_artifactpass", "connection_status", "publish_artifact", "read_artifact"],
+        representativeInvocation: true,
+      }),
+      operationId: () => "detected-host-operation",
+    });
+
+    expect(runner).toHaveBeenCalledWith("claude", [
+      "plugin", "marketplace", "add", portable.marketplaceDirectory,
+    ]);
+    expect(runner).not.toHaveBeenCalledWith("claude", [
+      "plugin", "marketplace", "add", "/temporary/package/marketplace",
+    ]);
+    expect(runner).not.toHaveBeenCalledWith("codex", expect.anything());
+    expect(receipt).toMatchObject({
+      adapters: ["claude"],
+      credential: "none",
+      portable_bundle: { host_registration: "installed" },
+    });
+  });
+
+  it("still auto-detects hosts for programmatic callers that omit a selection", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifactpass-installer-host-detected-"));
     const workspace = resolve(root, "workspace");
     await mkdir(workspace);
     const portable = await portableFixture(root);
@@ -271,13 +323,49 @@ describe("one-command ArtifactPass installer", () => {
     expect(runner).toHaveBeenCalledWith("claude", [
       "plugin", "marketplace", "add", portable.marketplaceDirectory,
     ]);
-    expect(runner).not.toHaveBeenCalledWith("claude", [
-      "plugin", "marketplace", "add", "/temporary/package/marketplace",
-    ]);
     expect(receipt).toMatchObject({
       adapters: ["claude"],
       credential: "none",
       portable_bundle: { host_registration: "installed" },
+    });
+  });
+
+  it("reports an incomplete selected-host rollback truthfully", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifactpass-installer-host-rollback-"));
+    const workspace = resolve(root, "workspace");
+    await mkdir(workspace);
+    const portable = await portableFixture(root);
+    const installHosts = vi.fn().mockRejectedValue(new AggregateError(
+      [new Error("Claude install failed"), new Error("Codex rollback failed")],
+      "ArtifactPass host installation failed and rollback was incomplete",
+    ));
+
+    const failure = await runArtifactpassInstall({
+      marketplaceSource: "/temporary/package/marketplace",
+      workspaceRoot: workspace,
+      configPath: resolve(root, "config", "config.json"),
+      connectAfterInstall: false,
+      hosts: ["codex", "claude"],
+    }, {
+      runner: vi.fn(),
+      installHosts,
+      connectDependencies: { deviceFlowDependencies: { openBrowser: async () => undefined } },
+      installPortable: vi.fn().mockResolvedValue(portable),
+      smoke: vi.fn(),
+      operationId: () => "host-rollback-operation",
+    }).catch((error: unknown) => error);
+
+    expect(installHosts).toHaveBeenCalledWith(
+      ["codex", "claude"],
+      portable.marketplaceDirectory,
+      expect.any(Function),
+    );
+    expect(failure).toBeInstanceOf(ArtifactpassInstallError);
+    expect((failure as ArtifactpassInstallError).receipt).toMatchObject({
+      status: "failed",
+      adapters: ["codex", "claude"],
+      rollback: "incomplete",
+      rollback_failures: ["host-registration"],
     });
   });
 
@@ -481,13 +569,14 @@ describe("one-command ArtifactPass installer", () => {
     const configPath = resolve(root, "config", "config.json");
     const portable = await portableFixture(root);
     const connect = vi.fn(async (input, dependencies) => {
+      const hosts = input.hosts ?? [];
       await dependencies.verifyConnection?.({
         configPath,
         profileName: "production",
-        hosts: ["codex", "claude"],
+        hosts,
       });
       return {
-        hosts: ["codex", "claude"] as const,
+        hosts,
         profileName: "production",
         configPath,
         expiresIn: 3600,
@@ -505,6 +594,7 @@ describe("one-command ArtifactPass installer", () => {
       connectAfterInstall: true,
       workspaceRoot: workspace,
       configPath,
+      hosts: ["codex"],
     }, {
       connect,
       connectDependencies: { deviceFlowDependencies: { openBrowser: async () => undefined } },
@@ -526,7 +616,7 @@ describe("one-command ArtifactPass installer", () => {
       profile: "production",
       origin: "https://artifactpass.com",
       workspace_roots: [workspace],
-      adapters: ["codex", "claude"],
+      adapters: ["codex"],
       portable_bundle: {
         sha256: "a".repeat(64),
         host_registration: "installed",
@@ -549,6 +639,7 @@ describe("one-command ArtifactPass installer", () => {
     expect(connect).toHaveBeenCalledWith(
       expect.objectContaining({
         marketplaceSource: portable.marketplaceDirectory,
+        hosts: ["codex"],
       }),
       expect.anything(),
     );
