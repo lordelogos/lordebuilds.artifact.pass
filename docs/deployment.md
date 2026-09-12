@@ -67,6 +67,19 @@ The contained mutation order is deliberate:
 
 The deployer writes OAuth secrets to a mode-0600 temporary file used only by `wrangler deploy`, then removes the entire temporary directory on success or failure. It does not create a separate secret-only Worker deployment. Relaxing Access happens only after the contained production qualification passes.
 
+## Reversible public activation
+
+After the contained production matrix passes, write a separate activation manifest:
+
+```sh
+node packages/setup-cli/dist/cli.mjs activate-public \
+  --account-id 0123456789abcdef0123456789abcdef \
+  --hostname artifactpass.com \
+  --write-approval-manifest /private/path/artifactpass-activation-approval.json
+```
+
+Review it, then repeat with `--approve-manifest`. Activation adds one narrowly scoped, identifiable Access bypass policy and verifies that anonymous `/upload` reaches ArtifactPass sign-in. If verification fails, the command deletes that policy and confirms containment through its rollback result. Keep the original Access application and policies until the observation window closes.
+
 ## Public user connection
 
 After deployment, a user installs without authentication:

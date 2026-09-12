@@ -30,6 +30,7 @@ import {
 } from "./cli-arguments";
 import { CloudflareClient } from "./cloudflare/client";
 import type { IdentityRule } from "./cloudflare/deployment";
+import { activatePublicArtifactPass } from "./cloudflare/public-activation";
 import { runDoctor } from "./doctor";
 import type { AgentHost } from "./hosts";
 import { openBrowser } from "./open-browser";
@@ -119,6 +120,7 @@ Commands:
   install [--agent codex|claude|gemini|kimi|cursor|vscode|antigravity|other] [--base-url <url>] [--profile <name>] [--workspace-root <path>] [--open-development] [--no-host-install] [--json]
   configure [--base-url <url>] [--profile <name>] [--workspace-root <path>] [--open-development] [--json]
   deploy-public --account-id <id> --zone-id <id> --hostname <host> [--service-name <name>] --workers-subdomain <name> --pdf-key-id <id> --pdf-public-key <base64> --google-client-id <id> --github-client-id <id> [--production-existing-resources] (--dry-run | --write-approval-manifest <path> | --approve-manifest <path>)
+  activate-public --account-id <id> --hostname <host> [--service-name <name>] (--write-approval-manifest <path> | --approve-manifest <path>)
   deploy [--resume <hostname-or-id> | --new] [--status] [--abandon] [--no-save-authorization] [--non-interactive] [--json]
   deployment auth status --resume <hostname-or-id> [--json]
   deployment auth disconnect --resume <hostname-or-id> [--json]
@@ -332,6 +334,25 @@ const main = async (): Promise<void> => {
     print(jsonOutputRequested ? disconnected : disconnected.revoked
       ? `Cloudflare authorization for ${selector} was revoked and removed from the OS credential store.`
       : `Cloudflare authorization for ${selector} was removed locally. Cloudflare revocation did not complete.`);
+    return;
+  }
+  if (command === "activate-public") {
+    const writeApprovalManifest = optionalValue(args, "--write-approval-manifest");
+    const approveManifest = optionalValue(args, "--approve-manifest");
+    if ((writeApprovalManifest === undefined) === (approveManifest === undefined)) {
+      throw new Error("Choose exactly one of --write-approval-manifest or --approve-manifest");
+    }
+    const serviceName = optionalValue(args, "--service-name");
+    const result = await activatePublicArtifactPass({
+      accountId: value(args, "--account-id"),
+      hostname: value(args, "--hostname"),
+      ...(serviceName === undefined ? {} : { serviceName }),
+      ...(writeApprovalManifest === undefined ? {} : { writeApprovalManifest: resolve(writeApprovalManifest) }),
+      ...(approveManifest === undefined ? {} : { approveManifest: resolve(approveManifest) }),
+    }, {
+      client: new CloudflareClient({ token: requiredEnvironment("CLOUDFLARE_API_TOKEN") }),
+    });
+    print(result);
     return;
   }
   if (command === "deploy-public") {
