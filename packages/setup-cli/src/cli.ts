@@ -116,7 +116,7 @@ const help = `ArtifactPass setup
 
 Commands:
   artifactpass [--json]
-  install [--agent codex|claude|both] [--base-url <url>] [--profile <name>] [--workspace-root <path>] [--open-development] [--no-host-install] [--json]
+  install [--agent codex|claude|gemini|kimi|cursor|vscode|antigravity|other] [--base-url <url>] [--profile <name>] [--workspace-root <path>] [--open-development] [--no-host-install] [--json]
   configure [--base-url <url>] [--profile <name>] [--workspace-root <path>] [--open-development] [--json]
   deploy-public --account-id <id> --zone-id <id> --hostname <host> [--service-name <name>] --workers-subdomain <name> --pdf-key-id <id> --pdf-public-key <base64> --google-client-id <id> --github-client-id <id> (--dry-run | --write-approval-manifest <path> | --approve-manifest <path>)
   deploy [--resume <hostname-or-id> | --new] [--status] [--abandon] [--no-save-authorization] [--non-interactive] [--json]

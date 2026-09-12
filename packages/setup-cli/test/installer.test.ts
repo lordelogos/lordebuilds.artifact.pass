@@ -359,6 +359,7 @@ describe("one-command ArtifactPass installer", () => {
       ["codex", "claude"],
       portable.marketplaceDirectory,
       expect.any(Function),
+      workspace,
     );
     expect(failure).toBeInstanceOf(ArtifactpassInstallError);
     expect((failure as ArtifactpassInstallError).receipt).toMatchObject({

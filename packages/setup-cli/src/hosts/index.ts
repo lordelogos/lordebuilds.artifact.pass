@@ -3,8 +3,9 @@ import { join } from "node:path";
 
 import type { ProcessRunner } from "../process";
 import { runProcess } from "../process";
+import { installProjectHost, type ProjectAgentHost } from "./project-hosts";
 
-export type AgentHost = "codex" | "claude";
+export type AgentHost = "codex" | "claude" | ProjectAgentHost;
 
 export const artifactpassMarketplaceId = "artifactpass";
 export const artifactpassPluginId = "artifactpass@artifactpass";
@@ -57,7 +58,7 @@ interface MarketplaceEntry {
 
 const marketplaceSourceIsReadable = async (
   source: string,
-  host: AgentHost,
+  host: "codex" | "claude",
 ): Promise<boolean> => {
   const manifest = host === "claude"
     ? join(source, ".claude-plugin", "marketplace.json")
@@ -72,7 +73,7 @@ const codexMarketplaceIsNotConfigured = (error: unknown): boolean =>
 const marketplaceEntries = (
   value: unknown,
   label: string,
-  host: AgentHost,
+  host: "codex" | "claude",
 ): readonly MarketplaceEntry[] => {
   const entries = namedEntries(value, label);
   return entries.map((entry, index) => {
@@ -163,6 +164,7 @@ export const installPluginForHosts = async (
   hosts: readonly AgentHost[],
   marketplaceSource: string,
   runner: ProcessRunner = runProcess,
+  workspaceRoot?: string,
 ): Promise<HostInstallation> => {
   const rollbackActions: Array<() => Promise<void>> = [];
   const marketplaceRollbackActions: Array<() => Promise<void>> = [];
@@ -174,6 +176,19 @@ export const installPluginForHosts = async (
     if (errors.length > 0) throw new AggregateError(errors, "ArtifactPass host rollback was incomplete");
   };
   try {
+    const projectHosts = hosts.filter((host): host is ProjectAgentHost =>
+      host !== "codex" && host !== "claude");
+    const projectWorkspaceRoot = workspaceRoot;
+    if (projectHosts.length > 0) {
+      if (projectWorkspaceRoot === undefined) {
+        throw new Error("A workspace root is required for project-scoped agent installation");
+      }
+      for (const host of projectHosts) {
+        const installation = await installProjectHost(host, projectWorkspaceRoot, marketplaceSource);
+        rollbackActions.push(installation.rollback);
+      }
+    }
+
     if (hosts.includes("codex")) {
     const marketplaceResponse = parseJson(
       (await runner("codex", ["plugin", "marketplace", "list", "--json"])).stdout,

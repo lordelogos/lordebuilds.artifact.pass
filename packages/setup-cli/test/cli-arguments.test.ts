@@ -26,43 +26,59 @@ describe("install CLI arguments", () => {
   });
 
   it("asks which agent to install before setup continues", async () => {
-    const prompt = vi.fn().mockResolvedValue("2");
+    const prompt = vi.fn().mockResolvedValue("4");
 
-    await expect(resolveInstallAgent(undefined, true, prompt)).resolves.toEqual(["claude"]);
+    await expect(resolveInstallAgent(undefined, true, prompt)).resolves.toEqual(["kimi"]);
     expect(prompt).toHaveBeenCalledWith(
-      "Which agent are you installing ArtifactPass for?\n" +
-      "  1. Codex\n" +
-      "  2. Claude Code\n" +
-      "  3. Both\n" +
-      "Answer: ",
+      "Which agent are you setting up?\n" +
+      "1. Codex\n" +
+      "2. Claude Code\n" +
+      "3. Gemini CLI\n" +
+      "4. Kimi Code\n" +
+      "5. Cursor\n" +
+      "6. VS Code / GitHub Copilot\n" +
+      "7. Antigravity\n" +
+      "8. Other MCP client\n\n" +
+      "Choose: ",
     );
   });
 
   it("uses --agent without prompting", async () => {
     const prompt = vi.fn();
 
-    expect(parseInstallAgent(["--agent", "codex"])).toBe("codex");
-    await expect(resolveInstallAgent("both", true, prompt)).resolves.toEqual(["codex", "claude"]);
+    expect(parseInstallAgent(["--agent", "gemini"])).toBe("gemini");
+    await expect(resolveInstallAgent("vscode", true, prompt)).resolves.toEqual(["vscode"]);
     expect(prompt).not.toHaveBeenCalled();
   });
 
   it("maps every numbered agent answer and rejects an invalid answer", async () => {
-    await expect(resolveInstallAgent(undefined, true, vi.fn().mockResolvedValue("1")))
-      .resolves.toEqual(["codex"]);
-    await expect(resolveInstallAgent(undefined, true, vi.fn().mockResolvedValue("3")))
-      .resolves.toEqual(["codex", "claude"]);
-    await expect(resolveInstallAgent(undefined, true, vi.fn().mockResolvedValue("4")))
-      .rejects.toThrow("Enter 1, 2, or 3");
+    const expected = [
+      ["codex"],
+      ["claude"],
+      ["gemini"],
+      ["kimi"],
+      ["cursor"],
+      ["vscode"],
+      ["antigravity"],
+      [],
+    ] as const;
+    for (const [index, hosts] of expected.entries()) {
+      await expect(resolveInstallAgent(undefined, true, vi.fn().mockResolvedValue(String(index + 1))))
+        .resolves.toEqual(hosts);
+    }
+    await expect(resolveInstallAgent(undefined, true, vi.fn().mockResolvedValue("9")))
+      .rejects.toThrow("Enter a number from 1 to 8");
   });
 
-  it("rejects unsupported agent values and preserves non-interactive auto-detection", async () => {
-    expect(() => parseInstallAgent(["--agent", "gemini"]))
-      .toThrow("--agent must be codex, claude, or both");
+  it("rejects unsupported agent values and requires automation to select one agent", async () => {
+    expect(() => parseInstallAgent(["--agent", "both"]))
+      .toThrow("--agent must be codex, claude, gemini, kimi, cursor, vscode, antigravity, or other");
     expect(() => parseInstallAgent(["--agent"]))
       .toThrow("--agent requires a value");
     expect(() => parseInstallAgent(["--agent", "codex", "--agent", "claude"]))
       .toThrow("--agent may be provided once");
-    await expect(resolveInstallAgent(undefined, false, vi.fn())).resolves.toBeUndefined();
+    await expect(resolveInstallAgent(undefined, false, vi.fn()))
+      .rejects.toThrow("--agent is required when setup cannot ask interactively");
   });
 
   it("keeps --agent install-only", () => {
