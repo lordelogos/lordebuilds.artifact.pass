@@ -71,7 +71,8 @@ export const runDeployCommand = async (
   if (resolveToken !== undefined && token !== undefined) {
     throw new Error("Choose one Cloudflare credential source");
   }
-  if (!input.dryRun && resolveToken === undefined && (token === undefined || token.length === 0)) {
+  const requiresCredential = !input.dryRun || input.productionExistingResources === true;
+  if (requiresCredential && resolveToken === undefined && (token === undefined || token.length === 0)) {
     try {
       const authentication = JSON.parse((await runner("wrangler", ["auth", "token", "--json"])).stdout) as {
         readonly type?: string;
@@ -88,7 +89,7 @@ export const runDeployCommand = async (
       throw new Error("Log in with `wrangler login --use-keyring` or set CLOUDFLARE_API_TOKEN; the setup CLI never persists the credential");
     }
   }
-  if (!input.dryRun && resolveToken === undefined && (token === undefined || token.length === 0)) {
+  if (requiresCredential && resolveToken === undefined && (token === undefined || token.length === 0)) {
     throw new Error("Wrangler did not return a supported OAuth or API token");
   }
   if (resolveToken === undefined) {

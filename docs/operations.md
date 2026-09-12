@@ -18,8 +18,8 @@ Monitor Worker error rate, D1 failures, R2 failures, provider callback failures,
 2. Run `pnpm dlx artifactpass doctor` and a mutation-free `deploy-public --dry-run`.
 3. Expose the short-lived Cloudflare token and OAuth client secrets only to the deployment process.
 4. Write and review a state-bound approval manifest, then deploy that exact manifest.
-5. Confirm the deployer verified both provider redirects before removing the matching legacy Access application.
-6. Confirm `/health` reports ready public auth, `/upload` redirects to ArtifactPass sign-in, R2 is private, all seven D1 migrations are applied, the trusted PDF public key is configured, and the R2 lifecycle is present.
+5. Confirm the contained deployer verified both provider starts and retained the matching legacy Access application.
+6. Confirm `/health` reports ready public auth, the Access gate still contains `/upload`, R2 is private, all nine D1 migrations are applied, the trusted PDF public key is configured, and the R2 lifecycle is present.
 7. Install without connecting, then connect fresh Codex and Claude Code workspaces through Google or GitHub approval. Provision the controlled-PDF private key separately into each trusted host's OS credential store; the service distributes only the key ID and public key.
 8. Upload Markdown, hostile HTML, a human PDF, and a controlled PDF with its exact canonical source. Verify human PDFs remain human-only and controlled PDFs return only the signed canonical source to agents.
 9. Run the live two-agent handoff gate below.

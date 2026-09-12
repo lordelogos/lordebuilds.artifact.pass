@@ -45,6 +45,7 @@ export interface DeployInput {
     readonly githubClientId: string;
     readonly githubClientSecret: string;
   };
+  readonly productionExistingResources?: boolean;
   readonly privateAccess?: PrivateAccessConfiguration;
   readonly allowedExpirySeconds?: readonly number[];
   readonly authorizationBinding?: {
@@ -111,7 +112,7 @@ interface DeploymentMarker {
 }
 
 interface ApprovalManifest {
-  readonly version: 2 | 3;
+  readonly version: 2 | 3 | 4;
   readonly generated_at: string;
   readonly binding: {
     readonly input: {
@@ -131,6 +132,7 @@ interface ApprovalManifest {
       readonly githubClientId?: string;
       readonly githubClientSecretSha256?: string;
       readonly privateAccess?: PrivateAccessConfiguration;
+      readonly productionExistingResources?: boolean;
       readonly allowedExpirySeconds?: readonly number[];
       readonly authorizationBinding?: DeployInput["authorizationBinding"];
     };
@@ -176,6 +178,17 @@ export const deploymentPlan = (input: DeployInput): readonly string[] => {
   }
   if (input.publicAuth !== undefined && input.privateAccess !== undefined) {
     throw new Error("Public ArtifactPass authentication cannot include private Access configuration");
+  }
+  if (input.productionExistingResources === true && input.publicAuth === undefined) {
+    throw new Error("Production existing-resource mode requires public ArtifactPass authentication");
+  }
+  if (
+    input.productionExistingResources === true &&
+    !input.dryRun &&
+    input.writeApprovalManifest === undefined &&
+    input.approveManifest === undefined
+  ) {
+    throw new Error("Production deployment requires an approval manifest");
   }
   if (input.publicAuth !== undefined && input.allowedExpirySeconds !== undefined) {
     throw new Error("Public ArtifactPass expiry policy is fixed by the hosted service");
@@ -237,11 +250,17 @@ export const deploymentPlan = (input: DeployInput): readonly string[] => {
   if (input.publicAuth !== undefined) {
     return [
       "verify the short-lived Cloudflare API token, selected zone, and Workers account subdomain",
-      "reuse or create the private D1 database and R2 bucket",
+      input.productionExistingResources === true
+        ? "verify the approved existing Worker, D1 database, R2 bucket, custom domain, and Access gate"
+        : "reuse or create the private D1 database and R2 bucket",
       "prepare the public Worker configuration with Google and GitHub OAuth secrets",
       "apply D1 migrations and the R2 cleanup lifecycle",
-      "deploy the Worker and verify ArtifactPass authentication before removing the old Access gate",
-      "verify public sign-in, protected upload redirection, and health",
+      input.productionExistingResources === true
+        ? "deploy code and OAuth secrets atomically while retaining the Access containment gate"
+        : "deploy the Worker and verify ArtifactPass authentication before removing the old Access gate",
+      input.productionExistingResources === true
+        ? "verify provider starts, health, and the retained Access boundary"
+        : "verify public sign-in, protected upload redirection, and health",
       "print the public connection command without persisting provisioning credentials",
     ];
   }
@@ -421,7 +440,7 @@ const approvalBinding = async (
       }[]>(`/accounts/${input.accountId}/access/apps/${application.id}/policies`);
   const database = databases.find((candidate) => candidate.name === serviceName) ?? null;
   const bucket = buckets.buckets.find((candidate) => candidate.name === serviceName) ?? null;
-  const [scripts, databaseSchema, deploymentMetadata, lifecycle, r2Marker] = await Promise.all([
+  const [scripts, databaseSchema, databaseMigrations, deploymentMetadata, lifecycle, r2Marker] = await Promise.all([
     dependencies.client.request<readonly WorkerScript[]>(`/accounts/${input.accountId}/workers/scripts`),
     database === null
       ? Promise.resolve(null)
@@ -432,6 +451,15 @@ const approvalBinding = async (
             body: JSON.stringify({ sql: "SELECT name, type, sql FROM sqlite_schema ORDER BY type, name" }),
           },
         ).then((queries) => queries.flatMap((query) => query.results ?? [])),
+    database === null
+      ? Promise.resolve(null)
+      : dependencies.client.request<readonly { readonly results?: readonly { readonly name?: unknown }[] }[]>(
+          `/accounts/${input.accountId}/d1/database/${database.uuid}/query`,
+          {
+            method: "POST",
+            body: JSON.stringify({ sql: "SELECT name FROM d1_migrations ORDER BY id" }),
+          },
+        ).then((queries) => queries.flatMap((query) => query.results ?? []).map(({ name }) => name)),
     database === null || input.deploymentId === undefined
       ? Promise.resolve(null)
       : dependencies.client.request<readonly { readonly results?: readonly unknown[] }[]>(
@@ -464,6 +492,37 @@ const approvalBinding = async (
   if (input.deploymentId !== undefined && bucket !== null && r2Marker?.deployment_id !== input.deploymentId) {
     throw new Error("Existing R2 bucket is not owned by this ArtifactPass deployment");
   }
+  if (input.productionExistingResources === true) {
+    const domain = domains.find((candidate) => candidate.hostname === input.hostname);
+    const worker = scripts.find((candidate) => candidate.id === serviceName);
+    const destinations = application?.destinations ?? [];
+    if (
+      workersSubdomain?.subdomain !== input.workersSubdomain ||
+      zone.status !== "active" ||
+      (input.hostname !== zone.name && !input.hostname.endsWith(`.${zone.name}`)) ||
+      domain?.service !== serviceName ||
+      database === null ||
+      bucket === null ||
+      worker === undefined ||
+      application === undefined ||
+      canonicalJson(destinations) !== canonicalJson(expectedDestinations(input.hostname))
+    ) {
+      throw new Error(
+        "Production requires the approved existing Worker, D1, R2, custom domain, and Access application",
+      );
+    }
+    const localMigrations = (await readdir(resolve(dependencies.deploymentRoot, "migrations")))
+      .filter((name) => name.endsWith(".sql"))
+      .sort();
+    const appliedMigrations = (databaseMigrations ?? []).filter((name): name is string => typeof name === "string");
+    if (appliedMigrations.some((name) => !localMigrations.includes(name))) {
+      throw new Error("Production D1 has a migration that is not present in the reviewed candidate");
+    }
+    const pendingMigrations = localMigrations.filter((name) => !appliedMigrations.includes(name));
+    if (JSON.stringify(pendingMigrations) !== JSON.stringify(["0009-cleanup-indexes.sql"])) {
+      throw new Error("Production deployment requires exactly 0009-cleanup-indexes.sql to be pending");
+    }
+  }
   return {
     input: {
       ...(input.deploymentId === undefined ? {} : { deploymentId: input.deploymentId }),
@@ -490,6 +549,7 @@ const approvalBinding = async (
           .update(input.publicAuth.githubClientSecret).digest("hex"),
       }),
       ...(input.privateAccess === undefined ? {} : { privateAccess: input.privateAccess }),
+      ...(input.productionExistingResources === true ? { productionExistingResources: true } : {}),
       ...(input.allowedExpirySeconds === undefined ? {} : { allowedExpirySeconds: input.allowedExpirySeconds }),
       ...(input.authorizationBinding === undefined ? {} : { authorizationBinding: input.authorizationBinding }),
     },
@@ -500,6 +560,7 @@ const approvalBinding = async (
       domain: domains.find((candidate) => candidate.hostname === input.hostname) ?? null,
       database,
       databaseSchema,
+      databaseMigrations,
       deploymentMetadata,
       bucket,
       lifecycle,
@@ -577,7 +638,9 @@ export const deployArtifactShare = async (
   const serviceName = input.serviceName ?? "lordebuilds-artifacts-share";
   const baseUrl = `https://${input.hostname}`;
   const teamCommand = `pnpm dlx artifactpass --base-url ${baseUrl}`;
-  if (input.dryRun) return { baseUrl, teamCommand, plan, changed: [] };
+  if (input.dryRun && input.productionExistingResources !== true) {
+    return { baseUrl, teamCommand, plan, changed: [] };
+  }
 
   const runner = dependencies.runner ?? runProcess;
   const changed: string[] = [];
@@ -587,11 +650,32 @@ export const deployArtifactShare = async (
   let approvedRemoteLifecycle: unknown;
   const verified = await dependencies.client.verifyToken();
   if (verified.status !== "active") throw new Error("Cloudflare API token is not active");
+  if (input.dryRun) {
+    const binding = await approvalBinding(input, serviceName, dependencies);
+    const remote = binding.remote as {
+      readonly worker?: WorkerScript | null;
+      readonly database?: Database | null;
+      readonly bucket?: Bucket | null;
+      readonly application?: AccessApplication | null;
+    };
+    return {
+      baseUrl,
+      teamCommand,
+      plan,
+      changed: [],
+      resources: {
+        worker_service: remote.worker?.id ?? "",
+        d1_database_id: remote.database?.uuid ?? "",
+        r2_bucket_name: remote.bucket?.name ?? "",
+        access_application_id: remote.application?.id ?? "",
+      },
+    };
+  }
   if (input.writeApprovalManifest !== undefined || input.approveManifest !== undefined) {
     const binding = await approvalBinding(input, serviceName, dependencies);
     if (input.writeApprovalManifest !== undefined) {
       const manifest: ApprovalManifest = {
-        version: input.deploymentId === undefined ? 2 : 3,
+        version: input.productionExistingResources === true ? 4 : input.deploymentId === undefined ? 2 : 3,
         generated_at: new Date().toISOString(),
         binding,
       };
@@ -605,7 +689,7 @@ export const deployArtifactShare = async (
       };
     }
     const approved = JSON.parse(await readFile(input.approveManifest ?? "", "utf8")) as ApprovalManifest;
-    const expectedVersion = input.deploymentId === undefined ? 2 : 3;
+    const expectedVersion = input.productionExistingResources === true ? 4 : input.deploymentId === undefined ? 2 : 3;
     if (approved.version !== expectedVersion || JSON.stringify(approved.binding) !== JSON.stringify(binding)) {
       throw new Error("Hosted approval manifest no longer matches the deployment bundle or Cloudflare state");
     }
@@ -640,6 +724,9 @@ export const deployArtifactShare = async (
   }
   const workersSubdomain = await readWorkersSubdomain(input, dependencies);
   if (workersSubdomain === null) {
+    if (input.productionExistingResources === true) {
+      throw new Error("Production Workers account subdomain is missing");
+    }
     await dependencies.client.request(`/accounts/${input.accountId}/workers/subdomain`, {
       method: "PUT",
       body: JSON.stringify({ subdomain: input.workersSubdomain }),
@@ -670,6 +757,7 @@ export const deployArtifactShare = async (
   let database = databases.find((candidate) => candidate.name === databaseName);
   const databaseCreated = database === undefined;
   if (database === undefined) {
+    if (input.productionExistingResources === true) throw new Error("Production D1 database is missing");
     database = await dependencies.client.request<Database>(`/accounts/${input.accountId}/d1/database`, {
       method: "POST",
       body: JSON.stringify({ name: databaseName }),
@@ -683,6 +771,7 @@ export const deployArtifactShare = async (
   );
   const bucketCreated = !buckets.buckets.some((bucket) => bucket.name === serviceName);
   if (bucketCreated) {
+    if (input.productionExistingResources === true) throw new Error("Production R2 bucket is missing");
     await dependencies.client.request(`/accounts/${input.accountId}/r2/buckets`, {
       method: "POST",
       body: JSON.stringify({ name: serviceName }),
@@ -856,6 +945,7 @@ export const deployArtifactShare = async (
   }
   const temporaryRoot = await mkdtemp(resolve(tmpdir(), "artifact-share-deploy-"));
   const configurationPath = resolve(temporaryRoot, "wrangler.json");
+  const secretsPath = resolve(temporaryRoot, "secrets.json");
   try {
     await writeFile(configurationPath, JSON.stringify(template), { mode: 0o600 });
     const lifecycleMaximum = input.publicAuth === undefined
@@ -928,15 +1018,15 @@ export const deployArtifactShare = async (
       resourceIdentities.r2_marker_operation_id = marker.creation_operation_id;
     }
     if (input.publicAuth !== undefined) {
-      await runner("wrangler", ["secret", "bulk", "--config", configurationPath], {
-        env: commandEnvironment,
-        input: JSON.stringify({
+      await writeFile(secretsPath, JSON.stringify({
           GOOGLE_OAUTH_CLIENT_SECRET: input.publicAuth.googleClientSecret,
           GITHUB_OAUTH_CLIENT_SECRET: input.publicAuth.githubClientSecret,
-        }),
-      });
+        }), { mode: 0o600 });
     }
-    await runner("wrangler", ["deploy", "--config", configurationPath, "--strict"], { env: commandEnvironment });
+    await runner("wrangler", [
+      "deploy", "--config", configurationPath, "--strict",
+      ...(input.publicAuth === undefined ? [] : ["--secrets-file", secretsPath]),
+    ], { env: commandEnvironment });
     changed.push("Worker deployment");
     resourceIdentities.worker_service = serviceName;
   } finally {
@@ -994,6 +1084,36 @@ export const deployArtifactShare = async (
       if (login.status !== 302 || location === null || new URL(location).origin !== expectedOrigin) {
         throw new Error(`ArtifactPass ${provider} authentication check failed (${login.status})`);
       }
+    }
+    if (input.productionExistingResources === true) {
+      if (organization === null) throw new Error("Cloudflare Access organization is unavailable");
+      const containedUpload = await fetchAfterDeploymentPropagation(
+        fetchImplementation,
+        `${baseUrl}/upload`,
+        { redirect: "manual" },
+        sleep,
+        readinessTimeoutMilliseconds,
+      );
+      const location = containedUpload.headers.get("location");
+      const accessHostname = new URL(`https://${organization.auth_domain}`).hostname;
+      if (
+        ![302, 303, 307, 401, 403].includes(containedUpload.status) ||
+        (location !== null && new URL(location, baseUrl).hostname !== accessHostname)
+      ) {
+        throw new Error(`Cloudflare Access did not retain the production upload boundary (${containedUpload.status})`);
+      }
+      return {
+        baseUrl,
+        teamCommand,
+        plan,
+        changed,
+        ...(Object.keys(resourceIdentities).length === 0 ? {} : { resources: resourceIdentities }),
+        verification: {
+          health: "passed",
+          protectedUpload: "passed",
+          verifiedAt: new Date().toISOString(),
+        },
+      };
     }
     let removedLegacyAccess = false;
     if (application !== undefined) {
