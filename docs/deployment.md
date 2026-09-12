@@ -58,7 +58,7 @@ The mutation order is deliberate:
 
 1. Reuse or create D1 and R2, then apply migrations and lifecycle policy.
 2. Store Google and GitHub client secrets as Cloudflare Worker secrets.
-3. Deploy with public expiry limited to 15, 30, or 60 minutes.
+3. Deploy with public human choices of 1 hour, 1 day, or 7 days, while retaining 15- and 30-minute API presets.
 4. Verify health says ArtifactPass authentication is fully configured.
 5. Verify the sign-in page and both provider redirects.
 6. Remove only the matching legacy Cloudflare Access application.

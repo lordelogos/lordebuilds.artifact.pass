@@ -90,6 +90,93 @@ describe("one-command ArtifactPass installer", () => {
     await expect(stat(`${configPath}.install.lock`)).resolves.toBeDefined();
   });
 
+  it("recovers an expired lock even when its PID has been reused", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifactpass-installer-reused-pid-"));
+    const workspace = resolve(root, "workspace");
+    await mkdir(workspace);
+    const configPath = resolve(root, "config", "config.json");
+    await mkdir(resolve(root, "config"), { recursive: true });
+    const createdAt = Date.now();
+    await writeFile(`${configPath}.install.lock`, JSON.stringify({
+      pid: process.pid,
+      created_at: createdAt,
+    }));
+    const portable = await portableFixture(root);
+
+    const receipt = await runArtifactpassInstall({
+      marketplaceSource: "/package/marketplace",
+      workspaceRoot: workspace,
+      configPath,
+      connectAfterInstall: false,
+      installKnownHostAdapters: false,
+    }, {
+      connectDependencies: { deviceFlowDependencies: { openBrowser: async () => undefined } },
+      installPortable: vi.fn().mockResolvedValue(portable),
+      smoke: vi.fn().mockResolvedValue({
+        negotiated: true,
+        tools: ["connect_artifactpass", "connection_status", "publish_artifact", "read_artifact"],
+        representativeInvocation: true,
+      }),
+      isProcessAlive: () => true,
+      now: () => createdAt + 10 * 60_000,
+      operationId: () => "reused-pid-operation",
+    });
+
+    expect(receipt.status).toBe("success");
+    await expect(stat(`${configPath}.install.lock`)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("allows only one installer to take over the same stale lock", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifactpass-installer-lock-race-"));
+    const workspace = resolve(root, "workspace");
+    await mkdir(workspace);
+    const configPath = resolve(root, "config", "config.json");
+    await mkdir(resolve(root, "config"), { recursive: true });
+    await writeFile(`${configPath}.install.lock`, JSON.stringify({
+      pid: 987_654_321,
+      created_at: Date.now(),
+    }));
+    const portable = await portableFixture(root);
+    let unblock: (() => void) | undefined;
+    const blocked = new Promise<void>((resolveBlocked) => {
+      unblock = resolveBlocked;
+    });
+    const installPortable = vi.fn(async () => {
+      await blocked;
+      return portable;
+    });
+    const input = {
+      marketplaceSource: "/package/marketplace",
+      workspaceRoot: workspace,
+      configPath,
+      connectAfterInstall: false,
+      installKnownHostAdapters: false,
+    } as const;
+    const dependencies = (operationId: string) => ({
+      connectDependencies: { deviceFlowDependencies: { openBrowser: async () => undefined } },
+      installPortable,
+      smoke: vi.fn().mockResolvedValue({
+        negotiated: true,
+        tools: ["connect_artifactpass", "connection_status", "publish_artifact", "read_artifact"] as const,
+        representativeInvocation: true,
+      }),
+      operationId: () => operationId,
+    });
+
+    const installs = Promise.allSettled([
+      runArtifactpassInstall(input, dependencies("race-one")),
+      runArtifactpassInstall(input, dependencies("race-two")),
+    ]);
+    await vi.waitFor(() => expect(installPortable).toHaveBeenCalled());
+    unblock?.();
+    const results = await installs;
+
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+    expect(installPortable).toHaveBeenCalledTimes(1);
+    await expect(stat(`${configPath}.install.lock`)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("installs the plugin and MCP without starting authentication", async () => {
     const root = await mkdtemp(resolve(tmpdir(), "artifactpass-installer-disconnected-"));
     const workspace = resolve(root, "workspace");

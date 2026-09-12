@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 
 import { createArtifactApplication } from "../src/server/index";
+import { renderPublicPage } from "../src/web/routes/public-pages";
 
 const requestFrom = (origin: string, path: string): Promise<Response> =>
   Promise.resolve(createArtifactApplication().fetch(
@@ -55,6 +56,31 @@ describe("public service pages", () => {
     expect(markup).toContain("No sign-in to open.");
   });
 
+  it("presents one-hour, one-day, and seven-day public sharing choices", async () => {
+    const markup = await (await request("/")).text();
+
+    expect(markup).toMatch(/name="expiry"[^>]*value="3600"/u);
+    expect(markup).toMatch(/name="expiry"[^>]*value="86400"/u);
+    expect(markup).toMatch(/name="expiry"[^>]*value="604800"/u);
+    expect(markup).not.toMatch(/name="expiry"[^>]*value="900"/u);
+    expect(markup).not.toMatch(/name="expiry"[^>]*value="1800"/u);
+    expect(markup).toContain("1 hour, 1 day, or 7 days.");
+  });
+
+  it("preserves an administrator's configured choices on a private deployment", () => {
+    const markup = renderPublicPage("home", "nonce", "https://artifacts.example.com", {
+      deploymentMode: "private",
+      allowedExpirySeconds: [900, 3600, 86_400],
+    });
+
+    expect(markup).toMatch(/name="expiry"[^>]*value="900"/u);
+    expect(markup).toMatch(/name="expiry"[^>]*value="3600"/u);
+    expect(markup).toMatch(/name="expiry"[^>]*value="86400"/u);
+    expect(markup).not.toMatch(/name="expiry"[^>]*value="604800"/u);
+    expect(markup).toContain("15 minutes, 1 hour, or 1 day.");
+    expect(markup).not.toContain("1 hour, 1 day, or 7 days.");
+  });
+
   it("serves the approved setup-first homepage with nonce-protected interactions", async () => {
     const response = await request("/");
     const markup = await response.text();
@@ -62,6 +88,7 @@ describe("public service pages", () => {
 
     expect(markup).toContain("MCP + Agent Skills");
     expect(markup).toContain("pnpm dlx artifactpass@rc --base-url https://staging.artifactpass.com");
+    expect(markup).toContain("Setup applies only to the project folder you run it from.");
     expect(markup).toContain("Exact, temporary artifact handoffs for developers and agentic teams.");
     expect(markup).toContain('id="theme-toggle"');
     expect(markup).toContain("theme-symbol");

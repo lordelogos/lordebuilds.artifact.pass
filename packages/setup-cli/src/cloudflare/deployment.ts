@@ -3,6 +3,8 @@ import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
+import { PUBLIC_EXPIRY_POLICY } from "artifact-protocol";
+
 import type { ProcessRunner } from "../process";
 import { runProcess } from "../process";
 import { CloudflareApiError, CloudflareClient } from "./client";
@@ -176,7 +178,7 @@ export const deploymentPlan = (input: DeployInput): readonly string[] => {
     throw new Error("Public ArtifactPass authentication cannot include private Access configuration");
   }
   if (input.publicAuth !== undefined && input.allowedExpirySeconds !== undefined) {
-    throw new Error("Public ArtifactPass expiry policy is fixed at 15, 30, and 60 minutes");
+    throw new Error("Public ArtifactPass expiry policy is fixed by the hosted service");
   }
   for (const identity of input.identities) {
     const valid = identity.kind === "authenticated"
@@ -830,8 +832,8 @@ export const deployArtifactShare = async (
     template.vars.HUMAN_AUTH_MODE = "artifactpass";
     template.vars.GOOGLE_OAUTH_CLIENT_ID = input.publicAuth.googleClientId;
     template.vars.GITHUB_OAUTH_CLIENT_ID = input.publicAuth.githubClientId;
-    template.vars.ALLOWED_EXPIRY_SECONDS = "900,1800,3600";
-    template.vars.MAX_EXPIRY_SECONDS = "3600";
+    template.vars.ALLOWED_EXPIRY_SECONDS = PUBLIC_EXPIRY_POLICY.allowed_seconds.join(",");
+    template.vars.MAX_EXPIRY_SECONDS = String(PUBLIC_EXPIRY_POLICY.maximum_seconds);
   }
   if (input.pdfKeyId !== undefined && input.pdfPublicKey !== undefined) {
     template.vars.PDF_PROVENANCE_KEY_ID = input.pdfKeyId;
@@ -856,13 +858,16 @@ export const deployArtifactShare = async (
   const configurationPath = resolve(temporaryRoot, "wrangler.json");
   try {
     await writeFile(configurationPath, JSON.stringify(template), { mode: 0o600 });
-    const lifecyclePath = input.allowedExpirySeconds === undefined
+    const lifecycleMaximum = input.publicAuth === undefined
+      ? input.allowedExpirySeconds?.at(-1)
+      : PUBLIC_EXPIRY_POLICY.maximum_seconds;
+    const lifecyclePath = lifecycleMaximum === undefined
       ? resolve(dependencies.deploymentRoot, "storage-lifecycle.json")
       : resolve(temporaryRoot, "storage-lifecycle.json");
-    if (input.allowedExpirySeconds !== undefined) {
+    if (lifecycleMaximum !== undefined) {
       await writeFile(
         lifecyclePath,
-        JSON.stringify(storageLifecycleForMaximumExpiry(input.allowedExpirySeconds.at(-1) as number)),
+        JSON.stringify(storageLifecycleForMaximumExpiry(lifecycleMaximum)),
         { mode: 0o600 },
       );
     }
@@ -886,9 +891,9 @@ export const deployArtifactShare = async (
       "r2", "bucket", "lifecycle", "set", serviceName,
       "--file", lifecyclePath, "--force",
     ], { env: commandEnvironment });
-    const desiredLifecycle = input.allowedExpirySeconds === undefined
+    const desiredLifecycle = lifecycleMaximum === undefined
       ? JSON.parse(await readFile(lifecyclePath, "utf8")) as unknown
-      : storageLifecycleForMaximumExpiry(input.allowedExpirySeconds.at(-1) as number);
+      : storageLifecycleForMaximumExpiry(lifecycleMaximum);
     if (
       input.approveManifest !== undefined &&
       approvedRemoteLifecycle !== undefined &&

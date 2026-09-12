@@ -48,7 +48,7 @@ try {
   if (
     JSON.stringify(packedManifest.dependencies) !== JSON.stringify({
       "@modelcontextprotocol/client": "2.0.0",
-      wrangler: "4.123.0",
+      wrangler: "4.131.1",
     })
   ) fail("setup CLI runtime dependencies differ from the reviewed manifest");
   if (packedManifest.scripts?.preinstall !== undefined || packedManifest.scripts?.postinstall !== undefined) {

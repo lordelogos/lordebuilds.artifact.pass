@@ -1,7 +1,7 @@
 {
   "rules": [
     {
-      "id": "delete-artifact-objects-after-two-days",
+      "id": "artifactpass-managed-retention",
       "enabled": true,
       "conditions": {
         "prefix": "artifacts/"
@@ -9,7 +9,7 @@
       "deleteObjectsTransition": {
         "condition": {
           "type": "Age",
-          "maxAge": 172800
+          "maxAge": 691200
         }
       }
     }

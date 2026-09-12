@@ -6,7 +6,11 @@ import {
 } from "artifact-protocol";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { ExpiryPicker } from "../components/expiry-picker";
+import {
+  ExpiryPicker,
+  expiryOptionsForHumans,
+  formatDurationList,
+} from "../components/expiry-picker";
 import { FileDrop } from "../components/file-drop";
 import { prepareBrowserFile } from "../file-validation";
 import {
@@ -31,6 +35,7 @@ type UploadResult = UploadResponse;
 
 interface UploadPreflight {
   readonly authenticated: boolean;
+  readonly deploymentMode: "public" | "private";
   readonly policy: UploadPolicy;
 }
 
@@ -44,12 +49,15 @@ const readUploadPreflight = async (signal?: AbortSignal): Promise<UploadPrefligh
   if (
     typeof body !== "object" || body === null ||
     !("authenticated" in body) || typeof body.authenticated !== "boolean" ||
+    !("deployment_mode" in body) ||
+    (body.deployment_mode !== "public" && body.deployment_mode !== "private") ||
     !("policy" in body)
   ) {
     throw new Error("The upload policy is unavailable.");
   }
   return {
     authenticated: body.authenticated,
+    deploymentMode: body.deployment_mode,
     policy: protocolLimitsSchema.parse(body.policy),
   };
 };
@@ -189,7 +197,7 @@ export function UploadPage() {
   const automaticPublishStarted = useRef(false);
   const publicationIdentity = useRef<PublicationIdentity | null>(null);
   const [theme, setTheme] = useState<PublicTheme>(readPublicTheme);
-  const [policy, setPolicy] = useState<UploadPolicy | null>(null);
+  const [preflight, setPreflight] = useState<UploadPreflight | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [expiresInSeconds, setExpiresInSeconds] = useState(0);
   const [stage, setStage] = useState<UploadStage>("idle");
@@ -198,6 +206,7 @@ export function UploadPage() {
   const [result, setResult] = useState<UploadResult | null>(null);
   const [copiedShareUrl, setCopiedShareUrl] = useState<string | null>(null);
   const [restoredFromSignIn, setRestoredFromSignIn] = useState(false);
+  const policy = preflight?.policy ?? null;
 
   useEffect(() => {
     applyPublicTheme(theme);
@@ -211,8 +220,12 @@ export function UploadPage() {
           window.location.assign(signInUrl());
           return;
         }
-        setPolicy(preflight.policy);
-        setExpiresInSeconds(preflight.policy.expiry.allowed_seconds[0] ?? 0);
+        const expiryOptions = expiryOptionsForHumans(
+          preflight.policy.expiry.allowed_seconds,
+          preflight.deploymentMode,
+        );
+        setPreflight(preflight);
+        setExpiresInSeconds(expiryOptions[0] ?? 0);
       })
       .catch((caught: unknown) => {
         if (!controller.signal.aborted) {
@@ -264,6 +277,15 @@ export function UploadPage() {
   }, [automaticPublish, policy]);
 
   const busy = stage !== "idle" && stage !== "complete";
+  const humanExpiryOptions = useMemo(
+    () => preflight === null
+      ? []
+      : expiryOptionsForHumans(
+          preflight.policy.expiry.allowed_seconds,
+          preflight.deploymentMode,
+        ),
+    [preflight],
+  );
   const cutoff = useMemo(
     () => result === null ? null : new Date(result.manifest.expires_at),
     [result],
@@ -390,7 +412,7 @@ export function UploadPage() {
           </p>
           <div className="share-principles" aria-label="Sharing guarantees">
             <span><strong>One file</strong>Exact uploaded source</span>
-            <span><strong>One link</strong>15, 30, or 60 minutes</span>
+            <span><strong>One link</strong>{formatDurationList(humanExpiryOptions)}</span>
             <span><strong>No history</strong>Access ends at the cutoff</span>
           </div>
         </div>}
@@ -444,7 +466,7 @@ export function UploadPage() {
                 <div className="form-row">
                   <ExpiryPicker
                     disabled={busy}
-                    options={policy.expiry.allowed_seconds}
+                    options={humanExpiryOptions}
                     value={expiresInSeconds}
                     onChange={(nextExpiry) => {
                       publicationIdentity.current = null;

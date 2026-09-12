@@ -1,7 +1,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { ExpiryPicker } from "../src/web/components/expiry-picker";
+import {
+  ExpiryPicker,
+  expiryOptionsForHumans,
+  formatDuration,
+} from "../src/web/components/expiry-picker";
 import { FileDrop } from "../src/web/components/file-drop";
 import { prepareBrowserFile } from "../src/web/file-validation";
 
@@ -32,6 +36,20 @@ describe("browser upload components", () => {
     expect(html).toContain('checked="" value="1800"');
     expect(html).toContain('value="3600"');
     expect(html).not.toContain('value="86400"');
+  });
+
+  it("recommends hour, day, and week choices to public human uploaders", () => {
+    const allowed = [900, 1800, 3600, 86_400, 604_800];
+
+    expect(expiryOptionsForHumans(allowed, "public")).toEqual([
+      3600,
+      86_400,
+      604_800,
+    ]);
+    expect(expiryOptionsForHumans(allowed, "private")).toEqual(allowed);
+    expect(formatDuration(3600)).toBe("1 hour");
+    expect(formatDuration(86_400)).toBe("1 day");
+    expect(formatDuration(604_800)).toBe("7 days");
   });
 
   it("rejects unsupported, mismatched and oversized files before upload", async () => {

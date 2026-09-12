@@ -1,3 +1,5 @@
+import { PUBLIC_EXPIRY_POLICY } from "artifact-protocol";
+
 export interface LocalDemoConfigurationOptions {
   readonly name: string;
   readonly workerEntry: string;
@@ -12,9 +14,9 @@ export const createLocalDemoConfiguration = (options: LocalDemoConfigurationOpti
   compatibility_date: "2026-08-16",
   dev: { inspector_port: 0 },
   vars: {
-    ALLOWED_EXPIRY_SECONDS: "900,1800,3600,43200,86400",
+    ALLOWED_EXPIRY_SECONDS: PUBLIC_EXPIRY_POLICY.allowed_seconds.join(","),
     MAX_ARTIFACT_BYTES: "26214400",
-    MAX_EXPIRY_SECONDS: "86400",
+    MAX_EXPIRY_SECONDS: String(PUBLIC_EXPIRY_POLICY.maximum_seconds),
     LOCAL_TEST_CONTROL_TOKEN: options.controlToken,
     PDF_PROVENANCE_PUBLIC_KEYS: JSON.stringify({ "local-test": options.pdfPublicKey }),
     PDF_PROVENANCE_RENDERERS: "artifact-share-qualified-pdf@1",

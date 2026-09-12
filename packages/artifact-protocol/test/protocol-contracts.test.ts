@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   DEFAULT_EXPIRY_POLICY,
+  PUBLIC_EXPIRY_POLICY,
   PROTOCOL_VERSION,
   artifactManifestSchema,
   expiryPolicySchema,
@@ -85,10 +86,22 @@ describe("expiry policy", () => {
   it("accepts every default preset", () => {
     const policy = expiryPolicySchema.parse(DEFAULT_EXPIRY_POLICY);
 
-    expect(policy.allowed_seconds).toEqual([900, 1800, 3600, 43200, 86400]);
+    expect(policy.allowed_seconds).toEqual([900, 1800, 3600, 43_200, 86_400, 604_800]);
     expect(policy.allowed_seconds.every((value) => value <= policy.maximum_seconds)).toBe(
       true,
     );
+  });
+
+  it("keeps the hosted public presets separate from compatibility defaults", () => {
+    expect(expiryPolicySchema.parse(PUBLIC_EXPIRY_POLICY).allowed_seconds).toEqual([
+      900,
+      1800,
+      3600,
+      86_400,
+      604_800,
+    ]);
+    expect(PUBLIC_EXPIRY_POLICY.allowed_seconds).not.toContain(43_200);
+    expect(DEFAULT_EXPIRY_POLICY.allowed_seconds).toContain(43_200);
   });
 
   it("rejects duplicate, unordered, and over-maximum presets", () => {

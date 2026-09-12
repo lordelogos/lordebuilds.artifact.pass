@@ -154,9 +154,12 @@ describe("private deployment authorization orchestration", () => {
     expect(fetchImplementation.mock.calls.filter(([input]) => String(input).endsWith("/revoke"))).toHaveLength(2);
   });
 
-  it("fails closed for a stable production client until its packaged ID is published", () => {
-    expect(() => resolveCloudflareOAuthClientConfiguration({
+  it("uses the packaged production OAuth client", () => {
+    expect(resolveCloudflareOAuthClientConfiguration({
       ARTIFACTPASS_CLOUDFLARE_OAUTH_ENVIRONMENT: "production",
-    })).toThrow("production ArtifactPass Cloudflare OAuth client is not published");
+    })).toEqual({
+      environment: "production",
+      clientId: "1a37b84fc5a2cca7963b359ff382e67c",
+    });
   });
 });
