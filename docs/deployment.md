@@ -23,14 +23,14 @@ The client IDs are non-secret deployment inputs. Keep both client secrets in the
 
 ## Cloudflare access
 
-Use a short-lived Cloudflare token with Workers Scripts Write, Workers Routes Write, D1 Write, Workers R2 Storage Write, Zone Read, Access: Apps and Policies Write, and Access: Organizations, Identity Providers, and Groups Read. The Access permissions are temporarily required to identify and remove the old path-scoped Access application after ArtifactPass login is proven healthy.
+Use a short-lived Cloudflare token with Workers Scripts Write, Workers Routes Write, D1 Write, Workers R2 Storage Write, Zone Read, Access: Apps and Policies Write, and Access: Organizations, Identity Providers, and Groups Read. The Access permissions are required to bind the approval manifest to the existing containment gate. Public activation is a later, separate operation.
 
-Load the token and provider secrets without placing their values in shell history. On macOS, the Cloudflare token can come from the Keychain entry created during the earlier setup; the provider prompts remain silent:
+Load all three credentials from the operator's secret store without placing their values in shell history. On macOS, the production entries are:
 
 ```sh
 export CLOUDFLARE_API_TOKEN="$(security find-generic-password -w -s artifactpass-cloudflare-api-token -a "$USER")"
-read -rs "ARTIFACTPASS_GOOGLE_OAUTH_CLIENT_SECRET?Google OAuth client secret: " && export ARTIFACTPASS_GOOGLE_OAUTH_CLIENT_SECRET && printf '\n'
-read -rs "ARTIFACTPASS_GITHUB_OAUTH_CLIENT_SECRET?GitHub OAuth client secret: " && export ARTIFACTPASS_GITHUB_OAUTH_CLIENT_SECRET && printf '\n'
+export ARTIFACTPASS_GOOGLE_OAUTH_CLIENT_SECRET="$(security find-generic-password -w -s artifactpass-production-google-client-secret -a "$USER")"
+export ARTIFACTPASS_GITHUB_OAUTH_CLIENT_SECRET="$(security find-generic-password -w -s artifactpass-production-github-client-secret -a "$USER")"
 ```
 
 ## State-bound release
@@ -49,22 +49,36 @@ node packages/setup-cli/dist/cli.mjs deploy-public \
   --pdf-public-key BASE64_ED25519_PUBLIC_KEY \
   --google-client-id GOOGLE_CLIENT_ID \
   --github-client-id GITHUB_CLIENT_ID \
+  --production-existing-resources \
   --write-approval-manifest /private/path/artifactpass-public-approval.json
 ```
 
 Review the manifest, then rerun the same values with `--approve-manifest` pointing to that file. The deployer stops if the Worker bundle, OAuth inputs, or Cloudflare state changed after approval.
 
-The mutation order is deliberate:
+Production existing-resource mode stops before mutation unless the reviewed Worker, D1 UUID, R2 bucket, custom domain, Access application, and migration history still match. It also requires exactly `0009-cleanup-indexes.sql` to be pending. Missing production resources are never created.
 
-1. Reuse or create D1 and R2, then apply migrations and lifecycle policy.
-2. Store Google and GitHub client secrets as Cloudflare Worker secrets.
-3. Deploy with public human choices of 1 hour, 1 day, or 7 days, while retaining 15- and 30-minute API presets.
-4. Verify health says ArtifactPass authentication is fully configured.
-5. Verify the sign-in page and both provider redirects.
-6. Remove only the matching legacy Cloudflare Access application.
-7. Verify anonymous `/upload` now redirects to ArtifactPass sign-in.
+The contained mutation order is deliberate:
 
-If the final upload check fails after removal, the running deploy process recreates the managed legacy Access application and its policies as a containment gate before returning the error. An operator interruption after deletion can still require manual restoration, so watch the command through this final check.
+1. Bind the state-approved configuration to the existing D1 and R2 resources.
+2. Apply migration `0009` and the reviewed R2 lifecycle.
+3. Deploy the reviewed Worker and both OAuth secrets in one `wrangler deploy` operation.
+4. Verify health and both provider starts.
+5. Verify the legacy Access application still contains `/upload`.
+
+The deployer writes OAuth secrets to a mode-0600 temporary file used only by `wrangler deploy`, then removes the entire temporary directory on success or failure. It does not create a separate secret-only Worker deployment. Relaxing Access happens only after the contained production qualification passes.
+
+## Reversible public activation
+
+After the contained production matrix passes, write a separate activation manifest:
+
+```sh
+node packages/setup-cli/dist/cli.mjs activate-public \
+  --account-id 0123456789abcdef0123456789abcdef \
+  --hostname artifactpass.com \
+  --write-approval-manifest /private/path/artifactpass-activation-approval.json
+```
+
+Review it, then repeat with `--approve-manifest`. Activation adds one narrowly scoped, identifiable Access bypass policy and verifies that anonymous `/upload` reaches ArtifactPass sign-in. If verification fails, the command deletes that policy and confirms containment through its rollback result. Keep the original Access application and policies until the observation window closes.
 
 ## Public user connection
 

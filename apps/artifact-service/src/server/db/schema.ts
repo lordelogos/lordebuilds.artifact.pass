@@ -38,6 +38,8 @@ export const artifacts = sqliteTable(
       table.publicationAttempt,
     ).where(sql`${table.publisherId} IS NOT NULL AND ${table.publicationAttempt} IS NOT NULL`),
     index("artifacts_status_expires_at_idx").on(table.status, table.expiresAt),
+    index("artifacts_legacy_derived_object_key_idx").on(sql`1`)
+      .where(sql`${table.legacyDerivedObjectKey} IS NOT NULL`),
   ],
 );
 
@@ -85,6 +87,8 @@ export const agentTokens = sqliteTable(
   (table) => [
     uniqueIndex("agent_tokens_token_hash_unique").on(table.tokenHash),
     index("agent_tokens_expires_at_idx").on(table.expiresAt),
+    index("agent_tokens_revoked_at_idx").on(table.revokedAt)
+      .where(sql`${table.revokedAt} IS NOT NULL`),
   ],
 );
 
@@ -143,11 +147,13 @@ export const deviceSigningKeys = sqliteTable(
 export const ARTIFACT_SCHEMA_SQL = [
   "CREATE TABLE IF NOT EXISTS artifacts (id TEXT PRIMARY KEY NOT NULL, status TEXT NOT NULL CHECK (status IN ('staging', 'active', 'cleanup_pending')), object_key TEXT NOT NULL UNIQUE, derived_object_key TEXT, legacy_derived_object_key TEXT, filename TEXT NOT NULL, mime_type TEXT NOT NULL, byte_size INTEGER NOT NULL CHECK (byte_size >= 0), sha256 TEXT NOT NULL, share_token_hash TEXT NOT NULL UNIQUE, publisher_id TEXT, publication_attempt TEXT, payload_commitment TEXT, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, extraction_status TEXT NOT NULL, extractor TEXT, extractor_version TEXT, page_count INTEGER, extraction_reason TEXT, pdf_trust_status TEXT NOT NULL DEFAULT 'not_applicable', pdf_trust_reason TEXT, pdf_provenance_receipt TEXT, cleanup_attempts INTEGER NOT NULL DEFAULT 0, last_cleanup_error TEXT);",
   "CREATE INDEX IF NOT EXISTS artifacts_status_expires_at_idx ON artifacts (status, expires_at);",
+  "CREATE INDEX IF NOT EXISTS artifacts_legacy_derived_object_key_idx ON artifacts ((1)) WHERE legacy_derived_object_key IS NOT NULL;",
   "CREATE UNIQUE INDEX IF NOT EXISTS artifacts_publisher_attempt_unique ON artifacts (publisher_id, publication_attempt) WHERE publisher_id IS NOT NULL AND publication_attempt IS NOT NULL;",
   "CREATE TABLE IF NOT EXISTS device_authorizations (id TEXT PRIMARY KEY NOT NULL, device_code_hash TEXT NOT NULL UNIQUE, user_code_hash TEXT NOT NULL UNIQUE, code_challenge TEXT NOT NULL, status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'consumed')), created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, next_poll_at INTEGER NOT NULL, poll_attempts INTEGER NOT NULL DEFAULT 0 CHECK (poll_attempts >= 0), identity_subject TEXT, identity_email TEXT, approved_at INTEGER, consumed_at INTEGER, agent_token_id TEXT, device_key_id TEXT, device_public_key TEXT, agent_name TEXT, workspace_identity TEXT);",
   "CREATE INDEX IF NOT EXISTS device_authorizations_expires_at_idx ON device_authorizations (expires_at);",
   "CREATE TABLE IF NOT EXISTS agent_tokens (id TEXT PRIMARY KEY NOT NULL, token_hash TEXT NOT NULL UNIQUE, identity_subject TEXT NOT NULL, identity_email TEXT NOT NULL, scope TEXT NOT NULL CHECK (scope = 'artifact:create'), created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, revoked_at INTEGER);",
   "CREATE INDEX IF NOT EXISTS agent_tokens_expires_at_idx ON agent_tokens (expires_at);",
+  "CREATE INDEX IF NOT EXISTS agent_tokens_revoked_at_idx ON agent_tokens (revoked_at) WHERE revoked_at IS NOT NULL;",
   "CREATE TABLE IF NOT EXISTS request_rate_limits (bucket_key TEXT PRIMARY KEY NOT NULL, window_start INTEGER NOT NULL, request_count INTEGER NOT NULL CHECK (request_count >= 0), expires_at INTEGER NOT NULL);",
   "CREATE INDEX IF NOT EXISTS request_rate_limits_expires_at_idx ON request_rate_limits (expires_at);",
   "CREATE TABLE IF NOT EXISTS oauth_transactions (state_hash TEXT PRIMARY KEY NOT NULL, provider TEXT NOT NULL CHECK (provider IN ('google', 'github')), return_to TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL);",

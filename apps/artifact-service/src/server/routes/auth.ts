@@ -10,7 +10,7 @@ import {
   expiredPublicSessionCookie,
   publicOAuthCookie,
   publicSessionCookie,
-  readPublicOAuthState,
+  readPublicOAuthCookie,
   readPublicSession,
   revokePublicSession,
   type HumanIdentity,
@@ -19,7 +19,7 @@ import { createOpaqueToken } from "../auth/agent-token";
 import { consumeRequestRateLimit } from "../auth/rate-limit";
 import type { ArtifactHonoEnvironment } from "../middleware/authorize";
 import { ArtifactError } from "../storage/artifact-error";
-import { sha256 } from "../storage/crypto";
+import { sha256, sha256Base64Url } from "../storage/crypto";
 import { ArtifactPassIcon, GitHubIcon, GoogleIcon } from "../../web/components/brand-icons";
 import { popupCancelledScript } from "../../web/popup-cancel";
 import { popupCompleteScript } from "../../web/popup-complete";
@@ -147,6 +147,7 @@ const authorizationUrl = (
   clientId: string,
   redirectUri: string,
   state: string,
+  codeChallenge?: string,
 ): URL => {
   const url = new URL(provider === "google"
     ? "https://accounts.google.com/o/oauth2/v2/auth"
@@ -157,6 +158,13 @@ const authorizationUrl = (
   url.searchParams.set("state", state);
   url.searchParams.set("scope", provider === "google" ? "openid email" : "read:user user:email");
   if (provider === "google") url.searchParams.set("prompt", "select_account");
+  if (provider === "github") {
+    if (codeChallenge === undefined) {
+      throw new ArtifactError("internal_error", "GitHub PKCE challenge is unavailable", 500);
+    }
+    url.searchParams.set("code_challenge", codeChallenge);
+    url.searchParams.set("code_challenge_method", "S256");
+  }
   return url;
 };
 
@@ -212,6 +220,7 @@ const exchangeGitHub = async (
   code: string,
   redirectUri: string,
   credentials: { readonly clientId: string; readonly clientSecret: string },
+  codeVerifier: string,
   fetchImplementation: typeof globalThis.fetch,
 ): Promise<HumanIdentity> => {
   const token = await jsonFrom<{ readonly access_token?: string }>(await fetchOAuth(fetchImplementation,
@@ -224,6 +233,7 @@ const exchangeGitHub = async (
         client_id: credentials.clientId,
         client_secret: credentials.clientSecret,
         redirect_uri: redirectUri,
+        code_verifier: codeVerifier,
       }),
     },
   ));
@@ -313,6 +323,8 @@ export const createAuthRouter = (options: AuthRouterOptions = {}) => {
     if (redirect !== null) return redirect;
     const credentials = providerCredentials(provider, context.env);
     const state = createOpaqueToken();
+    const codeVerifier = provider === "github" ? createOpaqueToken() : undefined;
+    const codeChallenge = codeVerifier === undefined ? undefined : await sha256Base64Url(codeVerifier);
     const createdAt = now();
     await consumeRequestRateLimit({
       database: context.env.ARTIFACT_DB,
@@ -338,8 +350,18 @@ export const createAuthRouter = (options: AuthRouterOptions = {}) => {
       status: 302,
       headers: {
         ...RESPONSE_HEADERS,
-        Location: authorizationUrl(provider, credentials.clientId, redirectUri, state).toString(),
-        "Set-Cookie": publicOAuthCookie(state, createdAt + OAUTH_TRANSACTION_LIFETIME_MS),
+        Location: authorizationUrl(
+          provider,
+          credentials.clientId,
+          redirectUri,
+          state,
+          codeChallenge,
+        ).toString(),
+        "Set-Cookie": publicOAuthCookie(
+          state,
+          createdAt + OAUTH_TRANSACTION_LIFETIME_MS,
+          codeVerifier,
+        ),
       },
     });
   });
@@ -357,7 +379,11 @@ export const createAuthRouter = (options: AuthRouterOptions = {}) => {
     ) {
       throw new ArtifactError("forbidden", "Authentication response is invalid", 400);
     }
-    if (readPublicOAuthState(context.req.raw) !== state) {
+    const oauthCookie = readPublicOAuthCookie(context.req.raw);
+    if (
+      oauthCookie?.state !== state ||
+      (provider === "github" && oauthCookie.codeVerifier === undefined)
+    ) {
       throw new ArtifactError("forbidden", "Authentication response is not bound to this browser", 400);
     }
     const transaction = await context.env.ARTIFACT_DB.prepare(
@@ -403,7 +429,7 @@ export const createAuthRouter = (options: AuthRouterOptions = {}) => {
     const redirectUri = new URL(`/auth/callback/${provider}`, context.req.url).toString();
     const identity = provider === "google"
       ? await exchangeGoogle(code, redirectUri, credentials, oauthFetch)
-      : await exchangeGitHub(code, redirectUri, credentials, oauthFetch);
+      : await exchangeGitHub(code, redirectUri, credentials, oauthCookie.codeVerifier ?? "", oauthFetch);
     const session = await createPublicSession(context.env.ARTIFACT_DB, identity, now());
     const headers = new Headers({
       ...RESPONSE_HEADERS,

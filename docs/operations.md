@@ -12,14 +12,16 @@ The response must identify `lordebuilds.artifacts.share` with status `ok`, `huma
 
 Monitor Worker error rate, D1 failures, R2 failures, provider callback failures, rejected approval attempts, and scheduled cleanup failures. Do not enable request-body logging or record full `/a/` paths. Cleanup runs every minute in batches of 100 and retries records left in `cleanup_pending`.
 
+The public release limits are part of the reviewed Worker build: OAuth starts allow 20 requests per IP per 10 minutes; device authorization starts allow 10 per IP per 10 minutes; publication allows 10 attempts and 64 MiB per identity and per IP per 10 minutes; capability reads allow 600 requests per IP per 10 minutes. Rejections return `429`. Alert before activation if D1 or R2 usage reaches 70% of its daily allowance, or if `cleanup_pending` remains above 100 records for two consecutive scheduled runs.
+
 ## Public deployment checklist
 
 1. Confirm the Google and GitHub OAuth applications use the exact callbacks in [deployment](deployment.md).
 2. Run `pnpm dlx artifactpass doctor` and a mutation-free `deploy-public --dry-run`.
 3. Expose the short-lived Cloudflare token and OAuth client secrets only to the deployment process.
 4. Write and review a state-bound approval manifest, then deploy that exact manifest.
-5. Confirm the deployer verified both provider redirects before removing the matching legacy Access application.
-6. Confirm `/health` reports ready public auth, `/upload` redirects to ArtifactPass sign-in, R2 is private, all seven D1 migrations are applied, the trusted PDF public key is configured, and the R2 lifecycle is present.
+5. Confirm the contained deployer verified both provider starts and retained the matching legacy Access application.
+6. Confirm `/health` reports ready public auth, the Access gate still contains `/upload`, R2 is private, all nine D1 migrations are applied, the trusted PDF public key is configured, and the R2 lifecycle is present.
 7. Install without connecting, then connect fresh Codex and Claude Code workspaces through Google or GitHub approval. Provision the controlled-PDF private key separately into each trusted host's OS credential store; the service distributes only the key ID and public key.
 8. Upload Markdown, hostile HTML, a human PDF, and a controlled PDF with its exact canonical source. Verify human PDFs remain human-only and controlled PDFs return only the signed canonical source to agents.
 9. Run the live two-agent handoff gate below.

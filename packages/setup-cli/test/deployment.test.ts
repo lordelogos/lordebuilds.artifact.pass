@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
@@ -35,6 +35,11 @@ const privateInput = (): Omit<DeployInput, "pdfKeyId" | "pdfPublicKey"> => {
 
 const deploymentRoot = async (): Promise<string> => {
   const root = await mkdtemp(resolve(tmpdir(), "artifact-share-deployment-test-"));
+  await mkdir(resolve(root, "migrations"));
+  for (let migration = 1; migration <= 9; migration += 1) {
+    const name = `${String(migration).padStart(4, "0")}-${migration === 9 ? "cleanup-indexes" : `migration-${migration}`}.sql`;
+    await writeFile(resolve(root, "migrations", name), "SELECT 1;\n");
+  }
   await writeFile(resolve(root, "wrangler-template.json"), JSON.stringify({
     name: "template",
     main: "./index.js",
@@ -59,6 +64,10 @@ const fakeClient = (options: {
   remoteState?: { workerVersion: string; schemaVersion: string; lifecycleVersion: string };
   serviceName?: string;
   ownershipDeploymentId?: string;
+  appliedMigrations?: readonly string[];
+  workersDevEnabled?: boolean;
+  previewUrlsEnabled?: boolean;
+  workerRoutes?: readonly { readonly id: string; readonly pattern: string; readonly script?: string }[];
 } = {}) => {
   const hostname = options.hostname ?? "artifacts.example.com";
   const serviceName = options.serviceName ?? "lordebuilds-artifacts-share";
@@ -79,6 +88,13 @@ const fakeClient = (options: {
       id: serviceName,
       modified_on: options.remoteState?.workerVersion ?? "worker-v1",
     }] : [];
+    if (path.endsWith(`/workers/scripts/${serviceName}/subdomain`)) {
+      return {
+        enabled: options.workersDevEnabled ?? false,
+        previews_enabled: options.previewUrlsEnabled ?? false,
+      };
+    }
+    if (path === `/zones/${zoneId}/workers/routes`) return options.workerRoutes ?? [];
     if (path === `/zones/${zoneId}`) return { name: "example.com", status: "active" };
     if (path.includes("/d1/database?")) return options.existing ? [{ uuid: "db-id", name: serviceName }] : [];
     if (path.endsWith("/d1/database")) return { uuid: "db-id", name: serviceName };
@@ -90,6 +106,10 @@ const fakeClient = (options: {
     }
     if (path.includes("/d1/database/db-id/query")) {
       const body = typeof init.body === "string" ? JSON.parse(init.body) as { readonly sql?: string } : {};
+      if (body.sql?.includes("d1_migrations")) {
+        return [{ results: (options.appliedMigrations ?? Array.from({ length: 8 }, (_, index) =>
+          `${String(index + 1).padStart(4, "0")}-migration-${index + 1}.sql`)).map((name) => ({ name })) }];
+      }
       if (body.sql?.includes("deployment_metadata")) {
         return [{
           results: options.ownershipDeploymentId === undefined ? [] : [{
@@ -137,7 +157,9 @@ const fakeClient = (options: {
       }] : [];
     }
     if (path.endsWith("/workers/domains")) {
-      return options.collision ? [{ hostname, service: "other" }] : [];
+      return options.collision
+        ? [{ hostname, service: "other" }]
+        : options.existing ? [{ hostname, service: serviceName }] : [];
     }
     return {};
   });
@@ -673,13 +695,8 @@ describe("Cloudflare deployment", () => {
     });
 
     expect(result.changed).toEqual(["Worker deployment", "Access application removal"]);
-    expect(runnerCalls.map(({ args }) => args[0])).toEqual([
-      "d1", "r2", "secret", "deploy",
-    ]);
-    expect(JSON.parse(runnerCalls[2]?.input ?? "{}")).toEqual({
-      GOOGLE_OAUTH_CLIENT_SECRET: "google-client-secret",
-      GITHUB_OAUTH_CLIENT_SECRET: "github-client-secret",
-    });
+    expect(runnerCalls.map(({ args }) => args[0])).toEqual(["d1", "r2", "deploy"]);
+    expect(runnerCalls[2]?.args).toContain("--secrets-file");
     expect(deploymentConfiguration).toContain('"HUMAN_AUTH_MODE":"artifactpass"');
     expect(deploymentConfiguration).toContain('"ALLOWED_EXPIRY_SECONDS":"900,1800,3600,86400,604800"');
     expect(deploymentConfiguration).toContain('"MAX_EXPIRY_SECONDS":"604800"');
@@ -689,6 +706,160 @@ describe("Cloudflare deployment", () => {
       path: `/accounts/${accountId}/access/apps/app-id`,
       init: expect.objectContaining({ method: "DELETE" }),
     }));
+  });
+
+  it("deploys production OAuth and code atomically while retaining existing Access", async () => {
+    const root = await deploymentRoot();
+    const manifestRoot = await mkdtemp(resolve(tmpdir(), "artifact-share-approval-test-"));
+    const manifestPath = resolve(manifestRoot, "production-approval.json");
+    const client = fakeClient({ existing: true });
+    const productionInput: DeployInput = {
+      ...input,
+      identities: [],
+      productionExistingResources: true,
+      publicAuth: {
+        googleClientId: "google-client-id",
+        googleClientSecret: "google-client-secret",
+        githubClientId: "github-client-id",
+        githubClientSecret: "github-client-secret",
+      },
+      writeApprovalManifest: manifestPath,
+    };
+
+    await deployArtifactShare(productionInput, { client: client.client, deploymentRoot: root });
+
+    const runnerCalls: string[][] = [];
+    let secretsPath = "";
+    let secretsMode = 0;
+    let secrets = "";
+    const runner = vi.fn(async (_command: string, args: readonly string[]) => {
+      runnerCalls.push([...args]);
+      if (args[0] === "deploy") {
+        secretsPath = args[args.indexOf("--secrets-file") + 1] ?? "";
+        secretsMode = (await stat(secretsPath)).mode & 0o777;
+        secrets = await readFile(secretsPath, "utf8");
+      }
+      return { stdout: "", stderr: "" };
+    });
+    const fetch = vi.fn(async (request: string | URL | Request) => {
+      const url = new URL(String(request));
+      if (url.pathname === "/health") {
+        return Response.json({
+          service: "lordebuilds.artifacts.share",
+          status: "ok",
+          human_auth_mode: "artifactpass",
+          authentication_configured: true,
+        });
+      }
+      if (url.pathname === "/auth/sign-in") return new Response("Continue with Google");
+      if (url.pathname === "/auth/login/google") {
+        return new Response(null, { status: 302, headers: { location: "https://accounts.google.com/o/oauth2/v2/auth" } });
+      }
+      if (url.pathname === "/auth/login/github") {
+        return new Response(null, { status: 302, headers: { location: "https://github.com/login/oauth/authorize" } });
+      }
+      if (url.pathname === "/upload") {
+        return new Response(null, {
+          status: 302,
+          headers: { location: "https://team.cloudflareaccess.com/cdn-cgi/access/login" },
+        });
+      }
+      throw new Error(`Unexpected production deployment request: ${url}`);
+    });
+
+    const { writeApprovalManifest: _writeApprovalManifest, ...approvedProductionInput } = productionInput;
+    const result = await deployArtifactShare({
+      ...approvedProductionInput,
+      approveManifest: manifestPath,
+    }, { client: client.client, deploymentRoot: root, runner, fetch });
+
+    expect(result.changed).toEqual(["R2 lifecycle", "Worker deployment"]);
+    expect(runnerCalls.map(([command]) => command)).toEqual(["d1", "r2", "deploy"]);
+    expect(runnerCalls[2]).toContain("--secrets-file");
+    expect(secretsMode).toBe(0o600);
+    expect(JSON.parse(secrets)).toEqual({
+      GOOGLE_OAUTH_CLIENT_SECRET: "google-client-secret",
+      GITHUB_OAUTH_CLIENT_SECRET: "github-client-secret",
+    });
+    await expect(stat(secretsPath)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(client.requests).not.toContainEqual(expect.objectContaining({
+      path: `/accounts/${accountId}/access/apps/app-id`,
+      init: expect.objectContaining({ method: "DELETE" }),
+    }));
+  });
+
+  it("stops a production deployment before mutation when an existing resource is missing", async () => {
+    const root = await deploymentRoot();
+    const client = fakeClient({ existing: false });
+    const runner = vi.fn();
+
+    await expect(deployArtifactShare({
+      ...input,
+      identities: [],
+      productionExistingResources: true,
+      publicAuth: {
+        googleClientId: "google-client-id",
+        googleClientSecret: "google-client-secret",
+        githubClientId: "github-client-id",
+        githubClientSecret: "github-client-secret",
+      },
+      writeApprovalManifest: resolve(root, "production-approval.json"),
+    }, { client: client.client, deploymentRoot: root, runner })).rejects.toThrow(
+      "existing Worker, D1, R2, custom domain, and Access application",
+    );
+
+    expect(runner).not.toHaveBeenCalled();
+    expect(client.requests.every(({ init }) => init.method === undefined || init.method === "GET")).toBe(true);
+  });
+
+  it("stops a production deployment before mutation unless only migration 0009 is pending", async () => {
+    const root = await deploymentRoot();
+    const client = fakeClient({
+      existing: true,
+      appliedMigrations: Array.from({ length: 7 }, (_, index) =>
+        `${String(index + 1).padStart(4, "0")}-migration-${index + 1}.sql`),
+    });
+    const runner = vi.fn();
+
+    await expect(deployArtifactShare({
+      ...input,
+      identities: [],
+      productionExistingResources: true,
+      publicAuth: {
+        googleClientId: "google-client-id",
+        googleClientSecret: "google-client-secret",
+        githubClientId: "github-client-id",
+        githubClientSecret: "github-client-secret",
+      },
+      writeApprovalManifest: resolve(root, "production-approval.json"),
+    }, { client: client.client, deploymentRoot: root, runner })).rejects.toThrow(
+      "exactly 0009-cleanup-indexes.sql",
+    );
+
+    expect(runner).not.toHaveBeenCalled();
+  });
+
+  it("stops before mutation when production has an alternate Worker ingress", async () => {
+    const root = await deploymentRoot();
+    const client = fakeClient({ existing: true, workersDevEnabled: true });
+    const runner = vi.fn();
+
+    await expect(deployArtifactShare({
+      ...input,
+      identities: [],
+      productionExistingResources: true,
+      publicAuth: {
+        googleClientId: "google-client-id",
+        googleClientSecret: "google-client-secret",
+        githubClientId: "github-client-id",
+        githubClientSecret: "github-client-secret",
+      },
+      writeApprovalManifest: resolve(root, "production-approval.json"),
+    }, { client: client.client, deploymentRoot: root, runner })).rejects.toThrow(
+      "existing Worker, D1, R2, custom domain, and Access application",
+    );
+
+    expect(runner).not.toHaveBeenCalled();
   });
 
   it("restores the legacy Access gate when post-removal upload verification fails", async () => {
