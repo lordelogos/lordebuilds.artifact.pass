@@ -17,8 +17,23 @@ export const INSTALL_VALUE_OPTIONS: ReadonlySet<string> = new Set([
   ...WORKSPACE_VALUE_OPTIONS,
 ]);
 
-export type InstallAgent = AgentHost | "both";
+export type InstallAgent = AgentHost | "other";
 export type InstallPrompt = (question: string) => Promise<string>;
+
+const installAgentOptions: readonly {
+  readonly value: InstallAgent;
+  readonly label: string;
+  readonly hosts: readonly AgentHost[];
+}[] = [
+  { value: "codex", label: "Codex", hosts: ["codex"] },
+  { value: "claude", label: "Claude Code", hosts: ["claude"] },
+  { value: "gemini", label: "Gemini CLI", hosts: ["gemini"] },
+  { value: "kimi", label: "Kimi Code", hosts: ["kimi"] },
+  { value: "cursor", label: "Cursor", hosts: ["cursor"] },
+  { value: "vscode", label: "VS Code / GitHub Copilot", hosts: ["vscode"] },
+  { value: "antigravity", label: "Antigravity", hosts: ["antigravity"] },
+  { value: "other", label: "Other MCP client", hosts: [] },
+];
 
 export const parseInstallAgent = (args: readonly string[]): InstallAgent | undefined => {
   const indexes = args.flatMap((argument, index) => argument === "--agent" ? [index] : []);
@@ -27,33 +42,35 @@ export const parseInstallAgent = (args: readonly string[]): InstallAgent | undef
   if (index === undefined) return undefined;
   const selected = args[index + 1];
   if (selected === undefined || selected.startsWith("--")) throw new Error("--agent requires a value");
-  if (selected !== "codex" && selected !== "claude" && selected !== "both") {
-    throw new Error("--agent must be codex, claude, or both");
+  const option = installAgentOptions.find((candidate) => candidate.value === selected);
+  if (option === undefined) {
+    throw new Error("--agent must be codex, claude, gemini, kimi, cursor, vscode, antigravity, or other");
   }
-  return selected;
+  return option.value;
 };
 
-const hostsForAgent = (agent: InstallAgent): readonly AgentHost[] =>
-  agent === "both" ? ["codex", "claude"] : [agent];
+const hostsForAgent = (agent: InstallAgent): readonly AgentHost[] => {
+  const option = installAgentOptions.find((candidate) => candidate.value === agent);
+  if (option === undefined) throw new Error(`Unsupported agent: ${agent}`);
+  return option.hosts;
+};
 
 export const resolveInstallAgent = async (
   requested: InstallAgent | undefined,
   interactive: boolean,
   prompt: InstallPrompt,
-): Promise<readonly AgentHost[] | undefined> => {
+): Promise<readonly AgentHost[]> => {
   if (requested !== undefined) return hostsForAgent(requested);
-  if (!interactive) return undefined;
+  if (!interactive) {
+    throw new Error("--agent is required when setup cannot ask interactively");
+  }
   const answer = (await prompt(
-    "Which agent are you installing ArtifactPass for?\n" +
-    "  1. Codex\n" +
-    "  2. Claude Code\n" +
-    "  3. Both\n" +
-    "Answer: ",
+    `Which agent are you setting up?\n${installAgentOptions
+      .map((option, index) => `${index + 1}. ${option.label}`)
+      .join("\n")}\n\nChoose: `,
   )).trim();
-  if (answer === "1") return ["codex"];
-  if (answer === "2") return ["claude"];
-  if (answer === "3") return ["codex", "claude"];
-  throw new Error("Enter 1, 2, or 3");
+  if (/^[1-8]$/u.test(answer)) return installAgentOptions[Number(answer) - 1]?.hosts ?? [];
+  throw new Error("Enter a number from 1 to 8");
 };
 
 export const INSTALL_BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([

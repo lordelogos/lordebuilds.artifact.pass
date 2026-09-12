@@ -77,7 +77,7 @@ try {
     "install",
     "--base-url", `http://127.0.0.1:${healthServer.port}`,
     "--open-development",
-    "--no-host-install",
+    "--agent", "gemini",
     "--workspace-root", workspace,
     "--json",
   ];
@@ -99,7 +99,8 @@ try {
       receipt.product !== "ArtifactPass" ||
       receipt.status !== "success" ||
       receipt.profile !== "local" ||
-      receipt.portable_bundle?.host_registration !== "manual-required" ||
+      JSON.stringify(receipt.adapters) !== JSON.stringify(["gemini"]) ||
+      receipt.portable_bundle?.host_registration !== "installed" ||
       receipt.mcp?.negotiated !== true ||
       JSON.stringify(receipt.mcp.tools) !== JSON.stringify([
         "connect_artifactpass", "connection_status", "publish_artifact", "read_artifact",
@@ -125,7 +126,20 @@ try {
   ) {
     throw new Error("Packed install rerun duplicated or changed the active profile");
   }
-  process.stdout.write("Packed one-command install passed: install, MCP smoke, receipt, and rerun repair are valid.\n");
+  const geminiConfig = JSON.parse(await readFile(
+    resolve(workspace, ".gemini", "settings.json"),
+    "utf8",
+  ));
+  if (
+    geminiConfig.mcpServers?.artifactpass?.command !== process.execPath ||
+    !Array.isArray(geminiConfig.mcpServers?.artifactpass?.args) ||
+    geminiConfig.mcpServers.artifactpass.args.length !== 1
+  ) {
+    throw new Error("Packed install did not register ArtifactPass for Gemini CLI");
+  }
+  await readFile(resolve(workspace, ".gemini", "skills", "share-artifact", "SKILL.md"));
+  await readFile(resolve(workspace, ".gemini", "skills", "read-shared-artifact", "SKILL.md"));
+  process.stdout.write(`Packed one-command install passed: Gemini project setup, MCP smoke, skills, receipt, and rerun repair are valid (${first.portable_bundle.sha256}).\n`);
 } finally {
   healthServer?.child.kill();
   await rm(temporaryRoot, { recursive: true, force: true });

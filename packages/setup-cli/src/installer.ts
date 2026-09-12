@@ -49,7 +49,7 @@ export interface ArtifactpassInstallReceipt {
   readonly profile: string;
   readonly origin: string;
   readonly workspace_roots: readonly string[];
-  readonly adapters: readonly ("codex" | "claude")[];
+  readonly adapters: readonly AgentHost[];
   readonly portable_bundle: {
     readonly sha256: string;
     readonly host_registration: "installed" | "manual-required" | "not-reached";
@@ -100,7 +100,9 @@ export const parseArtifactpassInstallReceipt = (value: unknown): ArtifactpassIns
   const mcp = receiptRecord(receipt?.mcp);
   const skills = receiptRecord(receipt?.skills);
   const migration = receiptRecord(receipt?.migration);
-  const adapters = new Set(["codex", "claude"]);
+  const adapters = new Set<AgentHost>([
+    "codex", "claude", "gemini", "kimi", "cursor", "vscode", "antigravity",
+  ]);
   const tools = new Set<string>(ARTIFACTPASS_MCP_TOOL_NAMES);
   const skillNames = new Set(["read-shared-artifact", "share-artifact"]);
   const valid = receipt !== undefined &&
@@ -491,6 +493,7 @@ export const runArtifactpassInstall = async (
           hosts,
           installedPortable.marketplaceDirectory,
           runner,
+          workspaceRoot,
         );
       [smoke, skills] = await Promise.all([
         (dependencies.smoke ?? smokeArtifactpassMcp)({

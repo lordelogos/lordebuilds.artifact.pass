@@ -207,7 +207,7 @@ export const connectHost = async (
     : undefined;
   const installAndVerify = async (): Promise<HostInstallation | undefined> => {
     const hostInstallation = installKnownHostAdapters && hosts.length > 0
-      ? await installPluginForHosts(hosts, input.marketplaceSource, runner)
+      ? await installPluginForHosts(hosts, input.marketplaceSource, runner, roots[0])
       : undefined;
     try {
       await dependencies.verifyConnection?.({
