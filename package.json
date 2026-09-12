@@ -29,7 +29,7 @@
     "security:audit": "pnpm audit --prod --audit-level high",
     "security:distribution": "node scripts/verify-distribution-security.mjs",
     "security:licenses": "node scripts/audit-licenses.mjs",
-    "security:secrets": "node scripts/scan-secrets.mjs",
+    "security:secrets": "node scripts/scan-secrets.mjs --history",
     "test": "vitest run --config vitest.workspace.ts",
     "test:browser": "playwright test",
     "test:browser:live": "playwright test tests/e2e/browser-share.spec.ts tests/e2e/end-to-end-handoff.spec.ts",
