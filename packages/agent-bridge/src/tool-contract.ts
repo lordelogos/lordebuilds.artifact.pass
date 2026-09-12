@@ -1,6 +1,7 @@
 import {
   PROTOCOL_MAX_ARTIFACT_BYTES,
   PROTOCOL_MAX_SOURCE_CHUNK_BYTES,
+  PUBLIC_ALLOWED_EXPIRY_SECONDS,
   artifactManifestSchema,
   protocolVersionSchema,
 } from "artifact-protocol";
@@ -40,7 +41,7 @@ export const publishArtifactInputSchema = z.object({
     "Optional UTF-8 source used to generate a PDF. When configured, ArtifactPass verifies it against the PDF and signs the agent-readable representation.",
   ),
   expires_in_seconds: z.number().int().positive().default(3600).describe(
-    "Deployment expiry preset in seconds. Defaults to one hour (3600). Public ArtifactPass presets: 900, 1800, or 3600; a rejection reports the deployment's allowed values.",
+    `Deployment expiry preset in seconds. Defaults to one hour (3600). Public ArtifactPass accepts ${PUBLIC_ALLOWED_EXPIRY_SECONDS.join(", ")}; a rejection reports the deployment's allowed values.`,
   ),
 });
 

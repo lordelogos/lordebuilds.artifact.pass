@@ -1,6 +1,6 @@
 {
   "name": "artifactpass",
-  "version": "0.1.0-rc.14",
+  "version": "0.1.0-rc.15",
   "description": "Install and connect ArtifactPass for compatible AI agent systems.",
   "repository": {
     "type": "git",
@@ -13,10 +13,12 @@
   "artifactpass": {
     "cloudflareOAuth": {
       "stagingClientId": "55277634635e7ce787ed554d396d2694",
-      "productionClientId": ""
+      "productionClientId": "1a37b84fc5a2cca7963b359ff382e67c"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "pnpm --dir ../../apps/artifact-service build && node ../../scripts/build-setup-package.mjs",
     "test": "vitest run",
@@ -24,7 +26,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/client": "2.0.0",
-    "wrangler": "4.123.0"
+    "wrangler": "4.131.1"
   },
   "devDependencies": {
     "@types/node": "^24.10.14",

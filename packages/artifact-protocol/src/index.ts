@@ -5,6 +5,25 @@ export const PROTOCOL_MAX_ARTIFACT_BYTES = 25 * 1024 * 1024;
 export const PROTOCOL_MAX_SOURCE_CHUNK_BYTES = 64 * 1024;
 export const PROTOCOL_MAX_EXPIRY_SECONDS = 7 * 24 * 60 * 60;
 
+export const PUBLIC_ALLOWED_EXPIRY_SECONDS = [
+  900,
+  1800,
+  3600,
+  86_400,
+  604_800,
+] as const;
+
+export const PUBLIC_HUMAN_EXPIRY_SECONDS = [
+  3600,
+  86_400,
+  604_800,
+] as const;
+
+export const PUBLIC_EXPIRY_POLICY = {
+  maximum_seconds: PROTOCOL_MAX_EXPIRY_SECONDS,
+  allowed_seconds: PUBLIC_ALLOWED_EXPIRY_SECONDS,
+} as const;
+
 export const SUPPORTED_MIME_TYPES = [
   "text/html",
   "text/markdown",
@@ -13,7 +32,7 @@ export const SUPPORTED_MIME_TYPES = [
 
 export const DEFAULT_EXPIRY_POLICY = {
   maximum_seconds: PROTOCOL_MAX_EXPIRY_SECONDS,
-  allowed_seconds: [900, 1800, 3600, 43200, 86400],
+  allowed_seconds: [900, 1800, 3600, 43_200, 86_400, 604_800],
 } as const;
 
 export const protocolVersionSchema = z.literal(PROTOCOL_VERSION);

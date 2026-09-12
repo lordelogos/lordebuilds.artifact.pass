@@ -681,6 +681,8 @@ describe("Cloudflare deployment", () => {
       GITHUB_OAUTH_CLIENT_SECRET: "github-client-secret",
     });
     expect(deploymentConfiguration).toContain('"HUMAN_AUTH_MODE":"artifactpass"');
+    expect(deploymentConfiguration).toContain('"ALLOWED_EXPIRY_SECONDS":"900,1800,3600,86400,604800"');
+    expect(deploymentConfiguration).toContain('"MAX_EXPIRY_SECONDS":"604800"');
     expect(deploymentConfiguration).not.toContain("google-client-secret");
     expect(deploymentConfiguration).not.toContain("github-client-secret");
     expect(client.requests).toContainEqual(expect.objectContaining({

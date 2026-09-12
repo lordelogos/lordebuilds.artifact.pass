@@ -1,3 +1,6 @@
+import { readFile } from "node:fs/promises";
+
+import { DEFAULT_EXPIRY_POLICY } from "artifact-protocol";
 import { describe, expect, it } from "vitest";
 
 import type { BrowserHandoffPrompt } from "../src/private-deployment/browser-handoff";
@@ -49,5 +52,17 @@ describe("private deployment retention", () => {
     expect(storageLifecycleForMaximumExpiry(900).rules).toEqual([expect.objectContaining({
       deleteObjectsTransition: { condition: { type: "Age", maxAge: 172_800 } },
     })]);
+  });
+
+  it("keeps the checked-in public lifecycle aligned with the public maximum", async () => {
+    const lifecyclePath = new URL(
+      "../../../apps/artifact-service/storage-lifecycle.json",
+      import.meta.url,
+    );
+    const lifecycle = JSON.parse(await readFile(lifecyclePath, "utf8"));
+
+    expect(lifecycle).toEqual(
+      storageLifecycleForMaximumExpiry(DEFAULT_EXPIRY_POLICY.maximum_seconds),
+    );
   });
 });

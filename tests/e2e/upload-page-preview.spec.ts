@@ -15,6 +15,7 @@ const mockUploadService = async (
     contentType: "application/json",
     body: JSON.stringify({
       authenticated: authenticated(),
+      deployment_mode: "private",
       policy: {
         protocol_version: 1,
         supported_mime_types: ["text/html", "text/markdown", "application/pdf"],
@@ -211,6 +212,7 @@ test.describe("local upload page preview", () => {
       contentType: "application/json",
       body: JSON.stringify({
         authenticated: true,
+        deployment_mode: "private",
         policy: {
           protocol_version: 1,
           supported_mime_types: ["text/html", "text/markdown", "application/pdf"],

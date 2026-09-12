@@ -183,6 +183,7 @@ export interface ArtifactpassInstallDependencies {
   readonly now?: () => number;
   readonly operationId?: () => string;
   readonly staleLockMilliseconds?: number;
+  readonly isProcessAlive?: (pid: number) => boolean | null;
   readonly skipCredentialStorePreflight?: boolean;
   readonly afterStage?: (stage: InstallStage) => Promise<void> | void;
 }
@@ -204,25 +205,73 @@ const readJournal = async (path: string): Promise<InstallJournal | null> =>
       throw error;
     });
 
+const isProcessAlive = (pid: number): boolean | null => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    const code = error instanceof Error && "code" in error ? error.code : undefined;
+    if (code === "EPERM") return true;
+    if (code === "ESRCH") return false;
+    return null;
+  }
+};
+
 const acquireLock = async (
   path: string,
   now: () => number,
   staleLockMilliseconds: number,
+  processAlive: (pid: number) => boolean | null,
 ): Promise<() => Promise<void>> => {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  const owner = randomUUID();
+  for (let attempt = 0; attempt < 8; attempt += 1) {
     try {
       const handle = await open(path, "wx", 0o600);
-      await handle.writeFile(JSON.stringify({ pid: process.pid, created_at: now() }));
+      try {
+        await handle.writeFile(JSON.stringify({ pid: process.pid, created_at: now(), owner }));
+      } catch (error) {
+        await handle.close().catch(() => undefined);
+        await rm(path, { force: true }).catch(() => undefined);
+        throw error;
+      }
       await handle.close();
-      return async () => rm(path, { force: true });
+      return async () => {
+        const currentOwner = await readFile(path, "utf8")
+          .then((contents) => {
+            const lock = JSON.parse(contents) as { readonly owner?: unknown };
+            return typeof lock.owner === "string" ? lock.owner : null;
+          })
+          .catch((error: unknown) => {
+            if (isMissing(error)) return null;
+            throw error;
+          });
+        if (currentOwner === owner) await rm(path, { force: true });
+      };
     } catch (error) {
       if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
       const metadata = await stat(path);
-      if (now() - metadata.mtimeMs <= staleLockMilliseconds) {
+      let ownerIsAlive: boolean | null = null;
+      try {
+        const lock = JSON.parse(await readFile(path, "utf8")) as { readonly pid?: unknown };
+        if (Number.isInteger(lock.pid) && Number(lock.pid) > 0) {
+          ownerIsAlive = processAlive(Number(lock.pid));
+        }
+      } catch {
+        ownerIsAlive = null;
+      }
+      const withinLease = now() - metadata.mtimeMs <= staleLockMilliseconds;
+      if (withinLease && ownerIsAlive !== false) {
         throw new Error("Another ArtifactPass installation is already running");
       }
-      await rm(path, { force: true });
+      const stalePath = `${path}.stale.${randomUUID()}`;
+      try {
+        await rename(path, stalePath);
+      } catch (renameError) {
+        if (isMissing(renameError)) continue;
+        throw renameError;
+      }
+      await rm(stalePath, { force: true });
     }
   }
   throw new Error("Could not acquire the ArtifactPass installation lock");
@@ -325,6 +374,7 @@ export const runArtifactpassInstall = async (
     `${configPath}.install.lock`,
     now,
     dependencies.staleLockMilliseconds ?? 5 * 60_000,
+    dependencies.isProcessAlive ?? isProcessAlive,
   );
   let stage: InstallStage = "preflight";
   let journal: InstallJournal | undefined;

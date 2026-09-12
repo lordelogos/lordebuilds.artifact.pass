@@ -98,9 +98,13 @@ export const createArtifactApplication = (options: ArtifactApplicationOptions = 
       : { maximumBytes: options.publicUploadMaximumBytes }),
   };
 
-  const servePublicPage = (page: PublicPage, requestUrl: string) => {
+  const servePublicPage = (page: PublicPage, context: Context<ArtifactHonoEnvironment>) => {
     const nonce = createNonce();
-    return new Response(renderPublicPage(page, nonce, requestUrl), {
+    const policy = protocolLimitsFromBindings(context.env);
+    return new Response(renderPublicPage(page, nonce, context.req.url, {
+      deploymentMode: context.env.HUMAN_AUTH_MODE === "artifactpass" ? "public" : "private",
+      allowedExpirySeconds: policy.expiry.allowed_seconds,
+    }), {
       status: 200,
       headers: {
         ...publicPageHeaders(nonce),
@@ -109,9 +113,9 @@ export const createArtifactApplication = (options: ArtifactApplicationOptions = 
     });
   };
 
-  app.get("/", (context) => servePublicPage("home", context.req.url));
-  app.get("/privacy", (context) => servePublicPage("privacy", context.req.url));
-  app.get("/terms", (context) => servePublicPage("terms", context.req.url));
+  app.get("/", (context) => servePublicPage("home", context));
+  app.get("/privacy", (context) => servePublicPage("privacy", context));
+  app.get("/terms", (context) => servePublicPage("terms", context));
 
   app.get("/health", (context) =>
     context.json({

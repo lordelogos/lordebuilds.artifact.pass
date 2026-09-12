@@ -3,13 +3,13 @@ import { describe, expect, it } from "vitest";
 import { artifactPolicyFromBindings } from "../src/server/storage/validation";
 
 describe("deployment expiry policy", () => {
-  it("keeps the public deployment fixed at 15, 30, and 60 minutes", () => {
+  it("keeps short API presets while allowing public links up to seven days", () => {
     expect(artifactPolicyFromBindings({
-      ALLOWED_EXPIRY_SECONDS: "900,1800,3600",
-      MAX_EXPIRY_SECONDS: "3600",
+      ALLOWED_EXPIRY_SECONDS: "900,1800,3600,86400,604800",
+      MAX_EXPIRY_SECONDS: "604800",
     } as never)).toMatchObject({
-      allowedExpirySeconds: [900, 1800, 3600],
-      maximumExpirySeconds: 3600,
+      allowedExpirySeconds: [900, 1800, 3600, 86_400, 604_800],
+      maximumExpirySeconds: 604_800,
     });
   });
 

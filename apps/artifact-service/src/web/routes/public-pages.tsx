@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { PublicFooter, PublicNavigation } from "../components/public-chrome";
+import { expiryOptionsForHumans } from "../components/expiry-picker";
 import {
   HomePage,
   homepageBootScript,
@@ -10,6 +11,11 @@ import {
 } from "./public-homepage";
 
 export type PublicPage = "home" | "privacy" | "terms";
+
+export interface PublicPageConfiguration {
+  readonly deploymentMode: "public" | "private";
+  readonly allowedExpirySeconds: readonly number[];
+}
 
 const repositoryUrl = "https://github.com/lordelogos/lordebuilds.artifact.pass";
 
@@ -24,7 +30,7 @@ const PrivacyPage = ({ staging }: { readonly staging: boolean }) => (
   <section className="document">
     <p className="eyebrow">Public service policy</p>
     <h1>Privacy</h1>
-    <p className="updated">Effective 31 August 2026</p>
+    <p className="updated">Effective 11 September 2026</p>
     {staging && <EnvironmentNotice />}
     <div className="prose">
       <p>This policy explains how the hosted ArtifactPass service processes information when you sign in, connect an agent workspace, upload a document, or open a temporary artifact link. It does not govern private deployments operated by another organization.</p>
@@ -43,7 +49,7 @@ const PrivacyPage = ({ staging }: { readonly staging: boolean }) => (
       <p>A share URL is a bearer capability. Anyone who receives it can view and download the artifact until its stated expiry. Recipients may keep copies they download, so expiry cannot recall a file after it has left ArtifactPass.</p>
       <h2>Retention</h2>
       <ul>
-        <li>Artifact files and their metadata are scheduled for deletion when their 15, 30, or 60 minute lifetime ends. Failed cleanup is retried.</li>
+        <li>Artifact files and their metadata are scheduled for deletion when their selected lifetime ends. Public links can last 1 hour, 1 day, or 7 days. Failed cleanup is retried.</li>
         <li>Browser sessions expire after seven days.</li>
         <li>Agent publishing connections expire after 30 days unless revoked earlier.</li>
         <li>OAuth transactions, device codes, and most rate-limit records expire after approximately ten minutes.</li>
@@ -62,7 +68,7 @@ const TermsPage = ({ staging }: { readonly staging: boolean }) => (
   <section className="document">
     <p className="eyebrow">Public service terms</p>
     <h1>Terms</h1>
-    <p className="updated">Effective 31 August 2026</p>
+    <p className="updated">Effective 11 September 2026</p>
     {staging && <EnvironmentNotice />}
     <div className="prose">
       <p>These terms govern use of the hosted ArtifactPass service. By using it, you agree to these terms. Private deployments are governed by their operator. Open-source software in the ArtifactPass repository remains governed by its stated Apache-2.0 license.</p>
@@ -92,11 +98,17 @@ const installCommandFor = (url: URL): string => {
     : `pnpm dlx artifactpass@rc --base-url ${url.origin}`;
 };
 
-const pageContent = (page: PublicPage, url: URL) => {
+const pageContent = (page: PublicPage, url: URL, configuration: PublicPageConfiguration) => {
   const staging = url.hostname === "staging.artifactpass.com";
   if (page === "privacy") return <PrivacyPage staging={staging} />;
   if (page === "terms") return <TermsPage staging={staging} />;
-  return <HomePage installCommand={installCommandFor(url)} />;
+  return <HomePage
+    installCommand={installCommandFor(url)}
+    expiryOptions={expiryOptionsForHumans(
+      configuration.allowedExpirySeconds,
+      configuration.deploymentMode,
+    )}
+  />;
 };
 
 const pageTitle = (page: PublicPage): string => {
@@ -122,7 +134,12 @@ export const publicPageHeaders = (nonce: string) => ({
   "X-Content-Type-Options": "nosniff",
 } as const);
 
-export const renderPublicPage = (page: PublicPage, nonce: string, requestUrl: string): string => {
+export const renderPublicPage = (
+  page: PublicPage,
+  nonce: string,
+  requestUrl: string,
+  configuration: PublicPageConfiguration,
+): string => {
   const url = new URL(requestUrl);
   const markup = renderToStaticMarkup(
     <html lang="en">
@@ -142,7 +159,7 @@ export const renderPublicPage = (page: PublicPage, nonce: string, requestUrl: st
             howHref={page === "home" ? "#how" : "/#how"}
             installHref={page === "home" ? "#install" : "/#install"}
           />
-          {pageContent(page, url)}
+          {pageContent(page, url, configuration)}
           <PublicFooter />
         </div>
         <script nonce={nonce} dangerouslySetInnerHTML={{ __html: themeInteractionScript }} />

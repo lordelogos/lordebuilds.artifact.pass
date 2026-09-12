@@ -91316,6 +91316,13 @@ var PROTOCOL_VERSION = 1;
 var PROTOCOL_MAX_ARTIFACT_BYTES = 25 * 1024 * 1024;
 var PROTOCOL_MAX_SOURCE_CHUNK_BYTES = 64 * 1024;
 var PROTOCOL_MAX_EXPIRY_SECONDS = 7 * 24 * 60 * 60;
+var PUBLIC_ALLOWED_EXPIRY_SECONDS = [
+  900,
+  1800,
+  3600,
+  86400,
+  604800
+];
 var SUPPORTED_MIME_TYPES = [
   "text/html",
   "text/markdown",
@@ -93340,7 +93347,7 @@ var publishArtifactInputSchema = external_exports.object({
     "Optional UTF-8 source used to generate a PDF. When configured, ArtifactPass verifies it against the PDF and signs the agent-readable representation."
   ),
   expires_in_seconds: external_exports.number().int().positive().default(3600).describe(
-    "Deployment expiry preset in seconds. Defaults to one hour (3600). Public ArtifactPass presets: 900, 1800, or 3600; a rejection reports the deployment's allowed values."
+    `Deployment expiry preset in seconds. Defaults to one hour (3600). Public ArtifactPass accepts ${PUBLIC_ALLOWED_EXPIRY_SECONDS.join(", ")}; a rejection reports the deployment's allowed values.`
   )
 });
 var publishArtifactOutputSchema = external_exports.object({

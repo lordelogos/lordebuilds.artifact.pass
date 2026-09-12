@@ -7,7 +7,7 @@ Public ArtifactPass runs at `artifactpass.com`. Sign in with Google or GitHub, c
 ## What v1 does
 
 - Uploads one `.md`, `.markdown`, `.html`, `.htm`, or `.pdf` file up to 25 MiB.
-- Offers public expiry presets of 15, 30, or 60 minutes.
+- Recommends public links of 1 hour, 1 day, or 7 days while retaining 15- and 30-minute API presets.
 - Preserves exact source bytes and SHA-256 metadata.
 - Renders sanitized Markdown, sandboxes sanitized HTML without permissions, and previews PDFs.
 - Gives agents deterministic 64 KiB source chunks so large files can be reconstructed exactly.
