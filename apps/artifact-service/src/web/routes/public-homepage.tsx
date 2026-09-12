@@ -21,7 +21,7 @@ dialog{width:min(580px,calc(100% - 28px));max-height:calc(100dvh - 28px);padding
 @media(prefers-reduced-transparency:reduce){.agent-panel,dialog,.drop-overlay{backdrop-filter:none}}@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition-duration:0s!important}.hero-cycle-word{animation:none;opacity:1;transform:none;filter:none}.hero-cycle-word:not(:first-child){display:none}}
 `;
 
-const homepageValidationModuleUrl = import.meta.env.DEV
+const homepageValidationModuleUrl = import.meta.env?.DEV === true
   ? "/src/web/file-validation.ts"
   : "/assets/homepage-validation.js";
 
