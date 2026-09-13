@@ -55,12 +55,12 @@ node packages/setup-cli/dist/cli.mjs deploy-public \
 
 Review the manifest, then rerun the same values with `--approve-manifest` pointing to that file. The deployer stops if the Worker bundle, OAuth inputs, or Cloudflare state changed after approval.
 
-Production existing-resource mode stops before mutation unless the reviewed Worker, D1 UUID, R2 bucket, custom domain, Access application, and migration history still match. It also requires exactly `0009-cleanup-indexes.sql` to be pending. Missing production resources are never created.
+Production existing-resource mode stops before mutation unless the reviewed Worker, D1 UUID, R2 bucket, custom domain, Access application, and migration history still match. It accepts only the two reviewed production baselines: either `0009-cleanup-indexes.sql` alone is pending, or `0007-public-auth.sql` through `0009-cleanup-indexes.sql` are pending. Missing production resources are never created.
 
 The contained mutation order is deliberate:
 
 1. Bind the state-approved configuration to the existing D1 and R2 resources.
-2. Apply migration `0009` and the reviewed R2 lifecycle.
+2. Apply the pending reviewed migrations and the reviewed R2 lifecycle.
 3. Deploy the reviewed Worker and both OAuth secrets in one `wrangler deploy` operation.
 4. Verify health and both provider starts.
 5. Verify the legacy Access application still contains `/upload`.
