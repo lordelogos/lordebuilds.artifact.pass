@@ -94,8 +94,8 @@ const TermsPage = ({ staging }: { readonly staging: boolean }) => (
 
 const installCommandFor = (url: URL): string => {
   return url.hostname === "artifactpass.com"
-    ? "pnpm dlx artifactpass@0.1.0"
-    : `pnpm dlx artifactpass@0.1.0 --base-url ${url.origin}`;
+    ? "pnpm dlx artifactpass@0.1.1"
+    : `pnpm dlx artifactpass@0.1.1 --base-url ${url.origin}`;
 };
 
 const pageContent = (page: PublicPage, url: URL, configuration: PublicPageConfiguration) => {

@@ -87,7 +87,7 @@ describe("public service pages", () => {
     const policy = response.headers.get("content-security-policy") ?? "";
 
     expect(markup).toContain("MCP + Agent Skills");
-    expect(markup).toContain("pnpm dlx artifactpass@0.1.0 --base-url https://staging.artifactpass.com");
+    expect(markup).toContain("pnpm dlx artifactpass@0.1.1 --base-url https://staging.artifactpass.com");
     expect(markup).toContain("Setup applies only to the project folder you run it from.");
     expect(markup).toContain("Exact, temporary artifact handoffs for developers and agentic teams.");
     expect(markup).toContain('id="theme-toggle"');
@@ -112,7 +112,7 @@ describe("public service pages", () => {
   it("pins the production install command during candidate qualification", async () => {
     const markup = await (await requestFrom("https://artifactpass.com", "/")).text();
 
-    expect(markup).toContain('<code id="install-command">pnpm dlx artifactpass@0.1.0</code>');
+    expect(markup).toContain('<code id="install-command">pnpm dlx artifactpass@0.1.1</code>');
     expect(markup).not.toContain("--base-url");
   });
 
