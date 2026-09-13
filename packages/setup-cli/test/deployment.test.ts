@@ -17,6 +17,17 @@ import {
 
 const accountId = "a".repeat(32);
 const zoneId = "b".repeat(32);
+const testMigrationNames = [
+  "0001-migration-1.sql",
+  "0002-migration-2.sql",
+  "0003-migration-3.sql",
+  "0004-migration-4.sql",
+  "0005-migration-5.sql",
+  "0006-migration-6.sql",
+  "0007-public-auth.sql",
+  "0008-private-deployment.sql",
+  "0009-cleanup-indexes.sql",
+] as const;
 const input: DeployInput = {
   accountId,
   zoneId,
@@ -36,8 +47,7 @@ const privateInput = (): Omit<DeployInput, "pdfKeyId" | "pdfPublicKey"> => {
 const deploymentRoot = async (): Promise<string> => {
   const root = await mkdtemp(resolve(tmpdir(), "artifact-share-deployment-test-"));
   await mkdir(resolve(root, "migrations"));
-  for (let migration = 1; migration <= 9; migration += 1) {
-    const name = `${String(migration).padStart(4, "0")}-${migration === 9 ? "cleanup-indexes" : `migration-${migration}`}.sql`;
+  for (const name of testMigrationNames) {
     await writeFile(resolve(root, "migrations", name), "SELECT 1;\n");
   }
   await writeFile(resolve(root, "wrangler-template.json"), JSON.stringify({
@@ -107,8 +117,7 @@ const fakeClient = (options: {
     if (path.includes("/d1/database/db-id/query")) {
       const body = typeof init.body === "string" ? JSON.parse(init.body) as { readonly sql?: string } : {};
       if (body.sql?.includes("d1_migrations")) {
-        return [{ results: (options.appliedMigrations ?? Array.from({ length: 8 }, (_, index) =>
-          `${String(index + 1).padStart(4, "0")}-migration-${index + 1}.sql`)).map((name) => ({ name })) }];
+        return [{ results: (options.appliedMigrations ?? testMigrationNames.slice(0, 8)).map((name) => ({ name })) }];
       }
       if (body.sql?.includes("deployment_metadata")) {
         return [{
@@ -812,12 +821,37 @@ describe("Cloudflare deployment", () => {
     expect(client.requests.every(({ init }) => init.method === undefined || init.method === "GET")).toBe(true);
   });
 
-  it("stops a production deployment before mutation unless only migration 0009 is pending", async () => {
+  it("writes a production approval manifest from the observed 0001-0006 baseline", async () => {
+    const root = await deploymentRoot();
+    const manifestPath = resolve(root, "production-approval.json");
+    const client = fakeClient({
+      existing: true,
+      appliedMigrations: testMigrationNames.slice(0, 6),
+    });
+    const runner = vi.fn();
+
+    const result = await deployArtifactShare({
+      ...input,
+      identities: [],
+      productionExistingResources: true,
+      publicAuth: {
+        googleClientId: "google-client-id",
+        googleClientSecret: "google-client-secret",
+        githubClientId: "github-client-id",
+        githubClientSecret: "github-client-secret",
+      },
+      writeApprovalManifest: manifestPath,
+    }, { client: client.client, deploymentRoot: root, runner });
+
+    expect(result.approvalManifest).toBe(manifestPath);
+    expect(runner).not.toHaveBeenCalled();
+  });
+
+  it("stops a production deployment before mutation for a partial migration baseline", async () => {
     const root = await deploymentRoot();
     const client = fakeClient({
       existing: true,
-      appliedMigrations: Array.from({ length: 7 }, (_, index) =>
-        `${String(index + 1).padStart(4, "0")}-migration-${index + 1}.sql`),
+      appliedMigrations: testMigrationNames.slice(0, 7),
     });
     const runner = vi.fn();
 
@@ -833,7 +867,7 @@ describe("Cloudflare deployment", () => {
       },
       writeApprovalManifest: resolve(root, "production-approval.json"),
     }, { client: client.client, deploymentRoot: root, runner })).rejects.toThrow(
-      "exactly 0009-cleanup-indexes.sql",
+      "approved production migration baseline",
     );
 
     expect(runner).not.toHaveBeenCalled();

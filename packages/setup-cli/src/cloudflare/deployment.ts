@@ -12,6 +12,11 @@ import { fetchCloudflareDeploymentRoute } from "./deployment-readiness";
 import { listCloudflareIdentityProviders } from "./identity";
 import { storageLifecycleForMaximumExpiry } from "./retention-policy";
 
+const approvedProductionPendingMigrationSets = [
+  ["0009-cleanup-indexes.sql"],
+  ["0007-public-auth.sql", "0008-private-deployment.sql", "0009-cleanup-indexes.sql"],
+] as const;
+
 export interface IdentityRule {
   readonly kind: "authenticated" | "email" | "domain";
   readonly value: string;
@@ -533,8 +538,11 @@ const approvalBinding = async (
       throw new Error("Production D1 has a migration that is not present in the reviewed candidate");
     }
     const pendingMigrations = localMigrations.filter((name) => !appliedMigrations.includes(name));
-    if (JSON.stringify(pendingMigrations) !== JSON.stringify(["0009-cleanup-indexes.sql"])) {
-      throw new Error("Production deployment requires exactly 0009-cleanup-indexes.sql to be pending");
+    const approvedBaseline = approvedProductionPendingMigrationSets.some(
+      (expected) => canonicalJson(pendingMigrations) === canonicalJson(expected),
+    );
+    if (!approvedBaseline) {
+      throw new Error("Production deployment requires an approved production migration baseline");
     }
   }
   return {
