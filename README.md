@@ -7,7 +7,7 @@ Create temporary links for Markdown, HTML, and PDF files.
 Open a terminal in the project where you want to use ArtifactPass, then run:
 
 ```sh
-pnpm dlx artifactpass@rc
+pnpm dlx artifactpass@0.1.0
 ```
 
 Setup asks:
@@ -35,7 +35,7 @@ The agent returns a temporary HTTPS link. Public ArtifactPass supports links las
 Run this inside the project you want to update:
 
 ```sh
-pnpm dlx artifactpass@rc configure
+pnpm dlx artifactpass@0.1.0 configure
 ```
 
 Restart your agent after changing the setup.
