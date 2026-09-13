@@ -133,7 +133,13 @@ export const revokeCloudflareOAuthToken = async (
 };
 
 const closeServer = async (server: Server): Promise<void> =>
-  new Promise((resolveClose, rejectClose) => server.close((error) => error === undefined ? resolveClose() : rejectClose(error)));
+  new Promise((resolveClose, rejectClose) => {
+    server.close((error) => error === undefined ? resolveClose() : rejectClose(error));
+    // OAuth clients are not required to consume the callback response body.
+    // Do not let an otherwise completed authorization retain the fixed callback
+    // port through an open keep-alive connection.
+    server.closeAllConnections();
+  });
 
 interface AuthorizationCode {
   readonly code: string;
