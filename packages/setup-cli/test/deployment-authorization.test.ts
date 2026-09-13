@@ -83,7 +83,10 @@ describe("private deployment authorization orchestration", () => {
 
     const browser = vi.fn();
     const resumed = await authorizePrivateDeployment(deployment, false, {
-      environment: { ARTIFACTPASS_CLOUDFLARE_OAUTH_CLIENT_ID: "a".repeat(32) },
+      environment: {
+        ARTIFACTPASS_CLOUDFLARE_OAUTH_ENVIRONMENT: "staging",
+        ARTIFACTPASS_CLOUDFLARE_OAUTH_CLIENT_ID: "a".repeat(32),
+      },
       credentialStore: store,
       fetch: fetchImplementation,
       oauth: { openBrowser: browser },
