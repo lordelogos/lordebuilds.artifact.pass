@@ -6,7 +6,7 @@ import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import { runPrivateDeploymentApproval } from "../src/private-deployment/deployment-approval";
-import { DeploymentMutationError } from "../src/cloudflare/deployment";
+import { DeploymentMutationError, type DeploymentResult } from "../src/cloudflare/deployment";
 import {
   createPrivateDeploymentState,
   writePrivateDeploymentState,
@@ -115,6 +115,74 @@ describe("private deployment approval flow", () => {
     expect(result.action).toBe("complete");
     expect(result.state.status).toBe("complete");
     expect(result.receiptPath).toContain(`${deploymentId}.json`);
+  });
+
+  it("shows live deployment activity before Cloudflare work finishes", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifactpass-approval-progress-test-"));
+    const state = await readyState(root);
+    const answers = ["1", "1"];
+    const events: string[] = [];
+    let finishDeployment: ((result: DeploymentResult) => void) | undefined;
+    const pendingDeployment = new Promise<DeploymentResult>((resolveDeployment) => {
+      finishDeployment = resolveDeployment;
+    });
+    const runDeploy = vi.fn(async (
+      input: { readonly writeApprovalManifest?: string },
+      dependencies: { readonly onProgress?: (message: string) => void },
+    ) => {
+      if (input.writeApprovalManifest !== undefined) {
+        await writeFile(input.writeApprovalManifest, JSON.stringify({ version: 3, binding: { stable: true } }));
+        return {
+          baseUrl: "https://artifacts.example.com",
+          teamCommand: "pnpm dlx artifactpass --base-url https://artifacts.example.com",
+          plan: [],
+          changed: [],
+        };
+      }
+      dependencies.onProgress?.("Preparing D1 database");
+      return pendingDeployment;
+    });
+
+    const resultPromise = runPrivateDeploymentApproval(state, {
+      root,
+      cliVersion,
+      deploymentRoot: root,
+      authorization,
+      prompt: {
+        question: async () => answers.shift() ?? "1",
+        write: vi.fn(),
+        activity: (message) => {
+          events.push(`start:${message}`);
+          return {
+            update: (nextMessage) => events.push(`update:${nextMessage}`),
+            succeed: (finalMessage) => events.push(`success:${finalMessage}`),
+            fail: (finalMessage) => events.push(`failure:${finalMessage}`),
+          };
+        },
+      },
+      runDeploy: runDeploy as never,
+    });
+
+    await vi.waitFor(() => expect(runDeploy).toHaveBeenCalledTimes(2));
+    expect(events).toEqual([
+      "start:Starting private deployment. This can take a few minutes",
+      "update:Preparing D1 database",
+    ]);
+
+    finishDeployment?.({
+      baseUrl: "https://artifacts.example.com",
+      teamCommand: "pnpm dlx artifactpass --base-url https://artifacts.example.com",
+      plan: [],
+      changed: ["Worker deployment"],
+      resources: { worker_service: "artifactpass" },
+      verification: {
+        health: "passed",
+        protectedUpload: "passed",
+        verifiedAt: "2026-09-01T12:00:00.000Z",
+      },
+    });
+    await expect(resultPromise).resolves.toMatchObject({ action: "complete" });
+    expect(events.at(-1)).toBe("success:ArtifactPass is live at https://artifacts.example.com");
   });
 
   it("saves an approval without running any mutation", async () => {

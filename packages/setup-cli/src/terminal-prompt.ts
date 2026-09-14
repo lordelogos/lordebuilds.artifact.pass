@@ -1,5 +1,11 @@
 import { createInterface } from "node:readline/promises";
 
+export interface TerminalActivity {
+  readonly update: (message: string) => void;
+  readonly succeed: (message: string) => void;
+  readonly fail: (message: string) => void;
+}
+
 export interface TerminalPrompt {
   readonly interactive?: boolean;
   readonly question: (message: string) => Promise<string>;
@@ -10,6 +16,7 @@ export interface TerminalPrompt {
   readonly intro?: (message: string) => void;
   readonly note?: (message: string, title?: string) => void;
   readonly outro?: (message: string) => void;
+  readonly activity?: (message: string) => TerminalActivity;
 }
 
 export type InteractiveTerminalPrompt = TerminalPrompt & { readonly interactive: boolean };
@@ -76,6 +83,18 @@ export const createTerminalPrompt = async (): Promise<InteractiveTerminalPrompt>
     intro: (message) => clack.intro(message, promptOptions),
     note: (message, title) => clack.note(message, title, promptOptions),
     outro: (message) => clack.outro(message, promptOptions),
+    activity: (message) => {
+      const activity = clack.spinner({
+        indicator: "timer",
+        output: process.stderr,
+      });
+      activity.start(message);
+      return {
+        update: (nextMessage) => activity.message(nextMessage),
+        succeed: (finalMessage) => activity.stop(finalMessage),
+        fail: (finalMessage) => activity.error(finalMessage),
+      };
+    },
   };
 };
 

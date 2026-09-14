@@ -1130,6 +1130,7 @@ describe("Cloudflare deployment", () => {
   it("reuses existing resources and reruns deployment safely", async () => {
     const client = fakeClient({ existing: true });
     const commands: string[][] = [];
+    const progress: string[] = [];
     const runner = vi.fn(async (_command: string, args: readonly string[]) => {
       commands.push([...args]);
       return { stdout: "", stderr: "" };
@@ -1138,11 +1139,25 @@ describe("Cloudflare deployment", () => {
       client: client.client,
       deploymentRoot: await deploymentRoot(),
       runner,
+      onProgress: (message) => progress.push(message),
       fetch: vi.fn(async (request) => String(request).endsWith("/health")
         ? new Response(JSON.stringify({ service: "lordebuilds.artifacts.share", status: "ok" }))
         : new Response(null, { status: 302 })),
     });
     expect(result.changed).toEqual(["Worker deployment"]);
+    expect(progress).toEqual([
+      "Checking Cloudflare authorization",
+      "Preparing Cloudflare resources",
+      "Checking domain and Worker settings",
+      "Preparing D1 database",
+      "Preparing R2 storage",
+      "Configuring publisher access",
+      "Applying D1 migrations",
+      "Applying R2 retention policy",
+      "Deploying ArtifactPass to artifacts.example.com",
+      "Waiting for artifacts.example.com to become ready",
+      "Verifying private sign-in",
+    ]);
     const rerun = await deployArtifactShare(input, {
       client: client.client,
       deploymentRoot: await deploymentRoot(),

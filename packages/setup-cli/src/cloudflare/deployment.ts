@@ -606,6 +606,7 @@ export interface DeployDependencies {
   readonly fetch?: typeof globalThis.fetch;
   readonly sleep?: (milliseconds: number) => Promise<void>;
   readonly readinessTimeoutMilliseconds?: number;
+  readonly onProgress?: (message: string) => void;
 }
 
 // A newly attached Worker custom domain can exist at Cloudflare before the local
@@ -673,6 +674,7 @@ export const deployArtifactShare = async (
   const resourceIdentities: Record<string, string> = {};
   let approvedBindingDigest: string | undefined;
   let approvedRemoteLifecycle: unknown;
+  dependencies.onProgress?.("Checking Cloudflare authorization");
   const verified = await dependencies.client.verifyToken();
   if (verified.status !== "active") throw new Error("Cloudflare API token is not active");
   if (input.dryRun) {
@@ -721,9 +723,11 @@ export const deployArtifactShare = async (
     approvedBindingDigest = createHash("sha256").update(JSON.stringify(approved.binding)).digest("hex");
     approvedRemoteLifecycle = (approved.binding.remote as { readonly lifecycle?: unknown } | null)?.lifecycle;
   }
+  dependencies.onProgress?.("Preparing Cloudflare resources");
   try {
   let privateAccess = input.privateAccess;
   if (privateAccess?.providerAction === "create-after-approval") {
+    dependencies.onProgress?.("Configuring email sign-in");
     const createdProvider = await dependencies.client.request<{ readonly id: string; readonly type?: string }>(
       `/accounts/${input.accountId}/access/identity_providers`,
       {
@@ -747,6 +751,7 @@ export const deployArtifactShare = async (
     resourceIdentities.identity_provider_id = createdProvider.id;
     changed.push("Email verification provider");
   }
+  dependencies.onProgress?.("Checking domain and Worker settings");
   const workersSubdomain = await readWorkersSubdomain(input, dependencies);
   if (workersSubdomain === null) {
     if (input.productionExistingResources === true) {
@@ -776,6 +781,7 @@ export const deployArtifactShare = async (
   if (collision !== undefined) throw new Error(`Hostname is already attached to Worker ${collision.service}`);
 
   const databaseName = serviceName;
+  dependencies.onProgress?.("Preparing D1 database");
   const databases = await dependencies.client.request<readonly Database[]>(
     `/accounts/${input.accountId}/d1/database?name=${encodeURIComponent(databaseName)}`,
   );
@@ -791,6 +797,7 @@ export const deployArtifactShare = async (
   }
   resourceIdentities.d1_database_id = database.uuid;
 
+  dependencies.onProgress?.("Preparing R2 storage");
   const buckets = await dependencies.client.request<{ readonly buckets: readonly Bucket[] }>(
     `/accounts/${input.accountId}/r2/buckets`,
   );
@@ -805,6 +812,7 @@ export const deployArtifactShare = async (
   }
   resourceIdentities.r2_bucket_name = serviceName;
 
+  dependencies.onProgress?.("Configuring publisher access");
   const applications = await dependencies.client.request<readonly AccessApplication[]>(
     `/accounts/${input.accountId}/access/apps`,
   );
@@ -987,6 +995,7 @@ export const deployArtifactShare = async (
       );
     }
     const commandEnvironment = { CLOUDFLARE_ACCOUNT_ID: input.accountId };
+    dependencies.onProgress?.("Applying D1 migrations");
     await runner("wrangler", [
       "d1", "migrations", "apply", databaseName, "--remote", "--config", configurationPath,
     ], { env: commandEnvironment });
@@ -1002,6 +1011,7 @@ export const deployArtifactShare = async (
       ], { env: commandEnvironment });
       changed.push("D1 ownership marker");
     }
+    dependencies.onProgress?.("Applying R2 retention policy");
     await runner("wrangler", [
       "r2", "bucket", "lifecycle", "set", serviceName,
       "--file", lifecyclePath, "--force",
@@ -1048,6 +1058,7 @@ export const deployArtifactShare = async (
           GITHUB_OAUTH_CLIENT_SECRET: input.publicAuth.githubClientSecret,
         }), { mode: 0o600 });
     }
+    dependencies.onProgress?.(`Deploying ArtifactPass to ${input.hostname}`);
     await runner("wrangler", [
       "deploy", "--config", configurationPath, "--strict",
       ...(input.publicAuth === undefined ? [] : ["--secrets-file", secretsPath]),
@@ -1062,6 +1073,7 @@ export const deployArtifactShare = async (
   const sleep = dependencies.sleep ?? (async (milliseconds: number) =>
     await new Promise<void>((resolveSleep) => setTimeout(resolveSleep, milliseconds)));
   const readinessTimeoutMilliseconds = dependencies.readinessTimeoutMilliseconds ?? 10_000;
+  dependencies.onProgress?.(`Waiting for ${input.hostname} to become ready`);
   await fetchAfterDeploymentPropagation(
     fetchImplementation,
     `${baseUrl}/health`,
@@ -1224,6 +1236,7 @@ export const deployArtifactShare = async (
       },
     };
   }
+  dependencies.onProgress?.("Verifying private sign-in");
   const protectedUpload = await fetchAfterDeploymentPropagation(
     fetchImplementation,
     `${baseUrl}/upload`,
