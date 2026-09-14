@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 
-describe("npm candidate publishing", () => {
+describe("npm release publishing", () => {
   it("binds the public package to its source repository", async () => {
     const manifest = JSON.parse(await readFile(
       resolve(repositoryRoot, "packages/setup-cli/package.json"),
@@ -18,7 +18,7 @@ describe("npm candidate publishing", () => {
     );
   });
 
-  it("publishes only immutable validated RC or stable candidates through tokenless OIDC", async () => {
+  it("publishes immutable validated RCs to rc and stable releases to latest through tokenless OIDC", async () => {
     const workflow = await readFile(
       resolve(repositoryRoot, ".github/workflows/publish-candidate.yml"),
       "utf8",
@@ -41,7 +41,6 @@ describe("npm candidate publishing", () => {
     expect(workflow).not.toContain("${{ secrets.");
     expect(workflow).toContain("github.event.repository.visibility");
     expect(workflow.match(/node scripts\/validate-candidate-tag\.mjs/gu)).toHaveLength(2);
-    expect(workflow).not.toContain('--tag latest');
   });
 
   it("pins every workflow action to an immutable commit", async () => {

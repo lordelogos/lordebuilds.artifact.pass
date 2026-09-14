@@ -42,12 +42,12 @@ const validate = async (root: string, version: string, visibility = "public") =>
   return { result, githubEnvironment };
 };
 
-describe("candidate tag validation", () => {
+describe("release tag validation", () => {
   it("accepts a stable version only at the public main tip", async () => {
     const { root } = await fixture("0.1.2");
     const { result, githubEnvironment } = await validate(root, "0.1.2");
-    expect(result.stdout).toContain("candidate channel");
-    expect(await readFile(githubEnvironment, "utf8")).toBe("release_channel=candidate\n");
+    expect(result.stdout).toContain("latest channel");
+    expect(await readFile(githubEnvironment, "utf8")).toBe("release_channel=latest\n");
   });
 
   it("rejects a stable version behind the main tip", async () => {
