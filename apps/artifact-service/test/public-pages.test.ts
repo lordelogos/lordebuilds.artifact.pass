@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 
+import packageMetadata from "../../../package.json" with { type: "json" };
 import { createArtifactApplication } from "../src/server/index";
 import { renderPublicPage } from "../src/web/routes/public-pages";
 
@@ -79,6 +80,9 @@ describe("public service pages", () => {
     expect(markup).not.toMatch(/name="expiry"[^>]*value="604800"/u);
     expect(markup).toContain("15 minutes, 1 hour, or 1 day.");
     expect(markup).not.toContain("1 hour, 1 day, or 7 days.");
+    expect(markup).toContain(
+      `pnpm dlx artifactpass@${packageMetadata.version} --base-url https://artifacts.example.com`,
+    );
   });
 
   it("serves the approved setup-first homepage with nonce-protected interactions", async () => {
@@ -87,7 +91,9 @@ describe("public service pages", () => {
     const policy = response.headers.get("content-security-policy") ?? "";
 
     expect(markup).toContain("MCP + Agent Skills");
-    expect(markup).toContain("pnpm dlx artifactpass@0.1.1 --base-url https://staging.artifactpass.com");
+    expect(markup).toContain(
+      `pnpm dlx artifactpass@${packageMetadata.version} --base-url https://staging.artifactpass.com`,
+    );
     expect(markup).toContain("Setup applies only to the project folder you run it from.");
     expect(markup).toContain("Exact, temporary artifact handoffs for developers and agentic teams.");
     expect(markup).toContain('id="theme-toggle"');
@@ -109,10 +115,12 @@ describe("public service pages", () => {
     expect(response.headers.get("cross-origin-opener-policy")).toBe("same-origin-allow-popups");
   });
 
-  it("pins the production install command during candidate qualification", async () => {
+  it("pins the production install command to the packaged release version", async () => {
     const markup = await (await requestFrom("https://artifactpass.com", "/")).text();
 
-    expect(markup).toContain('<code id="install-command">pnpm dlx artifactpass@0.1.1</code>');
+    expect(markup).toContain(
+      `<code id="install-command">pnpm dlx artifactpass@${packageMetadata.version}</code>`,
+    );
     expect(markup).not.toContain("--base-url");
   });
 
