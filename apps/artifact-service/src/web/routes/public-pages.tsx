@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 
+import packageMetadata from "../../../../../package.json" with { type: "json" };
 import { PublicFooter, PublicNavigation } from "../components/public-chrome";
 import { expiryOptionsForHumans } from "../components/expiry-picker";
 import {
@@ -94,8 +95,8 @@ const TermsPage = ({ staging }: { readonly staging: boolean }) => (
 
 const installCommandFor = (url: URL): string => {
   return url.hostname === "artifactpass.com"
-    ? "pnpm dlx artifactpass@0.1.1"
-    : `pnpm dlx artifactpass@0.1.1 --base-url ${url.origin}`;
+    ? `pnpm dlx artifactpass@${packageMetadata.version}`
+    : `pnpm dlx artifactpass@${packageMetadata.version} --base-url ${url.origin}`;
 };
 
 const pageContent = (page: PublicPage, url: URL, configuration: PublicPageConfiguration) => {
