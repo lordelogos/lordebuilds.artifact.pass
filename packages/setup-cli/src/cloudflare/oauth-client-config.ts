@@ -11,7 +11,7 @@ export const resolveCloudflareOAuthClientConfiguration = (
   environment: Readonly<Record<string, string | undefined>> = process.env,
 ): CloudflareOAuthClientConfiguration => {
   const requestedEnvironment = environment.ARTIFACTPASS_CLOUDFLARE_OAUTH_ENVIRONMENT ??
-    (packageMetadata.version.includes("-") ? "staging" : "production");
+    "production";
   if (requestedEnvironment !== "staging" && requestedEnvironment !== "production") {
     throw new Error("ARTIFACTPASS_CLOUDFLARE_OAUTH_ENVIRONMENT must be staging or production");
   }

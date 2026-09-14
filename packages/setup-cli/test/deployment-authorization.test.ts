@@ -265,4 +265,20 @@ describe("private deployment authorization orchestration", () => {
       clientId: "1a37b84fc5a2cca7963b359ff382e67c",
     });
   });
+
+  it("uses the packaged production OAuth client by default for public release candidates", () => {
+    expect(resolveCloudflareOAuthClientConfiguration({})).toEqual({
+      environment: "production",
+      clientId: "1a37b84fc5a2cca7963b359ff382e67c",
+    });
+  });
+
+  it("uses the packaged staging OAuth client only when explicitly requested", () => {
+    expect(resolveCloudflareOAuthClientConfiguration({
+      ARTIFACTPASS_CLOUDFLARE_OAUTH_ENVIRONMENT: "staging",
+    })).toEqual({
+      environment: "staging",
+      clientId: "55277634635e7ce787ed554d396d2694",
+    });
+  });
 });
