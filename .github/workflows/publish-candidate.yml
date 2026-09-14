@@ -1,4 +1,4 @@
-name: Publish npm candidate
+name: Publish npm release
 
 on:
   push:
@@ -18,7 +18,7 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-      - name: Verify immutable candidate tag
+      - name: Verify immutable release tag
         env:
           RELEASE_TAG: ${{ github.ref_name }}
           REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
@@ -48,7 +48,7 @@ jobs:
         run: |
           git fetch --no-tags origin main
           node scripts/validate-candidate-tag.mjs
-      - name: Publish candidate through npm trusted publishing
+      - name: Publish release through npm trusted publishing
         run: |
           package_archive="$(find "$RUNNER_TEMP/artifactpass-release" -maxdepth 1 -name '*.tgz' -print -quit)"
           if [ "${{ github.event.repository.visibility }}" = "public" ]; then

@@ -1,6 +1,6 @@
 {
   "name": "artifactpass",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "displayName": "ArtifactPass",
   "description": "Share local Markdown, HTML, and PDF artifacts through a private temporary link.",
   "author": {

@@ -12,7 +12,7 @@ const git = (...args) => execFileSync("git", args, {
   encoding: "utf8",
 }).trim();
 const fail = (message) => {
-  throw new Error(`Candidate tag validation failed: ${message}`);
+  throw new Error(`Release tag validation failed: ${message}`);
 };
 
 if (!releaseTag) fail("RELEASE_TAG or GITHUB_REF_NAME is required");
@@ -33,19 +33,19 @@ let releaseChannel;
 if (/^\d+\.\d+\.\d+-rc\.\d+$/u.test(version)) {
   releaseChannel = "rc";
 } else if (/^\d+\.\d+\.\d+$/u.test(version)) {
-  releaseChannel = "candidate";
+  releaseChannel = "latest";
 } else {
   fail("only exact RC or stable versions may be published");
 }
 
-if (releaseChannel === "candidate") {
-  if (repositoryVisibility !== "public") fail("stable candidate publishing requires a public repository");
+if (releaseChannel === "latest") {
+  if (repositoryVisibility !== "public") fail("stable publishing requires a public repository");
   if (git("rev-parse", "HEAD") !== git("rev-parse", "origin/main")) {
-    fail("stable candidate tag must point to the reviewed tip of main");
+    fail("stable release tag must point to the reviewed tip of main");
   }
 }
 
 if (process.env.GITHUB_ENV) {
   await appendFile(process.env.GITHUB_ENV, `release_channel=${releaseChannel}\n`);
 }
-process.stdout.write(`Candidate tag ${releaseTag} is valid for the ${releaseChannel} channel.\n`);
+process.stdout.write(`Release tag ${releaseTag} is valid for the ${releaseChannel} channel.\n`);
