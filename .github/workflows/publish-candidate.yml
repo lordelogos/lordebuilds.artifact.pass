@@ -21,27 +21,8 @@ jobs:
       - name: Verify immutable candidate tag
         env:
           RELEASE_TAG: ${{ github.ref_name }}
-        run: |
-          package_version="$(node -p "require('./packages/setup-cli/package.json').version")"
-          root_version="$(node -p "require('./package.json').version")"
-          plugin_version="$(node -p "require('./plugins/artifactpass/plugin-metadata.json').version")"
-          test "$RELEASE_TAG" = "v$package_version"
-          test "$package_version" = "$root_version"
-          test "$package_version" = "$plugin_version"
-          git merge-base --is-ancestor HEAD origin/main
-          if [[ "$package_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$ ]]; then
-            release_channel="rc"
-          elif [[ "$package_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            release_channel="candidate"
-          else
-            echo "candidate publishing accepts only RC or stable versions" >&2
-            exit 1
-          fi
-          if [ "$release_channel" = "candidate" ] && [ "${{ github.event.repository.visibility }}" != "public" ]; then
-            echo "stable candidate publishing requires a public repository" >&2
-            exit 1
-          fi
-          echo "release_channel=$release_channel" >> "$GITHUB_ENV"
+          REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
+        run: node scripts/validate-candidate-tag.mjs
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
           version: 10.11.0
@@ -60,6 +41,13 @@ jobs:
           mkdir -p "$RUNNER_TEMP/artifactpass-release"
           pnpm --dir packages/setup-cli pack --pack-destination "$RUNNER_TEMP/artifactpass-release"
           test "$(find "$RUNNER_TEMP/artifactpass-release" -maxdepth 1 -name '*.tgz' | wc -l | tr -d ' ')" = "1"
+      - name: Revalidate reviewed stable tip immediately before publication
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
+        run: |
+          git fetch --no-tags origin main
+          node scripts/validate-candidate-tag.mjs
       - name: Publish candidate through npm trusted publishing
         run: |
           package_archive="$(find "$RUNNER_TEMP/artifactpass-release" -maxdepth 1 -name '*.tgz' -print -quit)"

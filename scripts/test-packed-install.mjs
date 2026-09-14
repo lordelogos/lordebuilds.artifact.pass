@@ -54,18 +54,27 @@ try {
     mkdir(configurationHome),
     mkdir(home),
   ]);
-  await execute("pnpm", [
-    "--dir", "packages/setup-cli", "pack", "--pack-destination", archiveDirectory,
-  ], { cwd: repositoryRoot });
-  const archives = (await readdir(archiveDirectory)).filter((name) => name.endsWith(".tgz"));
-  if (archives.length !== 1) throw new Error("Packed install test expected exactly one archive");
-  const archive = resolve(archiveDirectory, archives[0]);
+  let archive = process.env.ARTIFACTPASS_PACKAGE_ARCHIVE;
+  if (archive) {
+    archive = resolve(archive);
+  } else {
+    await execute("pnpm", [
+      "--dir", "packages/setup-cli", "pack", "--pack-destination", archiveDirectory,
+    ], { cwd: repositoryRoot });
+    const archives = (await readdir(archiveDirectory)).filter((name) => name.endsWith(".tgz"));
+    if (archives.length !== 1) throw new Error("Packed install test expected exactly one archive");
+    archive = resolve(archiveDirectory, archives[0]);
+  }
   await writeFile(resolve(installDirectory, "package.json"), JSON.stringify({
     private: true,
     packageManager: "pnpm@10.11.0",
   }));
   await execute("pnpm", ["add", archive, "--ignore-scripts"], { cwd: installDirectory });
   const cli = resolve(installDirectory, "node_modules", "artifactpass", "dist", "cli.mjs");
+  const installedManifest = JSON.parse(await readFile(
+    resolve(installDirectory, "node_modules", "artifactpass", "package.json"),
+    "utf8",
+  ));
   healthServer = await startHealthServer();
   const environment = {
     ...process.env,
@@ -96,6 +105,7 @@ try {
   for (const receipt of [first, second]) {
     if (
       receipt.receipt_version !== 3 ||
+      receipt.product_version !== installedManifest.version ||
       receipt.product !== "ArtifactPass" ||
       receipt.status !== "success" ||
       receipt.profile !== "local" ||

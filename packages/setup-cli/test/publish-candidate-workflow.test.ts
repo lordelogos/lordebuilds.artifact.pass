@@ -31,7 +31,8 @@ describe("npm candidate publishing", () => {
       "pnpm release:check",
       "pnpm test:packed-install",
       "pnpm --dir packages/setup-cli pack",
-      'release_channel="candidate"',
+      "node scripts/validate-candidate-tag.mjs",
+      "git fetch --no-tags origin main",
       'npm publish "$package_archive" --tag "$release_channel" --access public --provenance',
     ]) {
       expect(workflow).toContain(expected);
@@ -39,8 +40,7 @@ describe("npm candidate publishing", () => {
     expect(workflow).not.toContain("NODE_AUTH_TOKEN");
     expect(workflow).not.toContain("${{ secrets.");
     expect(workflow).toContain("github.event.repository.visibility");
-    expect(workflow).toContain('release_channel="rc"');
-    expect(workflow).toContain('stable candidate publishing requires a public repository');
+    expect(workflow.match(/node scripts\/validate-candidate-tag\.mjs/gu)).toHaveLength(2);
     expect(workflow).not.toContain('--tag latest');
   });
 
