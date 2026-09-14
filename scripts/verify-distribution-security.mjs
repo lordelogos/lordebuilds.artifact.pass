@@ -52,17 +52,14 @@ for (const [name, workflow] of [["candidate", candidateWorkflow], ["release", re
 if (!candidateWorkflow.includes('npm publish "$package_archive" --tag "$release_channel" --access public --provenance')) {
   fail("candidate publishing does not explicitly request npm provenance");
 }
-if (!candidateWorkflow.includes('release_channel="candidate"')) {
-  fail("candidate publishing does not isolate stable versions under a non-default tag");
-}
-if (!candidateWorkflow.includes("stable candidate publishing requires a public repository")) {
-  fail("stable candidate publishing does not require public provenance eligibility");
+if ((candidateWorkflow.match(/node scripts\/validate-candidate-tag\.mjs/gu) ?? []).length !== 2) {
+  fail("candidate publishing does not validate the tag both before qualification and immediately before publication");
 }
 if (!candidateWorkflow.includes("scan-secrets.mjs --history --fetch-remote origin")) {
   fail("candidate publishing does not scan every remote ref before publication");
 }
-if (!candidateWorkflow.includes("git merge-base --is-ancestor HEAD origin/main")) {
-  fail("candidate tags are not restricted to commits reachable from main");
+if (!candidateWorkflow.includes("git fetch --no-tags origin main")) {
+  fail("candidate publishing does not refresh main immediately before final tag validation");
 }
 if (!releaseWorkflow.includes("actions/attest@")) fail("release artifacts are not attested");
 
