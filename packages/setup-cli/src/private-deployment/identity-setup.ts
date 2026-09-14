@@ -9,6 +9,7 @@ import {
 } from "../cloudflare/identity";
 import type { CloudflareClient } from "../cloudflare/client";
 import { runBrowserHandoff, type BrowserHandoffPrompt } from "./browser-handoff";
+import { promptForChoice, promptForMultipleChoices, promptForText } from "../terminal-prompt";
 import { provePrivateDeploymentCheckpoint, type PrivateDeploymentState } from "./deployment-state";
 
 export interface PrivateIdentitySetupDependencies {
@@ -26,29 +27,16 @@ export interface PrivateIdentitySetupResult {
   readonly plan?: PrivateIdentityPlan;
 }
 
-const askChoice = async (prompt: BrowserHandoffPrompt, question: string, options: readonly string[]): Promise<number> => {
-  for (;;) {
-    const answer = await prompt.question(`${question}\n${options.map((option, index) => `${index + 1}. ${option}`).join("\n")}\n> `);
-    const selection = Number.parseInt(answer.trim(), 10);
-    if (Number.isInteger(selection) && selection >= 1 && selection <= options.length) return selection - 1;
-    prompt.write(`Choose a number from 1 to ${options.length}.\n`);
-  }
-};
-
 const askMultiple = async (
   prompt: BrowserHandoffPrompt,
   question: string,
   providers: readonly CloudflareIdentityProviderSummary[],
-): Promise<readonly CloudflareIdentityProviderSummary[]> => {
-  for (;;) {
-    const answer = await prompt.question(`${question}\n${providers.map((provider, index) => `${index + 1}. ${provider.name} (${provider.type})`).join("\n")}\nEnter one or more numbers separated by commas:\n> `);
-    const indexes = [...new Set(answer.split(",").map((value) => Number.parseInt(value.trim(), 10) - 1))];
-    if (indexes.length > 0 && indexes.every((index) => Number.isInteger(index) && providers[index] !== undefined)) {
-      return indexes.map((index) => providers[index] as CloudflareIdentityProviderSummary);
-    }
-    prompt.write(`Choose one or more numbers from 1 to ${providers.length}.\n`);
-  }
-};
+): Promise<readonly CloudflareIdentityProviderSummary[]> => promptForMultipleChoices(
+  prompt,
+  question,
+  providers,
+  (provider) => `${provider.name} (${provider.type})`,
+);
 
 const emailPattern = /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/u;
 const domainPattern = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/u;
@@ -83,14 +71,17 @@ const storedProviderIds = (state: PrivateDeploymentState): readonly string[] => 
 };
 
 const askRules = async (prompt: BrowserHandoffPrompt): Promise<readonly PrivateAccessIdentityRule[]> => {
-  const kind = await askChoice(prompt, "Who may publish through this private deployment?", [
+  const kind = await promptForChoice(prompt, "Who may publish through this private deployment?", [
     "People with approved company email domains",
     "Specific email addresses",
   ]);
   for (;;) {
-    const answer = await prompt.question(kind === 0
-      ? "Approved email domains, separated by commas:\n> "
-      : "Approved email addresses, separated by commas:\n> ");
+    const answer = kind === 0
+      ? await promptForText(prompt, "Approved email domains, separated by commas", "example.com")
+      : await promptForText(prompt, [
+        "Approved email addresses, separated by commas",
+        "Include your own email address. Anyone omitted from this list, including the administrator, will be unable to sign in.",
+      ].join("\n"), "you@example.com");
     const values = [...new Set(answer.split(",").map((value) => value.trim().toLowerCase()).filter(Boolean))];
     const valid = kind === 0
       ? values.length > 0 && values.every((value) => domainPattern.test(value))

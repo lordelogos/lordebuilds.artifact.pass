@@ -7,9 +7,11 @@ import type { DeploymentResult } from "../cloudflare/deployment";
 import { DeploymentMutationError } from "../cloudflare/deployment";
 import type { BrowserHandoffPrompt } from "./browser-handoff";
 import type { PrivateDeploymentAuthorizationSession } from "./deployment-authorization";
+import { promptForChoice, promptForText } from "../terminal-prompt";
 import {
   compilePrivateDeploymentSpecification,
   deploymentInputFromPrivateSpecification,
+  isPrivateDeploymentHostname,
   privateDeploymentSpecificationDigest,
   type PrivateDeploymentSpecification,
 } from "./deployment-specification";
@@ -39,7 +41,8 @@ export interface PrivateDeploymentApprovalDependencies {
 }
 
 export interface PrivateDeploymentApprovalResult {
-  readonly action: "saved" | "approval-invalidated" | "repair-required" | "complete";
+  readonly action: "saved" | "edit-requested" | "approval-invalidated" | "repair-required" | "complete";
+  readonly edit?: PrivateDeploymentEditTarget;
   readonly state: PrivateDeploymentState;
   readonly message: string;
   readonly result?: DeploymentResult;
@@ -47,31 +50,24 @@ export interface PrivateDeploymentApprovalResult {
   readonly receiptPath?: string;
 }
 
-const askChoice = async (
-  prompt: BrowserHandoffPrompt,
-  question: string,
-  options: readonly string[],
-): Promise<number> => {
-  for (;;) {
-    const answer = await prompt.question(`${question}\n${options.map((option, index) => `${index + 1}. ${option}`).join("\n")}\n> `);
-    const choice = Number.parseInt(answer.trim(), 10) - 1;
-    if (Number.isInteger(choice) && options[choice] !== undefined) return choice;
-    prompt.write(`Choose a number from 1 to ${options.length}.\n`);
-  }
-};
+export type PrivateDeploymentEditTarget = "hostname" | "sign-in" | "audience" | "retention";
 
 const chooseHostname = async (state: PrivateDeploymentState, prompt: BrowserHandoffPrompt): Promise<string> => {
   if (state.hostname !== undefined) return state.hostname;
   const zone = state.cloudflare?.zone_name;
   if (zone === undefined) throw new Error("Choose a Cloudflare domain before the deployment hostname");
-  const choice = await askChoice(prompt, "Where should this private ArtifactPass deployment live?", [
+  const choice = await promptForChoice(prompt, "Where should this private ArtifactPass deployment live?", [
     `artifacts.${zone}`,
     zone,
     "Another hostname on this domain",
   ]);
   if (choice === 0) return `artifacts.${zone}`;
   if (choice === 1) return zone;
-  return (await prompt.question("Deployment hostname:\n> ")).trim().toLowerCase();
+  while (true) {
+    const hostname = (await promptForText(prompt, "Deployment hostname", `files.${zone}`)).trim().toLowerCase();
+    if (isPrivateDeploymentHostname(hostname, zone)) return hostname;
+    prompt.write(`Enter a hostname on ${zone}, for example files.${zone}.`);
+  }
 };
 
 const safeFailure = (error: unknown): string => {
@@ -92,10 +88,13 @@ const persist = async (
   dependencies.now,
 );
 
-const renderReview = (specification: PrivateDeploymentSpecification): string => [
+const renderReview = (
+  specification: PrivateDeploymentSpecification,
+  accountName?: string,
+): string => [
   "Review this private ArtifactPass deployment",
   `Hostname: ${specification.hostname}`,
-  `Cloudflare account: ${specification.account_id}`,
+  `Cloudflare account: ${accountName ?? specification.account_id}`,
   `Cloudflare domain: ${specification.zone_name}`,
   `Login: ${specification.identity.mode === "email-code" ? "Email verification code" : "Company login"}`,
   `Publisher rules: ${specification.identity.rules.map((rule) => rule.kind === "authenticated" ? "selected providers" : rule.value).join(", ")}`,
@@ -105,6 +104,70 @@ const renderReview = (specification: PrivateDeploymentSpecification): string => 
   "Placement: Cloudflare Automatic",
   "",
 ].join("\n");
+
+const withoutResourceKeys = (
+  resources: PrivateDeploymentState["resources"],
+  keys: readonly string[],
+): PrivateDeploymentState["resources"] => {
+  if (resources === undefined) return undefined;
+  const next = { ...resources };
+  keys.forEach((key) => delete next[key]);
+  return next;
+};
+
+const withoutSelectedResources = (
+  state: PrivateDeploymentState,
+  keys: readonly string[],
+): PrivateDeploymentState => {
+  const resources = withoutResourceKeys(state.resources, keys);
+  if (resources !== undefined) return { ...state, resources };
+  const { resources: _resources, ...remaining } = state;
+  return remaining;
+};
+
+const prepareEdit = (
+  state: PrivateDeploymentState,
+  target: PrivateDeploymentEditTarget,
+): PrivateDeploymentState => {
+  if (target === "hostname") {
+    const { hostname: _hostname, service_name: _serviceName, ...remaining } = state;
+    return invalidatePrivateDeploymentCheckpoints(
+      remaining,
+      ["specification-ready", "approval-ready"],
+      "retention-ready",
+    );
+  }
+  if (target === "retention") {
+    const { retention_seconds: _retention, ...remaining } = state;
+    return invalidatePrivateDeploymentCheckpoints(
+      remaining,
+      ["retention-ready", "specification-ready", "approval-ready"],
+      "identity-ready",
+    );
+  }
+  const identityResourceKeys = [
+    "identity_mode",
+    "identity_provider_ids",
+    "identity_provider_action",
+    "access_auto_redirect",
+    "access_identity_rules",
+  ];
+  if (target === "audience") {
+    return invalidatePrivateDeploymentCheckpoints(
+      withoutSelectedResources(state, ["access_identity_rules"]),
+      ["identity-ready", "specification-ready", "approval-ready"],
+      "prerequisites-ready",
+    );
+  }
+  const { sign_in_mode: _signInMode, ...remaining } = state;
+  return invalidatePrivateDeploymentCheckpoints(withoutSelectedResources(remaining, identityResourceKeys), [
+    "sign-in-mode-selected",
+    "cloudflare-authorized",
+    "identity-ready",
+    "specification-ready",
+    "approval-ready",
+  ], "started");
+};
 
 export const runPrivateDeploymentApproval = async (
   initialState: PrivateDeploymentState,
@@ -159,29 +222,33 @@ export const runPrivateDeploymentApproval = async (
   }, "approval-ready", now());
   state = await persist(state, dependencies);
 
-  dependencies.prompt.write(renderReview(specification));
-  const decision = await askChoice(dependencies.prompt, "What should ArtifactPass do?", [
+  const review = renderReview(specification, state.cloudflare?.account_name);
+  if (dependencies.prompt.note === undefined) dependencies.prompt.write(review);
+  else dependencies.prompt.note(review.split("\n").slice(1).join("\n").trimEnd(), "Review this private ArtifactPass deployment");
+  const decision = await promptForChoice(dependencies.prompt, "What should ArtifactPass do?", [
     "Approve and deploy",
+    "Edit hostname",
+    "Edit sign-in method",
+    "Edit allowed people",
+    "Edit link lifetimes",
     "Save and exit",
-    "Back",
   ]);
-  if (decision === 1) {
+  if (decision === 5) {
     return {
       action: "saved",
       state,
       message: "Deployment approval is ready and no Cloudflare resources were changed.",
     };
   }
-  if (decision === 2) {
-    state = await persist(invalidatePrivateDeploymentCheckpoints(
-      state,
-      ["specification-ready", "approval-ready"],
-      "retention-ready",
-    ), dependencies);
+  if (decision > 0) {
+    const target = (["hostname", "sign-in", "audience", "retention"] as const)[decision - 1];
+    if (target === undefined) throw new Error("Choose a valid deployment review action");
+    state = await persist(prepareEdit(state, target), dependencies);
     return {
-      action: "saved",
+      action: "edit-requested",
+      edit: target,
       state,
-      message: "Deployment approval was discarded. Earlier setup choices are still saved.",
+      message: `Reopening ${target === "sign-in" ? "sign-in method" : target === "audience" ? "allowed people" : target}.`,
     };
   }
 

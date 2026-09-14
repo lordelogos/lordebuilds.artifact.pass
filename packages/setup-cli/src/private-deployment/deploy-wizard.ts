@@ -14,12 +14,12 @@ import {
 } from "./deployment-state";
 import type { PrivateDeploymentAuthorizationSession } from "./deployment-authorization";
 import type { PrivateDeploymentPrerequisiteResult } from "./prerequisites";
+import {
+  TerminalPromptCancelledError,
+  type InteractiveTerminalPrompt,
+} from "../terminal-prompt";
 
-export interface PrivateDeploymentPrompt {
-  readonly interactive: boolean;
-  readonly question: (message: string) => Promise<string>;
-  readonly write: (message: string) => void;
-}
+export type PrivateDeploymentPrompt = InteractiveTerminalPrompt;
 
 export interface PrivateDeploymentWizardArguments {
   readonly resume?: string;
@@ -129,6 +129,20 @@ const askChoice = async (
   question: string,
   options: readonly string[],
 ): Promise<number> => {
+  if (prompt.select !== undefined) {
+    const controls: readonly { readonly label: string; readonly value: WizardControl }[] = [
+      { label: "Back", value: "back" },
+      { label: "Save and exit", value: "save" },
+      { label: "Cancel current action", value: "cancel" },
+      { label: "Abandon local deployment", value: "abandon" },
+      { label: "Start a separate deployment", value: "new" },
+    ];
+    const selection = await prompt.select(question, [...options, ...controls.map(({ label }) => label)]);
+    if (selection < options.length) return selection;
+    const control = controls[selection - options.length]?.value;
+    if (control !== undefined) throw new WizardControlSignal(control);
+    throw new Error(`Prompt returned an invalid choice for ${question}`);
+  }
   const menu = `${question}\n${options.map((option, index) => `${index + 1}. ${option}`).join("\n")}\n> `;
   for (;;) {
     const answer = await prompt.question(menu);
@@ -233,11 +247,13 @@ const runInitialChoices = async (
       if (!dependencies.prompt.interactive || dependencies.prompt.question === undefined) {
         throw new Error("Private deployment setup needs an interactive terminal or explicit deployment flags");
       }
-      dependencies.prompt.write(
-        "Set up a private ArtifactPass deployment\n\n" +
-        "ArtifactPass will deploy a Worker, D1 database, R2 bucket, and Cloudflare Access application into your Cloudflare account.\n" +
-        "Cloudflare handles your account, plan, payment method, domain, and company login.\n\n",
-      );
+      dependencies.prompt.intro?.("ArtifactPass private deployment");
+      const introduction = "ArtifactPass will deploy a Worker, D1 database, R2 bucket, and Cloudflare Access application into your Cloudflare account.\nCloudflare handles your account, plan, payment method, domain, and company login.";
+      if (dependencies.prompt.note === undefined) {
+        dependencies.prompt.write(`Set up a private ArtifactPass deployment\n\n${introduction}\n\n`);
+      } else {
+        dependencies.prompt.note(introduction, "What ArtifactPass will set up");
+      }
       if (state.checkpoints["setup-introduction-accepted"] === undefined) {
         const selection = await askChoice(dependencies.prompt, "Continue?", ["Yes", "Save and exit"]);
         if (selection === 1) return save("Private deployment setup was saved before Cloudflare authorization.");
@@ -374,78 +390,87 @@ export const runPrivateDeploymentWizard = async (
       result.deployment,
       arguments_.noSaveAuthorization,
     );
-    if (!authorization.persisted) {
-      if (dependencies.runPrerequisites !== undefined) {
-        const prerequisiteResult = await dependencies.runPrerequisites(result.deployment, authorization);
-        const persistedPrerequisiteState = await withPrivateDeploymentLock(
-          root,
-          result.deployment.deployment_id,
-          async () => writePrivateDeploymentState(root, prerequisiteResult.state, cliVersion, dependencies.now),
-        );
+    try {
+      if (!authorization.persisted) {
+        if (dependencies.runPrerequisites !== undefined) {
+          const prerequisiteResult = await dependencies.runPrerequisites(result.deployment, authorization);
+          const persistedPrerequisiteState = await withPrivateDeploymentLock(
+            root,
+            result.deployment.deployment_id,
+            async () => writePrivateDeploymentState(root, prerequisiteResult.state, cliVersion, dependencies.now),
+          );
+          return {
+            action: prerequisiteResult.status === "ready"
+              ? prerequisiteResult.state.stage === "retention-ready"
+                ? "retention-ready"
+                : prerequisiteResult.state.stage === "identity-ready" ? "identity-ready" : "prerequisites-ready"
+              : "saved",
+            deployment: persistedPrerequisiteState,
+            resume_command: resumeCommand(persistedPrerequisiteState),
+            message: `${prerequisiteResult.message} Cloudflare authorization was not saved and will be revoked when this command finishes.`,
+            authorization,
+          };
+        }
         return {
-          action: prerequisiteResult.status === "ready"
-            ? prerequisiteResult.state.stage === "retention-ready"
-              ? "retention-ready"
-              : prerequisiteResult.state.stage === "identity-ready" ? "identity-ready" : "prerequisites-ready"
-            : "saved",
-          deployment: persistedPrerequisiteState,
-          resume_command: resumeCommand(persistedPrerequisiteState),
-          message: `${prerequisiteResult.message} Cloudflare authorization was not saved and will be revoked when this command finishes.`,
+          ...result,
           authorization,
+          message: "Cloudflare is authorized for this process only. ArtifactPass will revoke it when this command finishes.",
         };
       }
-      return {
-        ...result,
+      if (authorization.client === undefined) {
+        throw new Error("Persisted Cloudflare OAuth authorization is missing its client binding");
+      }
+      const authorizedClient = authorization.client;
+      const authorizedState = await withPrivateDeploymentLock(root, result.deployment.deployment_id, async () => {
+        const current = await resolvePrivateDeploymentState(root, result.deployment?.deployment_id as string, cliVersion);
+        const updated = provePrivateDeploymentCheckpoint(
+          current,
+          "cloudflare-authorized",
+          {
+            client_environment: authorizedClient.environment,
+            profile: authorization.profile,
+            granted_scopes: authorization.grantedScopes,
+            persisted: true,
+          },
+          "cloudflare-authorized",
+          (dependencies.now ?? (() => new Date()))(),
+        );
+        return writePrivateDeploymentState(root, updated, cliVersion, dependencies.now);
+      });
+      const authorizedResult: PrivateDeploymentWizardResult = {
+        action: "authorized",
+        deployment: authorizedState,
+        resume_command: resumeCommand(authorizedState),
+        message: "Cloudflare authorization is stored securely in your operating system credential store.",
         authorization,
-        message: "Cloudflare is authorized for this process only. ArtifactPass will revoke it when this command finishes.",
       };
-    }
-    if (authorization.client === undefined) {
-      throw new Error("Persisted Cloudflare OAuth authorization is missing its client binding");
-    }
-    const authorizedClient = authorization.client;
-    const authorizedState = await withPrivateDeploymentLock(root, result.deployment.deployment_id, async () => {
-      const current = await resolvePrivateDeploymentState(root, result.deployment?.deployment_id as string, cliVersion);
-      const updated = provePrivateDeploymentCheckpoint(
-        current,
-        "cloudflare-authorized",
-        {
-          client_environment: authorizedClient.environment,
-          profile: authorization.profile,
-          granted_scopes: authorization.grantedScopes,
-          persisted: true,
-        },
-        "cloudflare-authorized",
-        (dependencies.now ?? (() => new Date()))(),
+      if (dependencies.runPrerequisites === undefined) return authorizedResult;
+      const prerequisiteResult = await dependencies.runPrerequisites(authorizedState, authorization);
+      const persistedPrerequisiteState = await withPrivateDeploymentLock(
+        root,
+        authorizedState.deployment_id,
+        async () => writePrivateDeploymentState(root, prerequisiteResult.state, cliVersion, dependencies.now),
       );
-      return writePrivateDeploymentState(root, updated, cliVersion, dependencies.now);
-    });
-    const authorizedResult: PrivateDeploymentWizardResult = {
-      action: "authorized",
-      deployment: authorizedState,
-      resume_command: resumeCommand(authorizedState),
-      message: "Cloudflare authorization is stored securely in your operating system credential store.",
-      authorization,
-    };
-    if (dependencies.runPrerequisites === undefined) return authorizedResult;
-    const prerequisiteResult = await dependencies.runPrerequisites(authorizedState, authorization);
-    const persistedPrerequisiteState = await withPrivateDeploymentLock(
-      root,
-      authorizedState.deployment_id,
-      async () => writePrivateDeploymentState(root, prerequisiteResult.state, cliVersion, dependencies.now),
-    );
-    return {
-      action: prerequisiteResult.status === "ready"
-        ? prerequisiteResult.state.stage === "retention-ready"
-          ? "retention-ready"
-          : prerequisiteResult.state.stage === "identity-ready" ? "identity-ready" : "prerequisites-ready"
-        : "saved",
-      deployment: persistedPrerequisiteState,
-      resume_command: resumeCommand(persistedPrerequisiteState),
-      message: prerequisiteResult.message,
-      authorization,
-    };
+      return {
+        action: prerequisiteResult.status === "ready"
+          ? prerequisiteResult.state.stage === "retention-ready"
+            ? "retention-ready"
+            : prerequisiteResult.state.stage === "identity-ready" ? "identity-ready" : "prerequisites-ready"
+          : "saved",
+        deployment: persistedPrerequisiteState,
+        resume_command: resumeCommand(persistedPrerequisiteState),
+        message: prerequisiteResult.message,
+        authorization,
+      };
+    } catch (error) {
+      if (!authorization.persisted) await authorization.close();
+      throw error;
+    }
   } catch (error) {
+    if (error instanceof TerminalPromptCancelledError && error.resumeCommand === undefined) {
+      const current = await resolvePrivateDeploymentState(root, selected.deployment_id, cliVersion);
+      throw new TerminalPromptCancelledError(resumeCommand(current));
+    }
     if (error instanceof RestartWizardSignal) {
       return runPrivateDeploymentWizard({
         resume: selected.deployment_id,

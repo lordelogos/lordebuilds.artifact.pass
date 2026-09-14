@@ -28,7 +28,13 @@ const promptWith = (answers: readonly string[]): { prompt: BrowserHandoffPrompt;
   const queue = [...answers];
   const output: string[] = [];
   return {
-    prompt: { question: async () => queue.shift() ?? "3", write: (message) => output.push(message) },
+    prompt: {
+      question: async (message) => {
+        output.push(message);
+        return queue.shift() ?? "3";
+      },
+      write: (message) => output.push(message),
+    },
     output,
   };
 };
@@ -60,14 +66,16 @@ describe("private deployment identity setup", () => {
   });
 
   it("reuses OTP when present and stores no provider secret fields", async () => {
+    const interaction = promptWith(["2", "admin@example.com"]);
     const result = await runPrivateIdentitySetup(state("email-code"), {
       client: clientWith([{ id: "otp-one", name: "One-time PIN", type: "onetimepin", config: { secret: "hidden" } }]),
-      prompt: promptWith(["2", "admin@example.com"]).prompt,
+      prompt: interaction.prompt,
       openBrowser: vi.fn(),
       now: () => now,
     });
     expect(result.plan?.providerIds).toEqual(["otp-one"]);
     expect(JSON.stringify(result.state)).not.toContain("hidden");
+    expect(interaction.output.join("\n")).toContain("Include your own email address");
   });
 
   it("reattests a saved email-code plan without asking for the publisher audience again", async () => {
@@ -117,6 +125,43 @@ describe("private deployment identity setup", () => {
       autoRedirectToIdentity: false,
       rules: [{ kind: "authenticated", value: "selected-providers" }],
     });
+  });
+
+  it("uses structured provider and audience controls without falling back to text questions", async () => {
+    const question = vi.fn(async () => {
+      throw new Error("plain text prompt should not be used");
+    });
+    const company = await runPrivateIdentitySetup(state("company-login"), {
+      client: clientWith([
+        { id: "provider-z", name: "Okta", type: "okta" },
+        { id: "provider-a", name: "Google Workspace", type: "google" },
+      ]),
+      prompt: {
+        question,
+        write: vi.fn(),
+        multiselect: vi.fn(async () => [1, 0]),
+      },
+      openBrowser: vi.fn(),
+      now: () => now,
+    });
+    const email = await runPrivateIdentitySetup(state("email-code"), {
+      client: clientWith([]),
+      prompt: {
+        question,
+        write: vi.fn(),
+        select: vi.fn(async () => 1),
+        text: vi.fn(async () => "owner@example.com, teammate@example.com"),
+      },
+      openBrowser: vi.fn(),
+      now: () => now,
+    });
+
+    expect(company.plan?.providerIds).toEqual(["provider-z", "provider-a"]);
+    expect(email.plan?.rules).toEqual([
+      { kind: "email", value: "owner@example.com" },
+      { kind: "email", value: "teammate@example.com" },
+    ]);
+    expect(question).not.toHaveBeenCalled();
   });
 
   it("hands missing company-provider setup to Cloudflare without collecting credentials", async () => {

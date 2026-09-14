@@ -6,6 +6,7 @@ export { storageLifecycleForMaximumExpiry } from "../cloudflare/retention-policy
 
 import type { BrowserHandoffPrompt } from "./browser-handoff";
 import { provePrivateDeploymentCheckpoint, type PrivateDeploymentState } from "./deployment-state";
+import { promptForMultipleChoices } from "../terminal-prompt";
 
 export const PRIVATE_RETENTION_PRESETS = Object.freeze([
   { seconds: 900, label: "15 minutes" },
@@ -44,20 +45,15 @@ export const runPrivateRetentionSetup = async (
   if (existing !== undefined) {
     selection = validatePrivateRetentionPresets(existing);
   } else {
-    for (;;) {
-      const answer = await prompt.question([
-        "Which link lifetimes should this private deployment offer?",
-        ...PRIVATE_RETENTION_PRESETS.map((preset, index) => `${index + 1}. ${preset.label}`),
-        "Enter one or more numbers separated by commas:",
-        "> ",
-      ].join("\n"));
-      const indexes = [...new Set(answer.split(",").map((value) => Number.parseInt(value.trim(), 10) - 1))].sort((left, right) => left - right);
-      if (indexes.length > 0 && indexes.every((index) => PRIVATE_RETENTION_PRESETS[index] !== undefined)) {
-        selection = validatePrivateRetentionPresets(indexes.map((index) => PRIVATE_RETENTION_PRESETS[index]?.seconds as number));
-        break;
-      }
-      prompt.write(`Choose one or more numbers from 1 to ${PRIVATE_RETENTION_PRESETS.length}.\n`);
-    }
+    const presets = await promptForMultipleChoices(
+      prompt,
+      "Which link lifetimes should this private deployment offer?",
+      PRIVATE_RETENTION_PRESETS,
+      (preset) => preset.label,
+    );
+    selection = validatePrivateRetentionPresets(
+      presets.map((preset) => preset.seconds).sort((left, right) => left - right),
+    );
   }
   const maximumExpirySeconds = selection.at(-1) as number;
   const lifecycle = storageLifecycleForMaximumExpiry(maximumExpirySeconds);

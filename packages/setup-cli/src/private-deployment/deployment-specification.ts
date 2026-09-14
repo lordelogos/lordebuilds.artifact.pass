@@ -67,6 +67,14 @@ const authorizationEvidence = (state: PrivateDeploymentState): Record<string, un
   return evidence as Record<string, unknown>;
 };
 
+export const isPrivateDeploymentHostname = (hostname: string, zoneName: string): boolean => {
+  const normalizedHostname = hostname.trim().toLowerCase();
+  const normalizedZoneName = zoneName.trim().toLowerCase();
+  return hostnamePattern.test(normalizedHostname) && (
+    normalizedHostname === normalizedZoneName || normalizedHostname.endsWith(`.${normalizedZoneName}`)
+  );
+};
+
 export const canonicalPrivateDeploymentSpecification = (
   specification: PrivateDeploymentSpecification,
 ): string => JSON.stringify(specification);
@@ -86,7 +94,7 @@ export const compilePrivateDeploymentSpecification = (
     throw new Error("Cloudflare account and active domain must be selected before deployment approval");
   }
   const hostname = (options.hostname ?? state.hostname ?? `artifacts.${zoneName}`).trim().toLowerCase();
-  if (!hostnamePattern.test(hostname) || (hostname !== zoneName && !hostname.endsWith(`.${zoneName}`))) {
+  if (!isPrivateDeploymentHostname(hostname, zoneName)) {
     throw new Error("Private deployment hostname must belong to the selected Cloudflare domain");
   }
   const serviceName = options.serviceName ?? state.service_name ?? `artifactpass-${state.deployment_id.slice(0, 8)}`;

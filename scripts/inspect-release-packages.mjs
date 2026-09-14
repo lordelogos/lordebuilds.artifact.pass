@@ -47,6 +47,7 @@ try {
   }
   if (
     JSON.stringify(packedManifest.dependencies) !== JSON.stringify({
+      "@clack/prompts": "^1.8.1",
       "@modelcontextprotocol/client": "2.0.0",
       "jsonc-parser": "3.3.1",
       wrangler: "4.131.1",

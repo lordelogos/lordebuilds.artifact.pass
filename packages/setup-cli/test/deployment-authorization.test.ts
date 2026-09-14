@@ -8,6 +8,7 @@ import {
   authorizePrivateDeployment,
   privateDeploymentAccessTokenForInspection,
 } from "../src/private-deployment/deployment-authorization";
+import { DeploymentCredentialManager } from "../src/private-deployment/deployment-credentials";
 import type { PrivateDeploymentState } from "../src/private-deployment/deployment-state";
 
 const deployment: PrivateDeploymentState = {
@@ -155,6 +156,105 @@ describe("private deployment authorization orchestration", () => {
     await session.close();
     expect(store.value).toBeNull();
     expect(fetchImplementation.mock.calls.filter(([input]) => String(input).endsWith("/revoke"))).toHaveLength(2);
+  });
+
+  it("revokes the stored grant before replacing it for a different sign-in mode", async () => {
+    const store = memoryStore();
+    const original = new DeploymentCredentialManager({
+      deploymentId: deployment.deployment_id,
+      client: { environment: "staging", clientId: "a".repeat(32) },
+      store,
+      now: () => new Date("2026-09-01T17:00:00.000Z"),
+    });
+    await original.save({
+      profile: "companyLogin",
+      grantedScopes: CLOUDFLARE_OAUTH_SCOPE_PROFILES.companyLogin,
+      token: {
+        access_token: `old-access-${"x".repeat(32)}`,
+        refresh_token: `old-refresh-${"x".repeat(32)}`,
+        expires_in: 3600,
+        scope: CLOUDFLARE_OAUTH_SCOPE_PROFILES.companyLogin.join(" "),
+        token_type: "bearer",
+      },
+    });
+    const fetchImplementation = vi.fn(async (input: string | URL | Request) => {
+      if (String(input).endsWith("/token")) {
+        return Response.json({
+          access_token: `new-access-${"y".repeat(32)}`,
+          refresh_token: `new-refresh-${"y".repeat(32)}`,
+          expires_in: 3600,
+          scope: CLOUDFLARE_OAUTH_SCOPE_PROFILES.emailCode.join(" "),
+          token_type: "bearer",
+        });
+      }
+      return new Response(null, { status: 200 });
+    });
+
+    const session = await authorizePrivateDeployment({ ...deployment, sign_in_mode: "email-code" }, false, {
+      environment: {
+        ARTIFACTPASS_CLOUDFLARE_OAUTH_ENVIRONMENT: "staging",
+        ARTIFACTPASS_CLOUDFLARE_OAUTH_CLIENT_ID: "a".repeat(32),
+      },
+      credentialStore: store,
+      fetch: fetchImplementation,
+      oauth: { openBrowser: callbackFor, timeoutMilliseconds: 1_000 },
+      now: () => new Date("2026-09-01T17:00:01.000Z"),
+    });
+
+    expect(session.profile).toBe("emailCode");
+    expect(fetchImplementation.mock.calls.slice(0, 2).every(([input]) => String(input).endsWith("/revoke"))).toBe(true);
+    expect(String(fetchImplementation.mock.calls[2]?.[0])).toContain("/token");
+    expect(store.value).toContain('"profile":"emailCode"');
+    expect(store.value).not.toContain("old-access-");
+  });
+
+  it("revokes a grant through its original OAuth client before replacing it", async () => {
+    const store = memoryStore();
+    const original = new DeploymentCredentialManager({
+      deploymentId: deployment.deployment_id,
+      client: { environment: "staging", clientId: "a".repeat(32) },
+      store,
+      now: () => new Date("2026-09-01T17:00:00.000Z"),
+    });
+    await original.save({
+      profile: "companyLogin",
+      grantedScopes: CLOUDFLARE_OAUTH_SCOPE_PROFILES.companyLogin,
+      token: {
+        access_token: `old-access-${"x".repeat(32)}`,
+        refresh_token: `old-refresh-${"x".repeat(32)}`,
+        expires_in: 3600,
+        scope: CLOUDFLARE_OAUTH_SCOPE_PROFILES.companyLogin.join(" "),
+        token_type: "bearer",
+      },
+    });
+    const fetchImplementation = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      if (String(input).endsWith("/token")) {
+        return Response.json({
+          access_token: `new-access-${"y".repeat(32)}`,
+          refresh_token: `new-refresh-${"y".repeat(32)}`,
+          expires_in: 3600,
+          scope: CLOUDFLARE_OAUTH_SCOPE_PROFILES.companyLogin.join(" "),
+          token_type: "bearer",
+        });
+      }
+      expect(new URLSearchParams(String(init?.body)).get("client_id")).toBe("a".repeat(32));
+      return new Response(null, { status: 200 });
+    });
+
+    await authorizePrivateDeployment(deployment, false, {
+      environment: {
+        ARTIFACTPASS_CLOUDFLARE_OAUTH_ENVIRONMENT: "production",
+        ARTIFACTPASS_CLOUDFLARE_OAUTH_CLIENT_ID: "b".repeat(32),
+      },
+      credentialStore: store,
+      fetch: fetchImplementation,
+      oauth: { openBrowser: callbackFor, timeoutMilliseconds: 1_000 },
+      now: () => new Date("2026-09-01T17:00:01.000Z"),
+    });
+
+    expect(fetchImplementation.mock.calls.slice(0, 2).every(([, init]) =>
+      new URLSearchParams(String(init?.body)).get("client_id") === "a".repeat(32))).toBe(true);
+    expect(store.value).toContain(`"client_id":"${"b".repeat(32)}"`);
   });
 
   it("uses the packaged production OAuth client", () => {
