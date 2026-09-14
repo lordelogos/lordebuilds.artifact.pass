@@ -260,6 +260,8 @@ export const runPrivateDeploymentApproval = async (
     manifest_digest: manifestDigest,
   }, "deploying", now());
   state = await persist(state, dependencies);
+  const activity = dependencies.prompt.activity?.("Starting private deployment. This can take a few minutes");
+  if (activity === undefined) dependencies.prompt.write("Starting private deployment. This can take a few minutes.\n");
   try {
     const result = await runDeploy(deploymentInputFromPrivateSpecification(specification, {
       dryRun: false,
@@ -267,6 +269,7 @@ export const runPrivateDeploymentApproval = async (
     }), {
       deploymentRoot: dependencies.deploymentRoot,
       resolveToken: dependencies.authorization.resolveAccessToken,
+      onProgress: (message) => activity?.update(message),
     });
     const receipt = createPrivateDeploymentReceipt(specification, result, now());
     const receiptPath = await writePrivateDeploymentReceipt(dependencies.root, receipt);
@@ -284,6 +287,7 @@ export const runPrivateDeploymentApproval = async (
       verified_at: result.verification?.verifiedAt,
     }, "complete", now());
     state = await persist(state, dependencies);
+    activity?.succeed(`ArtifactPass is live at ${result.baseUrl}`);
     return {
       action: "complete",
       state,
@@ -293,6 +297,7 @@ export const runPrivateDeploymentApproval = async (
       message: `Private ArtifactPass is ready at ${result.baseUrl}.`,
     };
   } catch (error) {
+    activity?.fail("Deployment stopped");
     const reason = safeFailure(error);
     if (reason.includes("approval manifest no longer matches")) {
       state = invalidatePrivateDeploymentCheckpoints(

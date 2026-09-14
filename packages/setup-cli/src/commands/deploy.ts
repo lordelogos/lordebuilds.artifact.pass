@@ -15,6 +15,7 @@ export interface DeployCommandDependencies {
   readonly resolveToken?: () => Promise<string>;
   readonly fetch?: typeof globalThis.fetch;
   readonly runner?: ProcessRunner;
+  readonly onProgress?: (message: string) => void;
 }
 
 const wranglerEnvironmentNames = [
@@ -107,6 +108,7 @@ export const runDeployCommand = async (
       deploymentRoot: dependencies.deploymentRoot,
       ...(dependencies.fetch === undefined ? {} : { fetch: dependencies.fetch }),
       runner: credentialedRunner,
+      ...(dependencies.onProgress === undefined ? {} : { onProgress: dependencies.onProgress }),
     });
   } catch (error) {
     if (error instanceof DeploymentMutationError) {

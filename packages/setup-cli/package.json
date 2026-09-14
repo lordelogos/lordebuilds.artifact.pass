@@ -1,6 +1,6 @@
 {
   "name": "artifactpass",
-  "version": "0.1.2-rc.2",
+  "version": "0.1.2-rc.3",
   "description": "Install and connect ArtifactPass for compatible AI agent systems.",
   "repository": {
     "type": "git",
