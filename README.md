@@ -40,6 +40,26 @@ pnpm dlx artifactpass configure
 
 Restart your agent after changing the setup.
 
+## Private deployments
+
+Create a private ArtifactPass deployment in your own Cloudflare account:
+
+```sh
+pnpm dlx artifactpass deploy --new
+```
+
+A private deployment stays on the ArtifactPass version that was deployed. It does not update automatically.
+
+To update it, run the latest CLI against its hostname:
+
+```sh
+pnpm dlx artifactpass deploy --resume artifacts.example.com
+```
+
+ArtifactPass reviews the deployment, applies any required database migrations, and redeploys the Worker. The existing hostname, Cloudflare Access configuration, D1 database, R2 bucket, and stored artifacts are reused.
+
+To test a release candidate instead of the latest stable version, use `artifactpass@rc` in either command.
+
 ## Requirements
 
 - Node.js 24 or newer
