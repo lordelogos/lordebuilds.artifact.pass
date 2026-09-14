@@ -8,10 +8,9 @@ export type BrowserHandoffResult =
   | { readonly status: "ready"; readonly evidence: Readonly<Record<string, unknown>>; readonly checked_at: string }
   | { readonly status: "saved" | "cancelled" | "timeout" | "permission-denied" | "conflict" | "browser-open-failed"; readonly message: string };
 
-export interface BrowserHandoffPrompt {
-  readonly question: (message: string) => Promise<string>;
-  readonly write: (message: string) => void;
-}
+import { promptForChoice, type TerminalPrompt } from "../terminal-prompt";
+
+export type BrowserHandoffPrompt = TerminalPrompt;
 
 export interface BrowserHandoffInput {
   readonly title: string;
@@ -44,22 +43,14 @@ const renderIntroduction = (input: BrowserHandoffInput): string => [
 ].filter((line) => line !== undefined).join("\n");
 
 const askAction = async (prompt: BrowserHandoffPrompt): Promise<"open" | "check" | "save" | "copy" | "cancel"> => {
-  for (;;) {
-    const answer = (await prompt.question([
-      "1. Open Cloudflare",
-      "2. Check again",
-      "3. Save and exit",
-      "4. Copy link",
-      "5. Cancel current action",
-      "> ",
-    ].join("\n"))).trim().toLowerCase();
-    if (answer === "1" || answer === "open" || answer === "open cloudflare") return "open";
-    if (answer === "2" || answer === "check" || answer === "check again") return "check";
-    if (answer === "3" || answer === "save" || answer === "save and exit") return "save";
-    if (answer === "4" || answer === "copy" || answer === "copy link") return "copy";
-    if (answer === "5" || answer === "cancel" || answer === "cancel current action") return "cancel";
-    prompt.write("Choose 1, 2, 3, 4, or 5.\n");
-  }
+  const actions = ["open", "check", "save", "copy", "cancel"] as const;
+  return actions[await promptForChoice(prompt, "What would you like to do?", [
+    "Open Cloudflare",
+    "Check again",
+    "Save and exit",
+    "Copy link",
+    "Cancel current action",
+  ])] as (typeof actions)[number];
 };
 
 export const runBrowserHandoff = async (
@@ -69,7 +60,8 @@ export const runBrowserHandoff = async (
   const now = dependencies.now ?? Date.now;
   const startedAt = now();
   const timeoutMilliseconds = input.timeoutMilliseconds ?? 15 * 60_000;
-  dependencies.prompt.write(`${renderIntroduction(input)}\n\n`);
+  if (dependencies.prompt.note === undefined) dependencies.prompt.write(`${renderIntroduction(input)}\n\n`);
+  else dependencies.prompt.note(renderIntroduction(input).split("\n").slice(1).join("\n"), input.title);
   let browserOpenFailed: string | undefined;
   for (;;) {
     if (now() - startedAt >= timeoutMilliseconds) {

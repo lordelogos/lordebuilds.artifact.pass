@@ -4,6 +4,16 @@ import {
   applyWorkspaceConfiguration,
   resolveWorkspaceConfiguration,
 } from "../src/workspace-configuration";
+import type { TerminalPrompt } from "../src/terminal-prompt";
+
+const terminalPrompt = (...answers: readonly string[]): {
+  readonly prompt: TerminalPrompt;
+  readonly question: ReturnType<typeof vi.fn>;
+} => {
+  const queue = [...answers];
+  const question = vi.fn(async () => queue.shift() ?? "");
+  return { prompt: { question, write: vi.fn() }, question };
+};
 
 const settings = {
   version: 2 as const,
@@ -26,19 +36,19 @@ const settings = {
 
 describe("workspace deployment configuration", () => {
   it("preserves the workspace deployment when no interactive terminal is available", async () => {
-    const prompt = vi.fn();
+    const interaction = terminalPrompt();
 
     await expect(resolveWorkspaceConfiguration({
       workspaceRoot: "/work/company",
       settings,
       interactive: false,
-      prompt,
+      prompt: interaction.prompt,
     })).resolves.toEqual({
       baseUrl: "https://artifacts.company.example",
       profileName: "company",
       workspaceRoot: "/work/company",
     });
-    expect(prompt).not.toHaveBeenCalled();
+    expect(interaction.question).not.toHaveBeenCalled();
   });
 
   it("keeps explicit open development on the local profile", async () => {
@@ -46,7 +56,7 @@ describe("workspace deployment configuration", () => {
       workspaceRoot: "/work/local",
       settings: null,
       interactive: false,
-      prompt: vi.fn(),
+      prompt: terminalPrompt().prompt,
       baseUrl: "http://127.0.0.1:8787",
       openDevelopment: true,
     })).resolves.toEqual({
@@ -57,13 +67,13 @@ describe("workspace deployment configuration", () => {
   });
 
   it("lets an existing workspace switch back to public ArtifactPass", async () => {
-    const prompt = vi.fn().mockResolvedValue("1");
+    const interaction = terminalPrompt("1");
 
     await expect(resolveWorkspaceConfiguration({
       workspaceRoot: "/work/company",
       settings,
       interactive: true,
-      prompt,
+      prompt: interaction.prompt,
     })).resolves.toEqual({
       baseUrl: "https://artifactpass.com",
       profileName: "production",
@@ -72,37 +82,34 @@ describe("workspace deployment configuration", () => {
   });
 
   it("asks an unconfigured workspace whether its deployment is public or private", async () => {
-    const prompt = vi.fn().mockResolvedValue("1");
+    const select = vi.fn().mockResolvedValue(0);
+    const question = vi.fn(async () => {
+      throw new Error("plain text prompt should not be used");
+    });
     const companyActive = { ...settings, active_profile: "company" };
 
     await expect(resolveWorkspaceConfiguration({
       workspaceRoot: "/work/new",
       settings: companyActive,
       interactive: true,
-      prompt,
+      prompt: { question, select, write: vi.fn() },
     })).resolves.toMatchObject({
       baseUrl: "https://artifactpass.com",
       profileName: "production",
     });
-    expect(prompt).toHaveBeenCalledOnce();
-    expect(prompt).toHaveBeenCalledWith(
-      "Public or private deployment?\n" +
-      "  1. Public\n" +
-      "  2. Private\n" +
-      "Answer: ",
-    );
+    expect(select).toHaveBeenCalledOnce();
+    expect(select).toHaveBeenCalledWith("Public or private deployment?", ["Public", "Private"]);
+    expect(question).not.toHaveBeenCalled();
   });
 
   it("lets a workspace select a private deployment", async () => {
-    const prompt = vi.fn()
-      .mockResolvedValueOnce("2")
-      .mockResolvedValueOnce("https://sharing.example.com");
+    const interaction = terminalPrompt("2", "https://sharing.example.com");
 
     const resolved = await resolveWorkspaceConfiguration({
       workspaceRoot: "/work/personal",
       settings,
       interactive: true,
-      prompt,
+      prompt: interaction.prompt,
     });
 
     expect(resolved).toMatchObject({
@@ -113,41 +120,37 @@ describe("workspace deployment configuration", () => {
   });
 
   it("asks for a private deployment URL without suggesting the current deployment", async () => {
-    const prompt = vi.fn()
-      .mockResolvedValueOnce("2")
-      .mockResolvedValueOnce("");
+    const interaction = terminalPrompt("2", "");
 
     await expect(resolveWorkspaceConfiguration({
       workspaceRoot: "/work/company",
       settings,
       interactive: true,
-      prompt,
+      prompt: interaction.prompt,
     })).rejects.toThrow("Private deployment URL is required");
-    expect(prompt).toHaveBeenNthCalledWith(
+    expect(interaction.question).toHaveBeenNthCalledWith(
       1,
       "Public or private deployment?\n" +
-      "  1. Public\n" +
-      "  2. Private\n" +
-      "Answer: ",
+      "1. Public\n" +
+      "2. Private\n" +
+      "> ",
     );
-    expect(prompt).toHaveBeenNthCalledWith(2, "Private deployment URL: ");
+    expect(interaction.question).toHaveBeenNthCalledWith(2, "Private deployment URL\n> ");
   });
 
-  it("rejects invalid deployment types and URLs without looping", async () => {
+  it("retries invalid deployment choices and rejects unsafe private URLs", async () => {
     await expect(resolveWorkspaceConfiguration({
       workspaceRoot: "/work/new",
       settings: null,
       interactive: true,
-      prompt: vi.fn().mockResolvedValue("staging"),
-    })).rejects.toThrow("Enter 1 or 2");
+      prompt: terminalPrompt("staging", "1").prompt,
+    })).resolves.toMatchObject({ profileName: "production" });
 
     await expect(resolveWorkspaceConfiguration({
       workspaceRoot: "/work/new",
       settings: null,
       interactive: true,
-      prompt: vi.fn()
-        .mockResolvedValueOnce("2")
-        .mockResolvedValueOnce("http://private.example"),
+      prompt: terminalPrompt("2", "http://private.example").prompt,
     })).rejects.toThrow("credential-free HTTPS origin");
   });
 

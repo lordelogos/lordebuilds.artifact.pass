@@ -120,7 +120,7 @@ describe("private deployment approval flow", () => {
   it("saves an approval without running any mutation", async () => {
     const root = await mkdtemp(resolve(tmpdir(), "artifactpass-approval-save-test-"));
     const state = await readyState(root);
-    const answers = ["1", "2"];
+    const answers = ["1", "6"];
     const runDeploy = vi.fn(async (input: { readonly writeApprovalManifest?: string }) => {
       await writeFile(input.writeApprovalManifest as string, JSON.stringify({ version: 3, binding: {} }));
       return {
@@ -140,6 +140,78 @@ describe("private deployment approval flow", () => {
     });
     expect(result.action).toBe("saved");
     expect(result.state.stage).toBe("approval-ready");
+    expect(runDeploy).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    {
+      choice: "2",
+      target: "hostname" as const,
+      stage: "retention-ready",
+      removedFields: ["hostname", "service_name"],
+      removedResources: [],
+      removedCheckpoints: ["specification-ready", "approval-ready"],
+    },
+    {
+      choice: "3",
+      target: "sign-in" as const,
+      stage: "started",
+      removedFields: ["sign_in_mode"],
+      removedResources: ["identity_mode", "identity_provider_ids", "identity_provider_action", "access_auto_redirect", "access_identity_rules"],
+      removedCheckpoints: ["sign-in-mode-selected", "cloudflare-authorized", "identity-ready", "specification-ready", "approval-ready"],
+    },
+    {
+      choice: "4",
+      target: "audience" as const,
+      stage: "prerequisites-ready",
+      removedFields: [],
+      removedResources: ["access_identity_rules"],
+      removedCheckpoints: ["identity-ready", "specification-ready", "approval-ready"],
+    },
+    {
+      choice: "5",
+      target: "retention" as const,
+      stage: "identity-ready",
+      removedFields: ["retention_seconds"],
+      removedResources: [],
+      removedCheckpoints: ["retention-ready", "specification-ready", "approval-ready"],
+    },
+  ])("reopens the $target step from review without mutating Cloudflare", async ({
+    choice,
+    target,
+    stage,
+    removedFields,
+    removedResources,
+    removedCheckpoints,
+  }) => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifactpass-approval-edit-test-"));
+    const state = await readyState(root);
+    const answers = ["1", choice];
+    const runDeploy = vi.fn(async (input: { readonly writeApprovalManifest?: string }) => {
+      await writeFile(input.writeApprovalManifest as string, JSON.stringify({ version: 3, binding: {} }));
+      return {
+        baseUrl: "https://artifacts.example.com",
+        teamCommand: "pnpm dlx artifactpass --base-url https://artifacts.example.com",
+        plan: [],
+        changed: [],
+      };
+    });
+
+    const result = await runPrivateDeploymentApproval(state, {
+      root,
+      cliVersion,
+      deploymentRoot: root,
+      authorization,
+      prompt: { question: async () => answers.shift() ?? "6", write: vi.fn() },
+      runDeploy: runDeploy as never,
+    });
+
+    expect(result).toMatchObject({ action: "edit-requested", edit: target });
+    expect(result.state.stage).toBe(stage);
+    for (const field of removedFields) expect(result.state).not.toHaveProperty(field);
+    for (const resource of removedResources) expect(result.state.resources).not.toHaveProperty(resource);
+    for (const checkpoint of removedCheckpoints) expect(result.state.checkpoints).not.toHaveProperty(checkpoint);
+    if (target !== "retention") expect(result.state.retention_seconds).toEqual([900, 3600]);
     expect(runDeploy).toHaveBeenCalledTimes(1);
   });
 

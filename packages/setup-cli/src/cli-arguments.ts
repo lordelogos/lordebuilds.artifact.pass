@@ -1,6 +1,7 @@
 import { selectLocalBridgeProfile, type LocalBridgeSettings } from "agent-bridge";
 
 import type { AgentHost } from "./hosts";
+import { promptForChoice, type TerminalPrompt } from "./terminal-prompt";
 
 export interface ConnectArguments {
   readonly deploymentUrl?: string;
@@ -18,7 +19,6 @@ export const INSTALL_VALUE_OPTIONS: ReadonlySet<string> = new Set([
 ]);
 
 export type InstallAgent = AgentHost | "other";
-export type InstallPrompt = (question: string) => Promise<string>;
 
 const installAgentOptions: readonly {
   readonly value: InstallAgent;
@@ -58,19 +58,18 @@ const hostsForAgent = (agent: InstallAgent): readonly AgentHost[] => {
 export const resolveInstallAgent = async (
   requested: InstallAgent | undefined,
   interactive: boolean,
-  prompt: InstallPrompt,
+  prompt: TerminalPrompt,
 ): Promise<readonly AgentHost[]> => {
   if (requested !== undefined) return hostsForAgent(requested);
   if (!interactive) {
     throw new Error("--agent is required when setup cannot ask interactively");
   }
-  const answer = (await prompt(
-    `Which agent are you setting up?\n${installAgentOptions
-      .map((option, index) => `${index + 1}. ${option.label}`)
-      .join("\n")}\n\nChoose: `,
-  )).trim();
-  if (/^[1-8]$/u.test(answer)) return installAgentOptions[Number(answer) - 1]?.hosts ?? [];
-  throw new Error("Enter a number from 1 to 8");
+  const selected = await promptForChoice(
+    prompt,
+    "Which agent are you setting up?",
+    installAgentOptions.map((option) => option.label),
+  );
+  return installAgentOptions[selected]?.hosts ?? [];
 };
 
 export const INSTALL_BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([

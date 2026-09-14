@@ -11,15 +11,15 @@ import {
   type LocalBridgeSettings,
 } from "agent-bridge";
 
-export const PUBLIC_ARTIFACTPASS_URL = "https://artifactpass.com";
+import { promptForChoice, promptForText, type TerminalPrompt } from "./terminal-prompt";
 
-export type WorkspaceConfigurationPrompt = (question: string) => Promise<string>;
+export const PUBLIC_ARTIFACTPASS_URL = "https://artifactpass.com";
 
 export interface ResolveWorkspaceConfigurationOptions {
   readonly workspaceRoot: string;
   readonly settings: LocalBridgeSettings | null;
   readonly interactive: boolean;
-  readonly prompt: WorkspaceConfigurationPrompt;
+  readonly prompt: TerminalPrompt;
   readonly baseUrl?: string;
   readonly profileName?: string;
   readonly openDevelopment?: boolean;
@@ -133,20 +133,15 @@ export const resolveWorkspaceConfiguration = async (
     };
   }
 
-  const deploymentType = (await options.prompt(
-    "Public or private deployment?\n" +
-    "  1. Public\n" +
-    "  2. Private\n" +
-    "Answer: ",
-  )).trim();
-  if (deploymentType === "1") {
+  const deploymentType = await promptForChoice(options.prompt, "Public or private deployment?", [
+    "Public",
+    "Private",
+  ]);
+  if (deploymentType === 0) {
     return { baseUrl: PUBLIC_ARTIFACTPASS_URL, profileName: "production", workspaceRoot };
   }
-  if (deploymentType !== "2") {
-    throw new Error("Enter 1 or 2");
-  }
 
-  const privateUrl = (await options.prompt("Private deployment URL: ")).trim();
+  const privateUrl = (await promptForText(options.prompt, "Private deployment URL")).trim();
   if (privateUrl.length === 0) throw new Error("Private deployment URL is required");
   const baseUrl = normalizeOrigin(privateUrl, false);
   return {

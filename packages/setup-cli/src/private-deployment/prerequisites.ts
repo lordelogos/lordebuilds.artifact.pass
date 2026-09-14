@@ -9,6 +9,7 @@ import {
   type CloudflareZoneSummary,
 } from "../cloudflare/discovery";
 import { runBrowserHandoff, type BrowserHandoffPrompt } from "./browser-handoff";
+import { promptForChoice, promptForText } from "../terminal-prompt";
 import {
   provePrivateDeploymentCheckpoint,
   type PrivateDeploymentState,
@@ -32,22 +33,9 @@ export interface PrivateDeploymentPrerequisiteResult {
 const domainPattern = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/u;
 const workersSubdomainPattern = /^(?=.{1,63}$)[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u;
 
-const askChoice = async (
-  prompt: BrowserHandoffPrompt,
-  question: string,
-  options: readonly string[],
-): Promise<number> => {
-  for (;;) {
-    const answer = await prompt.question(`${question}\n${options.map((option, index) => `${index + 1}. ${option}`).join("\n")}\n> `);
-    const selected = Number.parseInt(answer.trim(), 10);
-    if (Number.isInteger(selected) && selected >= 1 && selected <= options.length) return selected - 1;
-    prompt.write(`Choose a number from 1 to ${options.length}.\n`);
-  }
-};
-
 const askDomain = async (prompt: BrowserHandoffPrompt): Promise<string> => {
   for (;;) {
-    const domain = (await prompt.question("Domain to add to Cloudflare:\n> ")).trim().toLowerCase().replace(/\.$/u, "");
+    const domain = (await promptForText(prompt, "Domain to add to Cloudflare", "example.com")).trim().toLowerCase().replace(/\.$/u, "");
     if (domainPattern.test(domain)) return domain;
     prompt.write("Enter a complete domain such as example.com.\n");
   }
@@ -58,13 +46,16 @@ const chooseWorkersSubdomain = async (
   accountName: string,
 ): Promise<string> => {
   const suggestion = suggestWorkersSubdomain(accountName);
-  const selection = await askChoice(prompt, "This account needs one shared workers.dev subdomain. What should ArtifactPass plan?", [
+  const explanation = "Cloudflare requires one account-wide workers.dev name before it can deploy Workers. This is a technical fallback; people will use your chosen ArtifactPass domain.";
+  if (prompt.note === undefined) prompt.write(`${explanation}\n`);
+  else prompt.note(explanation, "Cloudflare Worker address");
+  const selection = await promptForChoice(prompt, "Which workers.dev name should Cloudflare use?", [
     `Use ${suggestion}`,
     "Enter another name",
   ]);
   if (selection === 0) return suggestion;
   for (;;) {
-    const value = (await prompt.question("Workers subdomain name:\n> ")).trim().toLowerCase();
+    const value = (await promptForText(prompt, "Workers subdomain name", "company-artifacts")).trim().toLowerCase();
     if (workersSubdomainPattern.test(value)) return value;
     prompt.write("Use 1 to 63 lowercase letters, numbers, or hyphens.\n");
   }
@@ -82,11 +73,9 @@ const pendingState = (
   state: PrivateDeploymentState,
   kind: NonNullable<PrivateDeploymentState["pending_handoff"]>["kind"],
   readiness: string,
-  now: Date,
 ): PrivateDeploymentState => ({
   ...state,
   pending_handoff: { kind, readiness },
-  updated_at: now.toISOString(),
 });
 
 const clearPending = (state: PrivateDeploymentState): PrivateDeploymentState => {
@@ -104,7 +93,7 @@ const chooseAccount = async (
   if (recorded !== undefined) return { state, accountName: recorded.name };
   const selected = accounts.length === 1
     ? 0
-    : await askChoice(dependencies.prompt, "Which Cloudflare account should own this private ArtifactPass deployment?", accounts.map((account) => account.name));
+    : await promptForChoice(dependencies.prompt, "Which Cloudflare account should own this private ArtifactPass deployment?", accounts.map((account) => account.name));
   const account = accounts[selected];
   if (account === undefined) throw new Error("The selected Cloudflare account is unavailable");
   return {
@@ -132,7 +121,7 @@ const ensureActiveZone = async (
   if (zone === undefined) {
     const selection = zones.length === 0
       ? zones.length
-      : await askChoice(dependencies.prompt, "Which domain should ArtifactPass use?", [
+      : await promptForChoice(dependencies.prompt, "Which domain should ArtifactPass use?", [
         ...zones.map((candidate) => `${candidate.name} (${candidate.status})`),
         "Add another domain to Cloudflare",
       ]);
@@ -163,7 +152,8 @@ const ensureActiveZone = async (
   const domain = nextState.cloudflare?.zone_name;
   if (domain === undefined) throw new Error("Choose a domain before opening Cloudflare");
   const readiness = `${domain} appears in this account with status Active.`;
-  nextState = pendingState(nextState, "domain", readiness, (dependencies.now ?? (() => new Date()))());
+  nextState = pendingState(nextState, "domain", readiness);
+  nextState = await (dependencies.persist ?? (async (value) => value))(nextState);
   const handoff = await runBrowserHandoff({
     title: zone === undefined ? "Add your domain to Cloudflare" : "Activate your domain in Cloudflare",
     purpose: "ArtifactPass needs a domain you control for the private Worker and team login.",
@@ -207,15 +197,20 @@ const handoffForPrerequisite = async (
   state: PrivateDeploymentState,
   snapshot: CloudflarePrerequisiteSnapshot,
   dependencies: PrivateDeploymentPrerequisiteDependencies,
-): Promise<PrivateDeploymentPrerequisiteResult | null> => {
+): Promise<{
+  readonly result: PrivateDeploymentPrerequisiteResult | null;
+  readonly state: PrivateDeploymentState;
+}> => {
   const accountId = state.cloudflare?.account_id as string;
   const current = kind === "r2" ? snapshot.r2 : snapshot.zeroTrust;
-  if (current.status === "permission-denied") return { status: "permission-denied", state, message: current.message };
-  if (current.status === "ready") return null;
+  if (current.status === "permission-denied") {
+    return { result: { status: "permission-denied", state, message: current.message }, state };
+  }
+  if (current.status === "ready") return { result: null, state };
   const readiness = kind === "r2"
     ? "ArtifactPass can list R2 buckets in this account."
     : "ArtifactPass can read the account's Zero Trust team domain.";
-  const pending = pendingState(state, kind, readiness, (dependencies.now ?? (() => new Date()))());
+  const pending = await (dependencies.persist ?? (async (value) => value))(pendingState(state, kind, readiness));
   const urls = cloudflareDashboardUrls(accountId);
   const result = await runBrowserHandoff(kind === "r2" ? {
     title: "Enable R2 in Cloudflare",
@@ -244,9 +239,16 @@ const handoffForPrerequisite = async (
     },
   });
   if (result.status !== "ready") {
-    return { status: result.status === "conflict" ? "conflict" : result.status === "permission-denied" ? "permission-denied" : "saved", state: pending, message: result.message };
+    return {
+      result: {
+        status: result.status === "conflict" ? "conflict" : result.status === "permission-denied" ? "permission-denied" : "saved",
+        state: pending,
+        message: result.message,
+      },
+      state: pending,
+    };
   }
-  return null;
+  return { result: null, state: pending };
 };
 
 export const runPrivateDeploymentPrerequisites = async (
@@ -270,7 +272,8 @@ export const runPrivateDeploymentPrerequisites = async (
   for (const kind of ["r2", "zero-trust"] as const) {
     const beforeHandoff = kind === "r2" ? snapshot.r2 : snapshot.zeroTrust;
     const handoff = await handoffForPrerequisite(kind, state, snapshot, dependencies);
-    if (handoff !== null) return handoff;
+    state = handoff.state;
+    if (handoff.result !== null) return handoff.result;
     if (beforeHandoff.status !== "ready") {
       snapshot = await inspectCloudflarePrerequisites(dependencies.client, accountId);
     }

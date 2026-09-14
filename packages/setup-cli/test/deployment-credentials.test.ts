@@ -104,6 +104,15 @@ describe("private deployment credentials", () => {
     expect(store.value).toBeNull();
   });
 
+  it("removes a malformed local credential when disconnecting", async () => {
+    const store = memoryStore();
+    store.value = "not-json";
+    const manager = new DeploymentCredentialManager({ deploymentId, client, store });
+
+    await expect(manager.disconnect()).resolves.toEqual({ revoked: false, removed: true });
+    expect(store.value).toBeNull();
+  });
+
   it("keeps no-save authorization in memory and revokes it at close", async () => {
     const fetchImplementation = vi.fn(async () => new Response(null, { status: 200 }));
     const session = createEphemeralDeploymentCredentialSession(client, authorization(), {
@@ -113,6 +122,23 @@ describe("private deployment credentials", () => {
     await expect(session.resolveAccessToken()).resolves.toContain("access-");
     await session.close();
     expect(fetchImplementation).toHaveBeenCalledTimes(2);
+    await expect(session.resolveAccessToken()).rejects.toThrow("closed");
+  });
+
+  it("closes a no-save authorization even when revocation is incomplete", async () => {
+    let attempts = 0;
+    const fetchImplementation = vi.fn(async () => {
+      attempts += 1;
+      return new Response(null, { status: attempts === 1 ? 503 : 200 });
+    });
+    const session = createEphemeralDeploymentCredentialSession(client, authorization(), {
+      fetch: fetchImplementation,
+      now: () => now,
+    });
+
+    await expect(session.close()).rejects.toThrow();
+    await expect(session.resolveAccessToken()).rejects.toThrow("closed");
+    await expect(session.close()).resolves.toBeUndefined();
     await expect(session.resolveAccessToken()).rejects.toThrow("closed");
   });
 });

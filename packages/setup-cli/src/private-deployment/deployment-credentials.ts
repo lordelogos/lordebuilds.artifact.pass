@@ -56,10 +56,9 @@ export const cloudflareDeploymentCredentialAccount = (deploymentId: string): str
   return `cloudflare-deployment:${deploymentId}`;
 };
 
-const validateStoredCredential = (
+const parseStoredCredential = (
   value: string,
   expectedDeploymentId: string,
-  expectedClient: CloudflareOAuthClientConfiguration,
 ): StoredDeploymentCredential => {
   if (Buffer.byteLength(value) > maximumCredentialBytes) throw new Error("Stored Cloudflare authorization is too large");
   let parsed: unknown;
@@ -75,8 +74,8 @@ const validateStoredCredential = (
   if (
     candidate.version !== credentialVersion ||
     candidate.deployment_id !== expectedDeploymentId ||
-    candidate.client_environment !== expectedClient.environment ||
-    candidate.client_id !== expectedClient.clientId ||
+    (candidate.client_environment !== "staging" && candidate.client_environment !== "production") ||
+    typeof candidate.client_id !== "string" || !clientIdPattern.test(candidate.client_id) ||
     (candidate.profile !== "companyLogin" && candidate.profile !== "emailCode") ||
     !Array.isArray(candidate.granted_scopes) || !candidate.granted_scopes.every((scope) => typeof scope === "string") ||
     typeof candidate.access_token !== "string" || candidate.access_token.length < 20 || candidate.access_token.length > 4096 ||
@@ -94,8 +93,8 @@ const validateStoredCredential = (
   return {
     version: credentialVersion,
     deployment_id: expectedDeploymentId,
-    client_environment: expectedClient.environment,
-    client_id: expectedClient.clientId,
+    client_environment: candidate.client_environment,
+    client_id: candidate.client_id,
     profile: candidate.profile,
     granted_scopes: grantedScopes,
     access_token: candidate.access_token,
@@ -104,6 +103,21 @@ const validateStoredCredential = (
     created_at: candidate.created_at,
     updated_at: candidate.updated_at,
   };
+};
+
+const validateStoredCredential = (
+  value: string,
+  expectedDeploymentId: string,
+  expectedClient: CloudflareOAuthClientConfiguration,
+): StoredDeploymentCredential => {
+  const credential = parseStoredCredential(value, expectedDeploymentId);
+  if (
+    credential.client_environment !== expectedClient.environment ||
+    credential.client_id !== expectedClient.clientId
+  ) {
+    throw new Error("Stored Cloudflare authorization is malformed or belongs to another deployment");
+  }
+  return credential;
 };
 
 const credentialFromAuthorization = (
@@ -176,6 +190,25 @@ export class DeploymentCredentialManager {
     ));
   }
 
+  public async revokeBeforeReplacement(): Promise<void> {
+    const value = await this.store.get();
+    if (value === null) return;
+    let credential: StoredDeploymentCredential;
+    try {
+      credential = parseStoredCredential(value, this.options.deploymentId);
+    } catch {
+      await this.store.delete();
+      return;
+    }
+    const tokens = [...new Set([credential.access_token, credential.refresh_token].filter((token): token is string => token !== undefined))];
+    await Promise.allSettled(tokens.map((token) => revokeCloudflareOAuthToken(
+      credential.client_id,
+      token,
+      this.fetchImplementation,
+    )));
+    await this.store.delete();
+  }
+
   public async status(): Promise<DeploymentAuthorizationStatus> {
     const credential = await this.read();
     if (credential === null) return { connected: false };
@@ -218,13 +251,15 @@ export class DeploymentCredentialManager {
   }
 
   public async disconnect(): Promise<{ readonly revoked: boolean; readonly removed: true }> {
-    const credential = await this.read();
-    let revoked = credential === null;
+    let revoked = false;
     try {
+      const value = await this.store.get();
+      const credential = value === null ? null : parseStoredCredential(value, this.options.deploymentId);
+      revoked = credential === null;
       if (credential !== null) {
         const tokens = [...new Set([credential.access_token, credential.refresh_token].filter((token): token is string => token !== undefined))];
         await Promise.all(tokens.map((token) => revokeCloudflareOAuthToken(
-          this.options.client.clientId,
+          credential.client_id,
           token,
           this.fetchImplementation,
         )));
@@ -258,9 +293,10 @@ export const createEphemeralDeploymentCredentialSession = (
   const fetchImplementation = dependencies.fetch ?? globalThis.fetch;
   const now = dependencies.now ?? (() => new Date());
   let closed = false;
+  let closePromise: Promise<void> | undefined;
   return {
     resolveAccessToken: async () => {
-      if (closed) throw new Error("Cloudflare authorization session is closed");
+      if (closed || closePromise !== undefined) throw new Error("Cloudflare authorization session is closed");
       if (Date.parse(credential.expires_at) - now().getTime() > 60_000) return credential.access_token;
       if (credential.refresh_token === undefined) throw new Error("Cloudflare authorization expired and cannot be refreshed");
       credential = updatedCredential(
@@ -272,9 +308,18 @@ export const createEphemeralDeploymentCredentialSession = (
     },
     close: async () => {
       if (closed) return;
-      closed = true;
       const tokens = [...new Set([credential.access_token, credential.refresh_token].filter((token): token is string => token !== undefined))];
-      await Promise.all(tokens.map((token) => revokeCloudflareOAuthToken(client.clientId, token, fetchImplementation)));
+      closePromise ??= Promise.allSettled(tokens.map((token) => revokeCloudflareOAuthToken(
+        client.clientId,
+        token,
+        fetchImplementation,
+      ))).then((results) => {
+        closed = true;
+        if (results.some((result) => result.status === "rejected")) {
+          throw new Error("Cloudflare authorization cleanup was incomplete");
+        }
+      });
+      await closePromise;
     },
   };
 };

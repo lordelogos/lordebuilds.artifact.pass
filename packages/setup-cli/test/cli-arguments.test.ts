@@ -9,6 +9,12 @@ import {
   resolveInstallAgent,
   resolveConnectDeploymentUrl,
 } from "../src/cli-arguments";
+import type { TerminalPrompt } from "../src/terminal-prompt";
+
+const plainPrompt = (answer: string): { readonly prompt: TerminalPrompt; readonly question: ReturnType<typeof vi.fn> } => {
+  const question = vi.fn().mockResolvedValue(answer);
+  return { prompt: { question, write: vi.fn() }, question };
+};
 
 describe("install CLI arguments", () => {
   it("dispatches documented install flags without an install subcommand", () => {
@@ -26,29 +32,32 @@ describe("install CLI arguments", () => {
   });
 
   it("asks which agent to install before setup continues", async () => {
-    const prompt = vi.fn().mockResolvedValue("4");
+    const question = vi.fn(async () => {
+      throw new Error("plain text prompt should not be used");
+    });
+    const select = vi.fn().mockResolvedValue(3);
 
-    await expect(resolveInstallAgent(undefined, true, prompt)).resolves.toEqual(["kimi"]);
-    expect(prompt).toHaveBeenCalledWith(
-      "Which agent are you setting up?\n" +
-      "1. Codex\n" +
-      "2. Claude Code\n" +
-      "3. Gemini CLI\n" +
-      "4. Kimi Code\n" +
-      "5. Cursor\n" +
-      "6. VS Code / GitHub Copilot\n" +
-      "7. Antigravity\n" +
-      "8. Other MCP client\n\n" +
-      "Choose: ",
-    );
+    await expect(resolveInstallAgent(undefined, true, { question, select, write: vi.fn() }))
+      .resolves.toEqual(["kimi"]);
+    expect(select).toHaveBeenCalledWith("Which agent are you setting up?", [
+      "Codex",
+      "Claude Code",
+      "Gemini CLI",
+      "Kimi Code",
+      "Cursor",
+      "VS Code / GitHub Copilot",
+      "Antigravity",
+      "Other MCP client",
+    ]);
+    expect(question).not.toHaveBeenCalled();
   });
 
   it("uses --agent without prompting", async () => {
-    const prompt = vi.fn();
+    const prompt = { question: vi.fn(), write: vi.fn() };
 
     expect(parseInstallAgent(["--agent", "gemini"])).toBe("gemini");
     await expect(resolveInstallAgent("vscode", true, prompt)).resolves.toEqual(["vscode"]);
-    expect(prompt).not.toHaveBeenCalled();
+    expect(prompt.question).not.toHaveBeenCalled();
   });
 
   it("maps every numbered agent answer and rejects an invalid answer", async () => {
@@ -63,11 +72,12 @@ describe("install CLI arguments", () => {
       [],
     ] as const;
     for (const [index, hosts] of expected.entries()) {
-      await expect(resolveInstallAgent(undefined, true, vi.fn().mockResolvedValue(String(index + 1))))
+      await expect(resolveInstallAgent(undefined, true, plainPrompt(String(index + 1)).prompt))
         .resolves.toEqual(hosts);
     }
-    await expect(resolveInstallAgent(undefined, true, vi.fn().mockResolvedValue("9")))
-      .rejects.toThrow("Enter a number from 1 to 8");
+    const invalid = plainPrompt("9");
+    invalid.question.mockResolvedValueOnce("9").mockResolvedValueOnce("1");
+    await expect(resolveInstallAgent(undefined, true, invalid.prompt)).resolves.toEqual(["codex"]);
   });
 
   it("rejects unsupported agent values and requires automation to select one agent", async () => {
@@ -77,7 +87,7 @@ describe("install CLI arguments", () => {
       .toThrow("--agent requires a value");
     expect(() => parseInstallAgent(["--agent", "codex", "--agent", "claude"]))
       .toThrow("--agent may be provided once");
-    await expect(resolveInstallAgent(undefined, false, vi.fn()))
+    await expect(resolveInstallAgent(undefined, false, { question: vi.fn(), write: vi.fn() }))
       .rejects.toThrow("--agent is required when setup cannot ask interactively");
   });
 

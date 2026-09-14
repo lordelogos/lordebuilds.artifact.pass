@@ -44,7 +44,8 @@ export interface CloudflareOAuthAuthorization {
 export interface CloudflareOAuthDependencies {
   readonly fetch?: typeof globalThis.fetch;
   readonly openBrowser: (url: string) => Promise<void>;
-  readonly onManualOpen?: (url: string) => void;
+  readonly onAuthorizationUrl?: (url: string) => void;
+  readonly onBrowserOpenError?: (error: unknown) => void;
   readonly timeoutMilliseconds?: number;
   readonly randomBytes?: (size: number) => Buffer;
 }
@@ -215,10 +216,11 @@ export const authorizeCloudflareOAuth = async (
   });
   let timeout: ReturnType<typeof setTimeout> | undefined;
   try {
+    dependencies.onAuthorizationUrl?.(authorizeUrl.toString());
     try {
       await dependencies.openBrowser(authorizeUrl.toString());
-    } catch {
-      dependencies.onManualOpen?.(authorizeUrl.toString());
+    } catch (error) {
+      dependencies.onBrowserOpenError?.(error);
     }
     const authorizationCode = await Promise.race([
       callback,

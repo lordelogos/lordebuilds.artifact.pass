@@ -1,6 +1,6 @@
 {
   "name": "artifactpass",
-  "version": "0.1.1",
+  "version": "0.1.2-rc.1",
   "description": "Install and connect ArtifactPass for compatible AI agent systems.",
   "repository": {
     "type": "git",
@@ -25,6 +25,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@clack/prompts": "^1.8.1",
     "@modelcontextprotocol/client": "2.0.0",
     "jsonc-parser": "3.3.1",
     "wrangler": "4.131.1"

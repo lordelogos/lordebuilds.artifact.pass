@@ -91,8 +91,13 @@ export const authorizePrivateDeployment = async (
         };
       }
     } catch {
-      // A stale, revoked, or differently bound grant is replaced by a fresh
-      // authorization without touching the deployment's non-secret progress.
+      // The stored grant is unusable with this CLI. The replacement path below
+      // revokes it with its original client binding when that data is intact.
+    }
+    try {
+      await manager.revokeBeforeReplacement();
+    } catch {
+      throw new Error("Stored Cloudflare authorization could not be replaced; disconnect it and try again");
     }
   }
   const authorization = await authorizeCloudflareOAuth(client.clientId, profile, {

@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 
 import { DEFAULT_EXPIRY_POLICY } from "artifact-protocol";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { BrowserHandoffPrompt } from "../src/private-deployment/browser-handoff";
 import type { PrivateDeploymentState } from "../src/private-deployment/deployment-state";
@@ -40,6 +40,20 @@ describe("private deployment retention", () => {
     expect(result.lifecycle.rules).toEqual([expect.objectContaining({
       deleteObjectsTransition: { condition: { type: "Age", maxAge: 691_200 } },
     })]);
+  });
+
+  it("maps structured retention selections to sorted expiry values", async () => {
+    const question = vi.fn(async () => {
+      throw new Error("plain text prompt should not be used");
+    });
+    const result = await runPrivateRetentionSetup(state, {
+      question,
+      write: vi.fn(),
+      multiselect: vi.fn(async () => [4, 0, 2]),
+    }, () => now);
+
+    expect(result.state.retention_seconds).toEqual([900, 3600, 604_800]);
+    expect(question).not.toHaveBeenCalled();
   });
 
   it("rejects empty, duplicate, unordered, unsupported, and over-seven-day values", () => {

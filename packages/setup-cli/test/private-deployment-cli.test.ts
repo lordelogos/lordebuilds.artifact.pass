@@ -2,7 +2,7 @@ import { mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   parsePrivateDeploymentWizardArguments,
@@ -10,6 +10,7 @@ import {
   type PrivateDeploymentPrompt,
 } from "../src/private-deployment/deploy-wizard";
 import { readPrivateDeploymentState } from "../src/private-deployment/deployment-state";
+import { TerminalPromptCancelledError } from "../src/terminal-prompt";
 
 const deploymentId = "33333333-3333-4333-8333-333333333333";
 const secondDeploymentId = "44444444-4444-4444-8444-444444444444";
@@ -36,6 +37,41 @@ const promptWith = (answers: readonly string[]): { prompt: PrivateDeploymentProm
 };
 
 describe("private deployment CLI contract", () => {
+  it("uses structured terminal controls when the host provides them", async () => {
+    const root = await temporaryRoot();
+    const selections = [0, 0, 0];
+    const question = vi.fn(async () => {
+      throw new Error("plain text prompt should not be used");
+    });
+    const select = vi.fn(async () => selections.shift() ?? 0);
+    const intro = vi.fn();
+    const note = vi.fn();
+
+    const result = await runPrivateDeploymentWizard(
+      parsePrivateDeploymentWizardArguments(["--new"]),
+      {
+        root,
+        cliVersion,
+        createId: () => deploymentId,
+        now: () => instant,
+        prompt: {
+          interactive: true,
+          question,
+          select,
+          intro,
+          note,
+          write: vi.fn(),
+        },
+      },
+    );
+
+    expect(result.action).toBe("authorization-required");
+    expect(select).toHaveBeenCalledTimes(3);
+    expect(question).not.toHaveBeenCalled();
+    expect(intro).toHaveBeenCalledWith("ArtifactPass private deployment");
+    expect(note).toHaveBeenCalledWith(expect.stringContaining("Worker, D1 database, R2 bucket"), "What ArtifactPass will set up");
+  });
+
   it("parses resume, lifecycle, and machine-readable controls strictly", () => {
     expect(parsePrivateDeploymentWizardArguments(["--resume", deploymentId, "--status", "--json"]))
       .toEqual({
@@ -183,5 +219,57 @@ describe("private deployment CLI contract", () => {
       parsePrivateDeploymentWizardArguments(["--non-interactive"]),
       { root: await temporaryRoot(), cliVersion, prompt: promptWith([]).prompt },
     )).rejects.toThrow("requires --resume");
+  });
+
+  it("revokes process-only authorization when prerequisite setup is interrupted", async () => {
+    const close = vi.fn(async () => undefined);
+
+    await expect(runPrivateDeploymentWizard(
+      parsePrivateDeploymentWizardArguments(["--new", "--no-save-authorization"]),
+      {
+        root: await temporaryRoot(),
+        cliVersion,
+        createId: () => deploymentId,
+        now: () => instant,
+        prompt: promptWith(["1", "1", "1"]).prompt,
+        authorizeDeployment: async () => ({
+          persisted: false,
+          source: "oauth",
+          profile: "emailCode",
+          grantedScopes: ["zone.read"],
+          resolveAccessToken: async () => `access-${"x".repeat(32)}`,
+          close,
+        }),
+        runPrerequisites: async () => {
+          throw new Error("setup interrupted");
+        },
+      },
+    )).rejects.toThrow("setup interrupted");
+
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it("returns the exact resume command when structured setup is cancelled", async () => {
+    const error = await runPrivateDeploymentWizard(
+      parsePrivateDeploymentWizardArguments(["--new"]),
+      {
+        root: await temporaryRoot(),
+        cliVersion,
+        createId: () => deploymentId,
+        now: () => instant,
+        prompt: {
+          interactive: true,
+          question: vi.fn(),
+          write: vi.fn(),
+          select: async () => {
+            throw new TerminalPromptCancelledError();
+          },
+        },
+      },
+    ).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(TerminalPromptCancelledError);
+    expect((error as TerminalPromptCancelledError).resumeCommand)
+      .toBe(`pnpm dlx artifactpass deploy --resume ${deploymentId}`);
   });
 });

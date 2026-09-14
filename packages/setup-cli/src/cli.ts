@@ -1,5 +1,4 @@
 import { dirname, resolve } from "node:path";
-import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -40,19 +39,20 @@ import {
   parsePrivateDeploymentWizardArguments,
   renderPrivateDeploymentWizardResult,
   runPrivateDeploymentWizard,
-  type PrivateDeploymentPrompt,
 } from "./private-deployment/deploy-wizard";
 import {
   authorizePrivateDeployment,
   disconnectPrivateDeploymentAuthorization,
   privateDeploymentAccessTokenForInspection,
   privateDeploymentAuthorizationStatus,
+  type PrivateDeploymentAuthorizationSession,
 } from "./private-deployment/deployment-authorization";
 import {
   privateDeploymentStateRoot,
   resolvePrivateDeploymentState,
   withPrivateDeploymentLock,
   writePrivateDeploymentState,
+  type PrivateDeploymentState,
 } from "./private-deployment/deployment-state";
 import { runPrivateDeploymentPrerequisites } from "./private-deployment/prerequisites";
 import { runPrivateIdentitySetup } from "./private-deployment/identity-setup";
@@ -67,8 +67,13 @@ import {
 import {
   applyWorkspaceConfiguration,
   resolveWorkspaceConfiguration,
-  type WorkspaceConfigurationPrompt,
 } from "./workspace-configuration";
+import {
+  createNonInteractiveTerminalPrompt,
+  createTerminalPrompt,
+  TerminalPromptCancelledError,
+  type TerminalPrompt,
+} from "./terminal-prompt";
 
 const deploymentRoot = resolve(dirname(fileURLToPath(import.meta.url)), "deployment");
 const defaultMarketplace = resolve(dirname(fileURLToPath(import.meta.url)), "marketplace");
@@ -141,6 +146,7 @@ const requiredEnvironment = (name: string): string => {
 };
 
 let jsonOutputRequested = false;
+let activePrivateDeploymentResumeCommand: string | undefined;
 
 const readSavedSettings = async () => {
   await migrateDefaultLocalState();
@@ -150,42 +156,10 @@ const readSavedSettings = async () => {
   });
 };
 
-const workspacePrompt = (): { readonly prompt: WorkspaceConfigurationPrompt; readonly close: () => void } => {
-  const reader = createInterface({ input: process.stdin, output: process.stderr });
-  return {
-    prompt: (question) => reader.question(question),
-    close: () => reader.close(),
-  };
-};
-
-const privateDeploymentPrompt = (): { readonly prompt: PrivateDeploymentPrompt; readonly close: () => void } => {
-  const reader = createInterface({ input: process.stdin, output: process.stderr });
-  return {
-    prompt: {
-      interactive: process.stdin.isTTY === true && process.stderr.isTTY === true,
-      question: async (message) => {
-        const controller = new AbortController();
-        const interrupt = () => controller.abort();
-        process.once("SIGINT", interrupt);
-        try {
-          return await reader.question(message, { signal: controller.signal });
-        } catch (error) {
-          if (error instanceof Error && error.name === "AbortError") return "save";
-          throw error;
-        } finally {
-          process.off("SIGINT", interrupt);
-        }
-      },
-      write: (message) => process.stderr.write(message),
-    },
-    close: () => reader.close(),
-  };
-};
-
 const resolveCliWorkspaceConfiguration = async (
   args: readonly string[],
   forceInteractive: boolean,
-  providedPrompt?: WorkspaceConfigurationPrompt,
+  providedPrompt?: TerminalPrompt,
 ) => {
   const baseUrl = optionalValue(args, "--base-url");
   const profileName = optionalValue(args, "--profile");
@@ -197,21 +171,20 @@ const resolveCliWorkspaceConfiguration = async (
   if (forceInteractive && !interactive && baseUrl === undefined && profileName === undefined) {
     throw new Error("ArtifactPass configure needs an interactive terminal or --base-url");
   }
-  const promptSession = interactive && providedPrompt === undefined ? workspacePrompt() : undefined;
-  try {
-    const resolved = await resolveWorkspaceConfiguration({
-      workspaceRoot,
-      settings,
-      interactive,
-      prompt: providedPrompt ?? promptSession?.prompt ?? (async () => ""),
-      ...(baseUrl === undefined ? {} : { baseUrl }),
-      ...(profileName === undefined ? {} : { profileName }),
-      openDevelopment,
-    });
-    return { resolved, settings, openDevelopment };
-  } finally {
-    promptSession?.close();
-  }
+  const prompt = providedPrompt ?? (interactive
+    ? await createTerminalPrompt()
+    : createNonInteractiveTerminalPrompt());
+  if (interactive && providedPrompt === undefined) prompt.intro?.("ArtifactPass configuration");
+  const resolved = await resolveWorkspaceConfiguration({
+    workspaceRoot,
+    settings,
+    interactive,
+    prompt,
+    ...(baseUrl === undefined ? {} : { baseUrl }),
+    ...(profileName === undefined ? {} : { profileName }),
+    openDevelopment,
+  });
+  return { resolved, settings, openDevelopment, prompt: interactive ? prompt : undefined };
 };
 
 const resolveCliInstallConfiguration = async (args: readonly string[]) => {
@@ -224,16 +197,15 @@ const resolveCliInstallConfiguration = async (args: readonly string[]) => {
   const agentInteractive = installKnownHostAdapters && requestedAgent === undefined && terminalIsInteractive;
   const workspaceInteractive = optionalValue(args, "--base-url") === undefined &&
     optionalValue(args, "--profile") === undefined && terminalIsInteractive;
-  const promptSession = agentInteractive || workspaceInteractive ? workspacePrompt() : undefined;
-  try {
-    const hosts = installKnownHostAdapters
-      ? await resolveInstallAgent(requestedAgent, agentInteractive, promptSession?.prompt ?? (async () => ""))
-      : undefined;
-    const workspace = await resolveCliWorkspaceConfiguration(args, false, promptSession?.prompt);
-    return { ...workspace, hosts };
-  } finally {
-    promptSession?.close();
-  }
+  const prompt = agentInteractive || workspaceInteractive
+    ? await createTerminalPrompt()
+    : createNonInteractiveTerminalPrompt();
+  if (agentInteractive || workspaceInteractive) prompt.intro?.("ArtifactPass setup");
+  const hosts = installKnownHostAdapters
+    ? await resolveInstallAgent(requestedAgent, agentInteractive, prompt)
+    : undefined;
+  const workspace = await resolveCliWorkspaceConfiguration(args, false, prompt);
+  return { ...workspace, hosts, prompt: agentInteractive || workspaceInteractive ? prompt : undefined };
 };
 
 const main = async (): Promise<void> => {
@@ -263,7 +235,11 @@ const main = async (): Promise<void> => {
         },
       },
     });
-    print(jsonOutputRequested ? receipt : renderInstallReceipt(receipt));
+    if (jsonOutputRequested) print(receipt);
+    else {
+      print(renderInstallReceipt(receipt));
+      configuration.prompt?.outro?.("Setup complete");
+    }
     return;
   }
   if (command === "configure") {
@@ -278,12 +254,18 @@ const main = async (): Promise<void> => {
       configuration.openDevelopment,
     );
     await writeLocalBridgeSettings(defaultLocalConfigPath(), updated);
-    print(jsonOutputRequested ? {
-      profile: configuration.resolved.profileName,
-      origin: configuration.resolved.baseUrl,
-      workspace_root: configuration.resolved.workspaceRoot,
-      connection_status: "not-checked",
-    } : `ArtifactPass now uses ${configuration.resolved.baseUrl} for ${configuration.resolved.workspaceRoot}. Start a new agent session; if this deployment is not connected, connect from the agent when you first use it.`);
+    if (jsonOutputRequested) {
+      print({
+        profile: configuration.resolved.profileName,
+        origin: configuration.resolved.baseUrl,
+        workspace_root: configuration.resolved.workspaceRoot,
+        connection_status: "not-checked",
+      });
+    } else {
+      const message = `ArtifactPass now uses ${configuration.resolved.baseUrl} for ${configuration.resolved.workspaceRoot}. Start a new agent session; if this deployment is not connected, connect from the agent when you first use it.`;
+      print(message);
+      configuration.prompt?.outro?.("Configuration saved");
+    }
     return;
   }
   if (command === "help" || command === "--help") {
@@ -409,100 +391,181 @@ const main = async (): Promise<void> => {
     if (!args.some((argument) => legacyDeploymentFlags.has(argument))) {
       const wizardArguments = parsePrivateDeploymentWizardArguments(args);
       jsonOutputRequested = wizardArguments.json;
-      const promptSession = privateDeploymentPrompt();
-      try {
-        const result = await runPrivateDeploymentWizard(wizardArguments, {
-          prompt: promptSession.prompt,
+      const deploymentPrompt = process.stdin.isTTY === true && process.stderr.isTTY === true &&
+        !wizardArguments.nonInteractive &&
+        !wizardArguments.status && !wizardArguments.abandon
+        ? await createTerminalPrompt()
+        : createNonInteractiveTerminalPrompt();
+      const stateRoot = privateDeploymentStateRoot();
+      const persistPreparation = async (nextState: PrivateDeploymentState) => withPrivateDeploymentLock(
+        stateRoot,
+        nextState.deployment_id,
+        async () => {
+          const persisted = await writePrivateDeploymentState(
+            stateRoot,
+            nextState,
+            nextState.last_written_by_cli_version,
+          );
+          activePrivateDeploymentResumeCommand = `pnpm dlx artifactpass deploy --resume ${persisted.hostname ?? persisted.deployment_id}`;
+          return persisted;
+        },
+      );
+      const finishIdentityAndRetention = async (
+        state: PrivateDeploymentState,
+        authorization: PrivateDeploymentAuthorizationSession,
+      ) => {
+        const client = new CloudflareClient({ resolveToken: authorization.resolveAccessToken });
+        const identity = await runPrivateIdentitySetup(state, {
+          client,
+          prompt: deploymentPrompt,
+          openBrowser,
+        });
+        if (identity.status !== "ready") {
+          return {
+            status: identity.status,
+            state: identity.state,
+            message: identity.message,
+          } as const;
+        }
+        const identityState = await persistPreparation(identity.state);
+        const retention = await runPrivateRetentionSetup(identityState, deploymentPrompt);
+        return {
+          status: "ready" as const,
+          state: await persistPreparation(retention.state),
+          message: "Private login, publisher access, and link retention are ready for deployment approval.",
+        };
+      };
+      {
+        const runWizard = (arguments_: typeof wizardArguments) => runPrivateDeploymentWizard(arguments_, {
+          prompt: deploymentPrompt,
           authorizeDeployment: (state, noSaveAuthorization) => authorizePrivateDeployment(
             state,
             noSaveAuthorization,
             {
               oauth: {
                 openBrowser,
-                onManualOpen: (url) => {
-                  process.stderr.write(`Open this Cloudflare authorization URL:\n${url}\n`);
+                onAuthorizationUrl: (url) => {
+                  deploymentPrompt.write(`Cloudflare authorization:\n${url}\n\nArtifactPass will also try to open this link. You can use any browser profile.\n`);
+                },
+                onBrowserOpenError: () => {
+                  deploymentPrompt.write("ArtifactPass could not open the browser automatically. Open the Cloudflare authorization link printed above.\n");
                 },
               },
             },
           ),
           runPrerequisites: async (state, authorization) => {
             const client = new CloudflareClient({ resolveToken: authorization.resolveAccessToken });
-            const stateRoot = privateDeploymentStateRoot();
-            const persistPreparation = async (nextState: typeof state) => withPrivateDeploymentLock(
-              stateRoot,
-              nextState.deployment_id,
-              async () => writePrivateDeploymentState(
-                stateRoot,
-                nextState,
-                nextState.last_written_by_cli_version,
-              ),
-            );
             const prerequisites = await runPrivateDeploymentPrerequisites(state, {
               client,
-              prompt: promptSession.prompt,
+              prompt: deploymentPrompt,
               openBrowser,
               persist: persistPreparation,
             });
             if (prerequisites.status !== "ready") return prerequisites;
-            const identity = await runPrivateIdentitySetup(prerequisites.state, {
-              client,
-              prompt: promptSession.prompt,
-              openBrowser,
-            });
-            if (identity.status !== "ready") {
-              return {
-                status: identity.status,
-                state: identity.state,
-                message: identity.message,
-              };
-            }
-            const identityState = await persistPreparation(identity.state);
-            const retention = await runPrivateRetentionSetup(identityState, promptSession.prompt);
-            const retentionState = await persistPreparation(retention.state);
+            const completed = await finishIdentityAndRetention(prerequisites.state, authorization);
+            if (completed.status !== "ready") return completed;
             return {
               status: "ready",
-              state: retentionState,
+              state: completed.state,
               message: "Cloudflare prerequisites, private login, publisher access, and link retention are ready for deployment approval.",
             };
           },
         });
+        let result = await runWizard(wizardArguments);
+        if (result.deployment !== null) {
+          activePrivateDeploymentResumeCommand = `pnpm dlx artifactpass deploy --resume ${result.deployment.hostname ?? result.deployment.deployment_id}`;
+        }
         try {
-          if (
-            result.action === "retention-ready" &&
-            result.deployment !== null &&
-            result.authorization !== undefined
-          ) {
-            const deploymentResult = await runPrivateDeploymentApproval(result.deployment, {
-              root: privateDeploymentStateRoot(),
-              cliVersion: result.deployment.last_written_by_cli_version,
-              deploymentRoot,
-              prompt: promptSession.prompt,
-              authorization: result.authorization,
+          setup: for (;;) {
+            if (
+              result.action === "retention-ready" &&
+              result.deployment !== null &&
+              result.authorization !== undefined
+            ) {
+              let approvalState = result.deployment;
+              const approvalAuthorization = result.authorization;
+              for (;;) {
+                const deploymentResult = await withPrivateDeploymentLock(
+                  stateRoot,
+                  approvalState.deployment_id,
+                  async () => {
+                    const currentState = await resolvePrivateDeploymentState(
+                      stateRoot,
+                      approvalState.deployment_id,
+                      approvalState.last_written_by_cli_version,
+                    );
+                    return runPrivateDeploymentApproval(currentState, {
+                      root: stateRoot,
+                      cliVersion: currentState.last_written_by_cli_version,
+                      deploymentRoot,
+                      prompt: deploymentPrompt,
+                      authorization: approvalAuthorization,
+                    });
+                  },
+                );
+                if (deploymentResult.action === "edit-requested") {
+                  if (deploymentResult.edit === "sign-in") {
+          if (result.authorization.persisted === false) {
+            await result.authorization.close().catch(() => {
+              deploymentPrompt.write("The previous temporary Cloudflare authorization could not be fully revoked. You can continue setup safely and revoke it later in Cloudflare.\n");
             });
-            if (jsonOutputRequested) {
-              print(deploymentResult);
+          }
+                    result = await runWizard({
+                      ...wizardArguments,
+                      resume: deploymentResult.state.deployment_id,
+                      createNew: false,
+                      status: false,
+                      abandon: false,
+                    });
+                    continue setup;
+                  }
+                  if (deploymentResult.edit === "retention") {
+                    const retention = await runPrivateRetentionSetup(deploymentResult.state, deploymentPrompt);
+                    approvalState = await persistPreparation(retention.state);
+                    continue;
+                  }
+                  if (deploymentResult.edit === "audience") {
+                    const completed = await finishIdentityAndRetention(deploymentResult.state, result.authorization);
+                    if (completed.status !== "ready") {
+                      print(`${completed.message}\nResume: pnpm dlx artifactpass deploy --resume ${completed.state.hostname ?? completed.state.deployment_id}`);
+                      break setup;
+                    }
+                    approvalState = completed.state;
+                    continue;
+                  }
+                  approvalState = deploymentResult.state;
+                  continue;
+                }
+                if (jsonOutputRequested) {
+                  print(deploymentResult);
+                } else {
+                  const lines = [deploymentResult.message, `Stage: ${deploymentResult.state.stage}`];
+                  if (deploymentResult.result !== undefined) {
+                    lines.push("", "Set up ArtifactPass for a teammate:", deploymentResult.result.teamCommand);
+                    lines.push("", "Anyone with a live ArtifactPass link can read that artifact until it expires.");
+                    lines.push("", "Change deployment settings later:", `pnpm dlx artifactpass deploy --resume ${deploymentResult.state.hostname ?? deploymentResult.state.deployment_id}`);
+                  }
+                  if (deploymentResult.receiptPath !== undefined) {
+                    lines.push(`Deployment receipt: ${deploymentResult.receiptPath}`);
+                  }
+                  if (deploymentResult.action !== "complete") {
+                    lines.push(`Resume: pnpm dlx artifactpass deploy --resume ${deploymentResult.state.hostname ?? deploymentResult.state.deployment_id}`);
+                  }
+                  print(lines.join("\n"));
+                  if (deploymentResult.action === "complete") {
+                    deploymentPrompt.outro?.("Private deployment complete");
+                  }
+                }
+                break setup;
+              }
             } else {
-              const lines = [deploymentResult.message, `Stage: ${deploymentResult.state.stage}`];
-              if (deploymentResult.result !== undefined) {
-                lines.push("", "Set up ArtifactPass for a teammate:", deploymentResult.result.teamCommand);
-                lines.push("", "Anyone with a live ArtifactPass link can read that artifact until it expires.");
-              }
-              if (deploymentResult.receiptPath !== undefined) {
-                lines.push(`Deployment receipt: ${deploymentResult.receiptPath}`);
-              }
-              if (deploymentResult.action !== "complete") {
-                lines.push(`Resume: pnpm dlx artifactpass deploy --resume ${deploymentResult.state.hostname ?? deploymentResult.state.deployment_id}`);
-              }
-              print(lines.join("\n"));
+              print(jsonOutputRequested ? result : renderPrivateDeploymentWizardResult(result));
+              break;
             }
-          } else {
-            print(jsonOutputRequested ? result : renderPrivateDeploymentWizardResult(result));
           }
         } finally {
           if (result.authorization?.persisted === false) await result.authorization.close();
         }
-      } finally {
-        promptSession.close();
       }
       return;
     }
@@ -632,6 +695,14 @@ const main = async (): Promise<void> => {
 };
 
 void main().catch((error: unknown) => {
+  if (error instanceof TerminalPromptCancelledError) {
+    const resumeCommand = error.resumeCommand ?? activePrivateDeploymentResumeCommand;
+    process.stderr.write(resumeCommand === undefined
+      ? "Setup cancelled. No changes were made.\n"
+      : `Setup paused. Your progress is saved.\nResume: ${resumeCommand}\n`);
+    process.exitCode = 130;
+    return;
+  }
   if (error instanceof ArtifactpassInstallError) {
     print(jsonOutputRequested ? error.receipt : renderInstallFailure(error));
     process.exitCode = 1;

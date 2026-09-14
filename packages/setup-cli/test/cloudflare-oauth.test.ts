@@ -73,6 +73,46 @@ describe("Cloudflare OAuth", () => {
     expect(fetchImplementation).toHaveBeenCalledOnce();
   });
 
+  it("always exposes the authorization URL even when the browser opens", async () => {
+    const onAuthorizationUrl = vi.fn();
+    await authorizeCloudflareOAuth(clientId, "companyLogin", {
+      fetch: vi.fn(async () => Response.json(tokenResponse("companyLogin"))),
+      onAuthorizationUrl,
+      openBrowser: async (url) => {
+        expect(onAuthorizationUrl).toHaveBeenCalledWith(url);
+        const state = new URL(url).searchParams.get("state") as string;
+        await completeAuthorization(url, { state, code: "qualified-code" });
+      },
+      timeoutMilliseconds: 1_000,
+    });
+    expect(onAuthorizationUrl).toHaveBeenCalledOnce();
+  });
+
+  it("continues manual authorization when opening the browser fails", async () => {
+    let authorizationUrl = "";
+    const onBrowserOpenError = vi.fn();
+    const fetchImplementation = vi.fn(async () => Response.json(tokenResponse("companyLogin")));
+    const resultPromise = authorizeCloudflareOAuth(clientId, "companyLogin", {
+      fetch: fetchImplementation,
+      onAuthorizationUrl: (url) => {
+        authorizationUrl = url;
+      },
+      onBrowserOpenError,
+      openBrowser: async () => {
+        throw new Error("no default browser");
+      },
+      timeoutMilliseconds: 1_000,
+    });
+
+    await vi.waitFor(() => expect(authorizationUrl).not.toBe(""));
+    const state = new URL(authorizationUrl).searchParams.get("state") as string;
+    expect((await completeAuthorization(authorizationUrl, { state, code: "manual-code" })).status).toBe(200);
+
+    await expect(resultPromise).resolves.toMatchObject({ profile: "companyLogin" });
+    expect(fetchImplementation).toHaveBeenCalledOnce();
+    expect(onBrowserOpenError).toHaveBeenCalledWith(expect.objectContaining({ message: "no default browser" }));
+  });
+
   it("rejects mismatched state and refused consent without exchanging a code", async () => {
     const fetchImplementation = vi.fn();
     await expect(authorizeCloudflareOAuth(clientId, "companyLogin", {
