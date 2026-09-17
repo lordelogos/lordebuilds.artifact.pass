@@ -115,12 +115,13 @@ describe("public service pages", () => {
     expect(response.headers.get("cross-origin-opener-policy")).toBe("same-origin-allow-popups");
   });
 
-  it("pins the production install command to the packaged release version", async () => {
+  it("lets the production install command resolve the latest stable package", async () => {
     const markup = await (await requestFrom("https://artifactpass.com", "/")).text();
 
     expect(markup).toContain(
-      `<code id="install-command">pnpm dlx artifactpass@${packageMetadata.version}</code>`,
+      '<code id="install-command">pnpm dlx artifactpass</code>',
     );
+    expect(markup).not.toContain(`artifactpass@${packageMetadata.version}`);
     expect(markup).not.toContain("--base-url");
   });
 
