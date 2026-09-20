@@ -55,7 +55,7 @@ node packages/setup-cli/dist/cli.mjs deploy-public \
 
 Review the manifest, then rerun the same values with `--approve-manifest` pointing to that file. The deployer stops if the Worker bundle, OAuth inputs, or Cloudflare state changed after approval.
 
-Production existing-resource mode stops before mutation unless the reviewed Worker, D1 UUID, R2 bucket, custom domain, Access application, and migration history still match. It accepts only the two reviewed production baselines: either `0009-cleanup-indexes.sql` alone is pending, or `0007-public-auth.sql` through `0009-cleanup-indexes.sql` are pending. Missing production resources are never created.
+Production existing-resource mode stops before mutation unless the reviewed Worker, D1 UUID, R2 bucket, custom domain, Access application, and migration history still match. It accepts only three reviewed production baselines: no migrations are pending, `0009-cleanup-indexes.sql` alone is pending, or `0007-public-auth.sql` through `0009-cleanup-indexes.sql` are pending. Missing production resources are never created.
 
 The contained mutation order is deliberate:
 

@@ -847,6 +847,32 @@ describe("Cloudflare deployment", () => {
     expect(runner).not.toHaveBeenCalled();
   });
 
+  it("writes a production approval manifest when every migration is already applied", async () => {
+    const root = await deploymentRoot();
+    const manifestPath = resolve(root, "production-approval.json");
+    const client = fakeClient({
+      existing: true,
+      appliedMigrations: testMigrationNames,
+    });
+    const runner = vi.fn();
+
+    const result = await deployArtifactShare({
+      ...input,
+      identities: [],
+      productionExistingResources: true,
+      publicAuth: {
+        googleClientId: "google-client-id",
+        googleClientSecret: "google-client-secret",
+        githubClientId: "github-client-id",
+        githubClientSecret: "github-client-secret",
+      },
+      writeApprovalManifest: manifestPath,
+    }, { client: client.client, deploymentRoot: root, runner });
+
+    expect(result.approvalManifest).toBe(manifestPath);
+    expect(runner).not.toHaveBeenCalled();
+  });
+
   it("stops a production deployment before mutation for a partial migration baseline", async () => {
     const root = await deploymentRoot();
     const client = fakeClient({
