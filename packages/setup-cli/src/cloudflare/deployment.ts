@@ -13,6 +13,7 @@ import { listCloudflareIdentityProviders } from "./identity";
 import { storageLifecycleForMaximumExpiry } from "./retention-policy";
 
 const approvedProductionPendingMigrationSets = [
+  [],
   ["0009-cleanup-indexes.sql"],
   ["0007-public-auth.sql", "0008-private-deployment.sql", "0009-cleanup-indexes.sql"],
 ] as const;
