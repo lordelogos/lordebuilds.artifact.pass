@@ -22,7 +22,7 @@ From any folder, run:
 pnpm dlx artifactpass deploy
 ```
 
-ArtifactPass asks for the domain, the hostname to use, how teammates sign in, who may publish, and which link lifetimes to offer. It then opens Cloudflare so you can authorize the least-privilege setup profile.
+ArtifactPass asks for the domain, the hostname to use, how teammates sign in, who may publish, and which link lifetimes to offer. Add the administrator's own email when using a specific-address allowlist. It then opens Cloudflare so you can authorize the least-privilege setup profile.
 
 When Cloudflare needs first-time account setup, ArtifactPass opens the exact page and waits:
 
@@ -69,9 +69,15 @@ pnpm dlx artifactpass deployment doctor --resume artifacts.example.com
 
 Doctor reports whether setup is healthy, incomplete, waiting for Cloudflare, unauthorized, drifted, conflicted, repair-required, or failing verification. It prints one next action and never refreshes credentials or mutates Cloudflare.
 
-## Teammate setup
+## How teammates use the deployment
 
-A teammate runs the exact command printed by the admin from the workspace their agent may share:
+An allowed teammate can visit the deployment hostname, sign in through Cloudflare Access, upload a file in the browser, and send its temporary link to a person or agent. Someone who only receives a live artifact link does not need to be on the publisher allowlist.
+
+The same deployment supports all four handoff directions: person to person, person to agent, agent to person, and agent to agent. The publisher may use the browser or a connected workspace agent. The recipient may open the link in a browser or give supported source to a connected agent.
+
+## Set up a teammate's agent
+
+A teammate who wants to publish or read through an agent runs the exact command printed by the admin from the workspace their agent may share:
 
 ```sh
 pnpm dlx artifactpass --base-url https://artifacts.example.com

@@ -1,6 +1,6 @@
 ---
 name: read-shared-artifact
-description: Read a valid ArtifactPass handoff link from the configured origin when it appears in a final handoff or the user asks to inspect a previously shared supported artifact.
+description: Read a valid ArtifactPass link created by a person or agent when it appears in a final handoff or the user asks to inspect a supported shared artifact.
 ---
 
 # Read a shared artifact

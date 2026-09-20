@@ -1,6 +1,15 @@
 # Agent setup
 
-Public ArtifactPass is already deployed at `artifactpass.com`. Its baseline integration is one MCP server plus Agent Skills; ecosystem plugins only register those same files.
+Public ArtifactPass is already deployed at `artifactpass.com`. People can publish in the browser, agents can publish from an approved workspace, and either a person or connected agent can receive the resulting temporary link. Its baseline agent integration is one MCP server plus Agent Skills; ecosystem plugins only register those same files.
+
+## Supported handoffs
+
+- **Person → person:** upload at `artifactpass.com`, then send the link.
+- **Person → agent:** give a browser-created link to a connected agent to read supported source.
+- **Agent → person:** ask an agent to publish, then open its link in a browser.
+- **Agent → agent:** one agent publishes and another reads the exact supported source.
+
+The publisher signs in. A recipient opening the temporary link in a browser does not need an ArtifactPass account. Markdown and HTML source can be read by connected agents. A PDF is agent-readable only when ArtifactPass reports it as controlled; other PDFs remain browser and download handoffs for people.
 
 ## Install
 
@@ -69,8 +78,8 @@ The result prints the portable MCP configuration and Agent Skills directory. Reg
 
 ## Use
 
-- Ask the agent to share a supported absolute path with an expiry preset.
-- Ask it to read an ArtifactPass URL from the configured deployment.
+- Ask the agent to share a supported absolute path with an expiry preset. Send the returned link to a teammate or another agent.
+- Give the agent an ArtifactPass URL created by a person or agent and ask it to read the supported source.
 
 Some ecosystems namespace installed skills, such as `$artifactpass:share-artifact`. That syntax is an adapter detail, not part of the portable product contract.
 
