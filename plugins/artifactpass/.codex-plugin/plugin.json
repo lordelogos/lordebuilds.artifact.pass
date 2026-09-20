@@ -1,7 +1,7 @@
 {
   "name": "artifactpass",
   "version": "0.1.3",
-  "description": "Share local Markdown, HTML, and PDF artifacts through a private temporary link.",
+  "description": "Share temporary Markdown, HTML, and PDF links between people and AI agents.",
   "author": {
     "name": "Lorde Builds"
   },
@@ -9,8 +9,8 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "ArtifactPass",
-    "shortDescription": "Share local Markdown, HTML, and PDF artifacts through a private temporary link.",
-    "longDescription": "Publishes a file from an explicitly allowed workspace through ArtifactPass and reads supported shared artifacts in bounded chunks.",
+    "shortDescription": "Share temporary Markdown, HTML, and PDF links between people and AI agents.",
+    "longDescription": "Publishes files from an approved workspace for people or agents to open, and reads supported ArtifactPass links created by either people or agents.",
     "developerName": "Lorde Builds",
     "category": "Productivity",
     "capabilities": [

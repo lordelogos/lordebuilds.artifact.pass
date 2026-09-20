@@ -1,6 +1,6 @@
 ---
 name: share-artifact
-description: Publish one declared final durable artifact when a compatible lifecycle event identifies a Markdown, HTML, or PDF handoff, or when explicitly asked to create a temporary link; return only tool-reported handoff details.
+description: Publish one declared final durable artifact (Markdown, HTML, or PDF) as a temporary link for a person or agent when a compatible lifecycle event identifies a handoff or the user explicitly asks; return only tool-reported details.
 ---
 
 # Share an artifact
@@ -30,7 +30,7 @@ Call `publish_artifact` with the exact path and a deployment expiry preset. Publ
 
 For a PDF, pass `canonical_source_path` only when it names the exact UTF-8 source used to produce that PDF. The bridge verifies that source against the visible PDF content and signs a receipt; the service independently verifies the hashes, signature, key, and pipeline version. Never reconstruct, extract, or invent a canonical source merely to obtain controlled trust. If no exact source exists, omit the field: the PDF still shares for people but remains human-only for agents.
 
-On success, return the share URL, exact expiry cutoff, and `pdf_trust` state reported by the tool. Say that the temporary URL is a bearer capability: anyone who has it can read the artifact until expiry.
+On success, return the share URL, exact expiry cutoff, and `pdf_trust` state reported by the tool. Say that the same link can be opened by a person in a browser or read by a connected agent when supported. The temporary URL is a bearer capability: anyone who has it can read the artifact until expiry.
 
 The handoff must include the artifact format, byte size, SHA-256 checksum, exact expiry cutoff, and share URL from the tool result. Do not infer or invent any of these fields.
 

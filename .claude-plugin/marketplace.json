@@ -4,13 +4,13 @@
     "name": "Lorde Builds"
   },
   "metadata": {
-    "description": "Publishes a file from an explicitly allowed workspace through ArtifactPass and reads supported shared artifacts in bounded chunks."
+    "description": "Publishes files from an approved workspace for people or agents to open, and reads supported ArtifactPass links created by either people or agents."
   },
   "plugins": [
     {
       "name": "artifactpass",
       "source": "./plugins/artifactpass",
-      "description": "Share local Markdown, HTML, and PDF artifacts through a private temporary link.",
+      "description": "Share temporary Markdown, HTML, and PDF links between people and AI agents.",
       "category": "Productivity"
     }
   ]
