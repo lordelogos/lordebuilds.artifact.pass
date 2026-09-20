@@ -31,7 +31,9 @@ The public release limits are part of the reviewed Worker build: OAuth starts al
 
 Candidate and release workflows must use the protected `artifactpass-release` GitHub environment. Configure required reviewers for that environment and protect `v*` tags from deletion or force updates. A candidate tag must point to a reviewed commit reachable from `main`.
 
-npm publication uses trusted publishing with an OIDC identity restricted to `.github/workflows/publish-candidate.yml`. Do not create a long-lived npm automation token. Publication explicitly requests npm provenance. The release gate verifies exact RC version agreement, the published CLI entrypoint, the native build allowlist, absence of package install lifecycle scripts, dependency audit and licenses, secret scanning, packed contents, and a clean packed installation. Verify the registry provenance and tarball integrity before running the privileged deployment command.
+npm publication uses trusted publishing with an OIDC identity restricted to `.github/workflows/publish-candidate.yml`. Do not create a long-lived npm automation token. Publication explicitly requests npm provenance. The release gate verifies exact RC version agreement, the published CLI entrypoint, the native build allowlist, absence of package install lifecycle scripts, dependency audit and licenses, secret scanning, packed contents, and a clean packed installation.
+
+Every stable release must follow one sequence: merge all intended changes, publish an `X.Y.Z-rc.N` package, deploy that exact RC to staging, and complete staging qualification. Only then create `X.Y.Z`. The stable workflow refuses to publish unless npm's `rc` tag names the same base version, the stable tarball is byte-equivalent to that RC after version-only normalization, and staging reports that exact RC with healthy authentication and OAuth starts. Verify registry provenance and tarball integrity before running the privileged production deployment command.
 
 ## Live release gate
 

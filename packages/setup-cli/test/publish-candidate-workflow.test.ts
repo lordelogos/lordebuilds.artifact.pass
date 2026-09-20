@@ -32,6 +32,9 @@ describe("npm release publishing", () => {
       "pnpm test:packed-install",
       "pnpm --dir packages/setup-cli pack",
       "node scripts/validate-candidate-tag.mjs",
+      "node scripts/verify-stable-equivalence.mjs",
+      "node scripts/verify-stable-staging.mjs",
+      "npm view artifactpass@rc version",
       "git fetch --no-tags origin main",
       'npm publish "$package_archive" --tag "$release_channel" --access public --provenance',
     ]) {
@@ -40,6 +43,7 @@ describe("npm release publishing", () => {
     expect(workflow).not.toContain("NODE_AUTH_TOKEN");
     expect(workflow).not.toContain("${{ secrets.");
     expect(workflow).toContain("github.event.repository.visibility");
+    expect(workflow).toContain("if: env.release_channel == 'latest'");
     expect(workflow.match(/node scripts\/validate-candidate-tag\.mjs/gu)).toHaveLength(2);
   });
 

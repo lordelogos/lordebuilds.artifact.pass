@@ -61,6 +61,15 @@ if (!candidateWorkflow.includes("scan-secrets.mjs --history --fetch-remote origi
 if (!candidateWorkflow.includes("git fetch --no-tags origin main")) {
   fail("candidate publishing does not refresh main immediately before final tag validation");
 }
+if (!candidateWorkflow.includes("npm view artifactpass@rc version")) {
+  fail("stable publishing does not resolve the published RC");
+}
+if (!candidateWorkflow.includes("node scripts/verify-stable-equivalence.mjs")) {
+  fail("stable publishing does not require byte equivalence with the qualified RC");
+}
+if (!candidateWorkflow.includes("node scripts/verify-stable-staging.mjs")) {
+  fail("stable publishing does not require the exact RC to be live and healthy on staging");
+}
 if (!releaseWorkflow.includes("actions/attest@")) fail("release artifacts are not attested");
 
 for (const [name, workflow] of [

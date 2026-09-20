@@ -29,3 +29,11 @@
 - Run `pnpm test:browser:live` only against an explicitly authorized disposable Cloudflare deployment.
 - Run `pnpm install --frozen-lockfile` before recording clean-install build evidence.
 - For the smallest local startup smoke, run `pnpm dev`, then request both `http://127.0.0.1:8787/` and `http://127.0.0.1:8787/health`.
+
+## Release sequencing
+
+- Merge every change intended for a release into `main` before creating its first RC tag.
+- Never publish a new stable version directly. Publish `X.Y.Z-rc.N` to the npm `rc` channel first, deploy that exact RC to staging, and complete the staging health, authentication, browser, and packed-install gates.
+- A stable `X.Y.Z` package must be byte-equivalent to the qualified `X.Y.Z-rc.N` package after version-only normalization. The stable workflow must verify both that equivalence and that staging is serving the exact RC before publishing to npm `latest`.
+- If qualification finds a defect or a missing change, merge the fix and publish a new RC. Do not publish stable until the replacement RC passes every gate.
+- Deploy to production only after the stable package has been promoted to `latest`; then verify production health, sign-in boundaries, OAuth starts, publishing, reading, and the deployed Worker version.
