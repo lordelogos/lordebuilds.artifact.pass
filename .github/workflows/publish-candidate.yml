@@ -41,6 +41,18 @@ jobs:
           mkdir -p "$RUNNER_TEMP/artifactpass-release"
           pnpm --dir packages/setup-cli pack --pack-destination "$RUNNER_TEMP/artifactpass-release"
           test "$(find "$RUNNER_TEMP/artifactpass-release" -maxdepth 1 -name '*.tgz' | wc -l | tr -d ' ')" = "1"
+      - name: Require stable release to match the tested RC
+        if: env.release_channel == 'latest'
+        run: |
+          package_archive="$(find "$RUNNER_TEMP/artifactpass-release" -maxdepth 1 -name '*.tgz' -print -quit)"
+          stable_version="$(node -p "require('./packages/setup-cli/package.json').version")"
+          reference_version="$(npm view artifactpass@rc version)"
+          case "$reference_version" in
+            "$stable_version"-rc.*) ;;
+            *) echo "npm rc points to $reference_version, not an RC for $stable_version" >&2; exit 1 ;;
+          esac
+          node scripts/verify-stable-equivalence.mjs --reference "$reference_version" --candidate "$package_archive"
+          node scripts/verify-stable-staging.mjs --reference "$reference_version" --base-url https://staging.artifactpass.com
       - name: Revalidate reviewed stable tip immediately before publication
         env:
           RELEASE_TAG: ${{ github.ref_name }}
