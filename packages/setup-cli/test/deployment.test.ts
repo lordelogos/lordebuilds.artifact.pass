@@ -717,7 +717,10 @@ describe("Cloudflare deployment", () => {
     }));
   });
 
-  it("deploys production OAuth and code atomically while retaining existing Access", async () => {
+  it.each([
+    ["Cloudflare Access", "https://team.cloudflareaccess.com/cdn-cgi/access/login"],
+    ["activated ArtifactPass sign-in", "/auth/sign-in?return_to=%2Fupload"],
+  ])("deploys production OAuth and code atomically through the %s boundary", async (_boundary, uploadLocation) => {
     const root = await deploymentRoot();
     const manifestRoot = await mkdtemp(resolve(tmpdir(), "artifact-share-approval-test-"));
     const manifestPath = resolve(manifestRoot, "production-approval.json");
@@ -770,7 +773,7 @@ describe("Cloudflare deployment", () => {
       if (url.pathname === "/upload") {
         return new Response(null, {
           status: 302,
-          headers: { location: "https://team.cloudflareaccess.com/cdn-cgi/access/login" },
+          headers: { location: uploadLocation },
         });
       }
       throw new Error(`Unexpected production deployment request: ${url}`);
