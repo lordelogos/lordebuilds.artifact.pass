@@ -1134,11 +1134,11 @@ export const deployArtifactShare = async (
       );
       const location = containedUpload.headers.get("location");
       const accessHostname = new URL(`https://${organization.auth_domain}`).hostname;
-      if (
-        ![302, 303, 307, 401, 403].includes(containedUpload.status) ||
-        (location !== null && new URL(location, baseUrl).hostname !== accessHostname)
-      ) {
-        throw new Error(`Cloudflare Access did not retain the production upload boundary (${containedUpload.status})`);
+      const retainedAccessBoundary = [302, 303, 307, 401, 403].includes(containedUpload.status) &&
+        (location === null || new URL(location, baseUrl).hostname === accessHostname);
+      const retainedArtifactPassBoundary = isArtifactPassUploadRedirect(containedUpload, baseUrl);
+      if (!retainedAccessBoundary && !retainedArtifactPassBoundary) {
+        throw new Error(`Production upload boundary is not protected (${containedUpload.status})`);
       }
       return {
         baseUrl,
