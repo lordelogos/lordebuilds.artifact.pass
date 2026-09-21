@@ -61,6 +61,8 @@ Create a private ArtifactPass deployment in your own Cloudflare account:
 pnpm dlx artifactpass deploy --new
 ```
 
+When setup asks for your domain, enter only the domain, such as `example.com`. Do not enter a URL such as `https://example.com`.
+
 A private deployment stays on the ArtifactPass version that was deployed. It does not update automatically.
 
 To update it, run the latest CLI against its hostname:

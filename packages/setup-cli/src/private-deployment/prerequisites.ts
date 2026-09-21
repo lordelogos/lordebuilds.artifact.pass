@@ -35,9 +35,13 @@ const workersSubdomainPattern = /^(?=.{1,63}$)[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u
 
 const askDomain = async (prompt: BrowserHandoffPrompt): Promise<string> => {
   for (;;) {
-    const domain = (await promptForText(prompt, "Domain to add to Cloudflare", "example.com")).trim().toLowerCase().replace(/\.$/u, "");
+    const domain = (await promptForText(
+      prompt,
+      "Domain to add to Cloudflare (example: example.com; no https://)",
+      "example.com",
+    )).trim().toLowerCase().replace(/\.$/u, "");
     if (domainPattern.test(domain)) return domain;
-    prompt.write("Enter a complete domain such as example.com.\n");
+    prompt.write("Enter only the domain, for example example.com. Do not include https:// or a path.\n");
   }
 };
 

@@ -36,7 +36,10 @@ const promptWith = (answers: readonly string[]): { prompt: BrowserHandoffPrompt;
   const output: string[] = [];
   return {
     prompt: {
-      question: async () => queue.shift() ?? "3",
+      question: async (message) => {
+        output.push(message);
+        return queue.shift() ?? "3";
+      },
       write: (message) => output.push(message),
     },
     output,
@@ -123,6 +126,29 @@ describe("private deployment prerequisite flow", () => {
     }));
     expect(interaction.output.join("\n")).toContain("update those nameservers at your registrar");
     for (const [, init] of vi.mocked(client.request).mock.calls) expect(init?.method ?? "GET").toBe("GET");
+  });
+
+  it("shows the bare-domain format and corrects URL-shaped input", async () => {
+    const interaction = promptWith(["https://example.com", "example.com", "3"]);
+    const client: CloudflareClient = {
+      request: vi.fn(async (path: string) => {
+        if (path.startsWith("/accounts?")) return [{ id: accountId, name: "Example Company" }];
+        if (path.startsWith("/zones?")) return [];
+        throw new Error(`Unexpected request: ${path}`);
+      }),
+    } as unknown as CloudflareClient;
+
+    const result = await runPrivateDeploymentPrerequisites(state, {
+      client,
+      prompt: interaction.prompt,
+      openBrowser: vi.fn(),
+      now: () => now,
+    });
+
+    expect(result.status).toBe("saved");
+    expect(result.state.cloudflare?.zone_name).toBe("example.com");
+    expect(interaction.output.join("\n")).toContain("Domain to add to Cloudflare (example: example.com; no https://)");
+    expect(interaction.output.join("\n")).toContain("Enter only the domain, for example example.com. Do not include https:// or a path.");
   });
 
   it("persists a domain that becomes active without reporting a false concurrent edit", async () => {

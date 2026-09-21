@@ -24,6 +24,8 @@ pnpm dlx artifactpass deploy
 
 ArtifactPass asks for the domain, the hostname to use, how teammates sign in, who may publish, and which link lifetimes to offer. Add the administrator's own email when using a specific-address allowlist. It then opens Cloudflare so you can authorize the least-privilege setup profile.
 
+Enter the domain by itself, such as `example.com`. Do not include `https://` or a path. ArtifactPass later suggests a deployment hostname such as `artifacts.example.com`.
+
 When Cloudflare needs first-time account setup, ArtifactPass opens the exact page and waits:
 
 - **Domain:** add the domain, then copy Cloudflare's nameservers into your registrar. Return when Cloudflare shows the domain as Active.
