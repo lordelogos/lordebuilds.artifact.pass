@@ -32,12 +32,17 @@ export interface PrivateDeploymentPrerequisiteResult {
 
 const domainPattern = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/u;
 const workersSubdomainPattern = /^(?=.{1,63}$)[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u;
+const cloudflareDomainGuideUrl = "https://github.com/lordelogos/lordebuilds.artifact.pass/blob/main/docs/cloudflare-domain-setup.md";
 
 const askDomain = async (prompt: BrowserHandoffPrompt): Promise<string> => {
   for (;;) {
-    const domain = (await promptForText(prompt, "Domain to add to Cloudflare", "example.com")).trim().toLowerCase().replace(/\.$/u, "");
+    const domain = (await promptForText(
+      prompt,
+      "Domain to add to Cloudflare (example: example.com; no https://)",
+      "example.com",
+    )).trim().toLowerCase().replace(/\.$/u, "");
     if (domainPattern.test(domain)) return domain;
-    prompt.write("Enter a complete domain such as example.com.\n");
+    prompt.write("Enter only the domain, for example example.com. Do not include https:// or a path.\n");
   }
 };
 
@@ -157,9 +162,10 @@ const ensureActiveZone = async (
   const handoff = await runBrowserHandoff({
     title: zone === undefined ? "Add your domain to Cloudflare" : "Activate your domain in Cloudflare",
     purpose: "ArtifactPass needs a domain you control for the private Worker and team login.",
-    cloudflareChange: "Cloudflare adds the DNS zone and shows the nameservers. You update those nameservers at your registrar. ArtifactPass never receives registrar credentials.",
+    cloudflareChange: "Choose Connect a domain, not Transfer a domain. Cloudflare adds the DNS zone and shows the nameservers. You update those nameservers at your current registrar. This does not transfer your domain registration, unlock the domain, or require an authorization code. ArtifactPass never receives registrar credentials.",
     artifactpassReads: "The zone ID, domain name, assigned nameservers, and activation status.",
     readiness,
+    guideUrl: cloudflareDomainGuideUrl,
     url: cloudflareDashboardUrls(accountId).addDomain,
     resumed: state.pending_handoff?.kind === "domain",
   }, {

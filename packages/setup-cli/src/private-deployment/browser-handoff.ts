@@ -19,6 +19,7 @@ export interface BrowserHandoffInput {
   readonly artifactpassReads: string;
   readonly readiness: string;
   readonly url: string;
+  readonly guideUrl?: string;
   readonly resumed?: boolean;
   readonly timeoutMilliseconds?: number;
 }
@@ -39,6 +40,7 @@ const renderIntroduction = (input: BrowserHandoffInput): string => [
   `What changes in Cloudflare: ${input.cloudflareChange}`,
   `What ArtifactPass reads afterward: ${input.artifactpassReads}`,
   `Ready when: ${input.readiness}`,
+  input.guideUrl === undefined ? undefined : `Step-by-step guide: ${input.guideUrl}`,
   `Cloudflare page: ${input.url}`,
 ].filter((line) => line !== undefined).join("\n");
 

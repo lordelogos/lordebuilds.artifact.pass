@@ -97,12 +97,9 @@ export const isInstallInvocation = (command: string | undefined): boolean =>
 const CONNECT_VALUE_OPTIONS = new Set([
   "--profile",
   "--workspace-root",
-  "--host",
-  "--marketplace",
 ]);
 
 const CONNECT_BOOLEAN_OPTIONS = new Set([
-  "--no-host-install",
   "--open-development",
 ]);
 
