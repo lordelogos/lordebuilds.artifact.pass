@@ -2,6 +2,8 @@
 
 Private ArtifactPass runs in your Cloudflare account, on your domain, with your D1 database, private R2 bucket, login rules, logs, and Cloudflare bill. ArtifactPass guides the setup but does not accept plans, add payment methods, or change billing.
 
+For the exact wording and choices for every private deployment question, see [ArtifactPass CLI reference](./cli-reference.md#create-or-update-a-private-deployment).
+
 ## Before you start
 
 You need:

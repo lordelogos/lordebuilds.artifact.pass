@@ -2,6 +2,8 @@
 
 Public ArtifactPass is already deployed at `artifactpass.com`. People can publish in the browser, agents can publish from an approved workspace, and either a person or connected agent can receive the resulting temporary link. Its baseline agent integration is one MCP server plus Agent Skills; ecosystem plugins only register those same files.
 
+For the exact questions, choices, flags, and success output for installation, configuration, connection, profiles, and disconnection, see [ArtifactPass CLI reference](./cli-reference.md).
+
 ## Supported handoffs
 
 - **Person → person:** upload at `artifactpass.com`, then send the link.

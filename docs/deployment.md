@@ -2,6 +2,8 @@
 
 This procedure is for the ArtifactPass release operator, not for people installing the plugin. Public users install and connect to `https://artifactpass.com`; they never need a Cloudflare account.
 
+For the complete command inventory, including the non-interactive public deployment and activation contracts, see [ArtifactPass CLI reference](./cli-reference.md#public-service-operator-commands).
+
 The production service uses one Cloudflare Worker custom domain, one managed D1 database, and one private R2 bucket. Google and GitHub authenticate people in the browser. Scoped ArtifactPass tokens authenticate agent publishing. Temporary `/a/*` URLs remain bearer capabilities.
 
 ## Provider applications
