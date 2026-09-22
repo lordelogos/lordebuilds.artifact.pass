@@ -21,7 +21,9 @@ From the workspace the agent may share, run:
 pnpm dlx artifactpass
 ```
 
-Choose public ArtifactPass or a private deployment when prompted. Setup installs or repairs the portable bundle, registers every detected supported host, negotiates the MCP tools, verifies both skills, and writes a private install receipt. It does not open a browser or authenticate.
+Choose the agent used in this workspace, then choose public ArtifactPass or a private deployment. Setup installs or repairs the portable bundle, registers the selected agent, negotiates the MCP tools, verifies both skills, and writes a private install receipt. It does not open a browser or authenticate.
+
+The agent question belongs only to workspace installation. `pnpm dlx artifactpass deploy` creates or updates Cloudflare infrastructure and never asks which agent you use.
 
 ## Connect inside the agent
 

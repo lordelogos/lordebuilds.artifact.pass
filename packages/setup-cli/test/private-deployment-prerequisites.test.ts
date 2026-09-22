@@ -124,7 +124,9 @@ describe("private deployment prerequisite flow", () => {
       cloudflare: expect.objectContaining({ zone_name: "example.com" }),
       pending_handoff: expect.objectContaining({ kind: "domain" }),
     }));
-    expect(interaction.output.join("\n")).toContain("update those nameservers at your registrar");
+    expect(interaction.output.join("\n")).toContain("update those nameservers at your current registrar");
+    expect(interaction.output.join("\n")).toContain("This does not transfer your domain registration");
+    expect(interaction.output.join("\n")).toContain("docs/cloudflare-domain-setup.md");
     for (const [, init] of vi.mocked(client.request).mock.calls) expect(init?.method ?? "GET").toBe("GET");
   });
 

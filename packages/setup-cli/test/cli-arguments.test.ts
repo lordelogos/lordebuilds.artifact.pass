@@ -103,10 +103,6 @@ describe("install CLI arguments", () => {
 describe("connect CLI arguments", () => {
   it("keeps a deployment URL that follows a boolean option", () => {
     expect(parseConnectArguments([
-      "--no-host-install",
-      "https://private.example",
-    ]).deploymentUrl).toBe("https://private.example");
-    expect(parseConnectArguments([
       "--open-development",
       "http://127.0.0.1:8787",
     ]).deploymentUrl).toBe("http://127.0.0.1:8787");
@@ -138,6 +134,15 @@ describe("connect CLI arguments", () => {
   it("rejects unknown options and missing option values", () => {
     expect(() => parseConnectArguments(["--unknown"])).toThrow("Unknown connect option: --unknown");
     expect(() => parseConnectArguments(["--profile"])).toThrow("--profile requires a value");
+  });
+
+  it("rejects the removed host-installation flags", () => {
+    expect(() => parseConnectArguments(["--host", "codex"]))
+      .toThrow("Unknown connect option: --host");
+    expect(() => parseConnectArguments(["--marketplace", "/tmp/marketplace"]))
+      .toThrow("Unknown connect option: --marketplace");
+    expect(() => parseConnectArguments(["--no-host-install"]))
+      .toThrow("Unknown connect option: --no-host-install");
   });
 
   it("uses the saved workspace deployment when the URL is omitted", () => {

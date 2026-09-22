@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="title description">
+  <title id="title">Review imported DNS records before continuing</title>
+  <desc id="description">An illustrated Cloudflare DNS review screen showing website and email records that must be checked before changing nameservers.</desc>
+  <rect width="1200" height="720" fill="#f7f7f8"/>
+  <text x="72" y="78" font-family="Arial, sans-serif" font-size="40" font-weight="700" fill="#111827">Review your DNS records</text>
+  <text x="72" y="118" font-family="Arial, sans-serif" font-size="20" fill="#4b5563">Cloudflare scans your current DNS. Compare the result before you continue.</text>
+  <rect x="68" y="154" width="1064" height="86" rx="14" fill="#fff7ed" stroke="#fb923c" stroke-width="2"/>
+  <text x="94" y="190" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#9a3412">Do not skip this check</text>
+  <text x="94" y="218" font-family="Arial, sans-serif" font-size="18" fill="#7c2d12">Missing records can break your existing website or email after the nameserver change.</text>
+  <rect x="68" y="270" width="1064" height="300" rx="14" fill="#ffffff" stroke="#d1d5db" stroke-width="2"/>
+  <text x="92" y="310" font-family="Arial, sans-serif" font-size="17" font-weight="700" fill="#6b7280">TYPE</text>
+  <text x="250" y="310" font-family="Arial, sans-serif" font-size="17" font-weight="700" fill="#6b7280">NAME</text>
+  <text x="495" y="310" font-family="Arial, sans-serif" font-size="17" font-weight="700" fill="#6b7280">PURPOSE</text>
+  <text x="920" y="310" font-family="Arial, sans-serif" font-size="17" font-weight="700" fill="#6b7280">CHECK</text>
+  <line x1="92" y1="330" x2="1108" y2="330" stroke="#e5e7eb"/>
+  <text x="92" y="373" font-family="Arial, sans-serif" font-size="20" fill="#111827">A / AAAA</text>
+  <text x="250" y="373" font-family="Arial, sans-serif" font-size="20" fill="#111827">example.com</text>
+  <text x="495" y="373" font-family="Arial, sans-serif" font-size="20" fill="#111827">Current website</text>
+  <text x="930" y="373" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#15803d">✓</text>
+  <line x1="92" y1="398" x2="1108" y2="398" stroke="#e5e7eb"/>
+  <text x="92" y="441" font-family="Arial, sans-serif" font-size="20" fill="#111827">CNAME</text>
+  <text x="250" y="441" font-family="Arial, sans-serif" font-size="20" fill="#111827">www</text>
+  <text x="495" y="441" font-family="Arial, sans-serif" font-size="20" fill="#111827">Website alias or host</text>
+  <text x="930" y="441" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#15803d">✓</text>
+  <line x1="92" y1="466" x2="1108" y2="466" stroke="#e5e7eb"/>
+  <text x="92" y="509" font-family="Arial, sans-serif" font-size="20" fill="#111827">MX / TXT</text>
+  <text x="250" y="509" font-family="Arial, sans-serif" font-size="20" fill="#111827">mail records</text>
+  <text x="495" y="509" font-family="Arial, sans-serif" font-size="20" fill="#111827">Email, SPF, DKIM, DMARC</text>
+  <text x="930" y="509" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#15803d">✓</text>
+  <rect x="784" y="610" width="348" height="64" rx="12" fill="#2563eb"/>
+  <text x="958" y="651" text-anchor="middle" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#ffffff">Continue after records match</text>
+  <text x="68" y="690" font-family="Arial, sans-serif" font-size="17" fill="#6b7280">Screen guide. Exact records depend on your current host and email provider.</text>
+</svg>

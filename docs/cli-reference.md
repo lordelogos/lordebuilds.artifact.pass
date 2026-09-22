@@ -38,6 +38,8 @@ pnpm dlx artifactpass install
 
 The two commands run the same installation flow. Setup applies to the current project unless `--workspace-root` supplies another project.
 
+This agent question belongs to workspace installation. It is not part of `artifactpass deploy`; private deployment creates Cloudflare infrastructure and does not select an agent.
+
 ### Question 1: agent
 
 ```text
@@ -224,15 +226,7 @@ Open this URL to approve ArtifactPass:
 
 The browser handles sign-in and approval. The terminal waits for completion but asks no additional questions.
 
-The `connect` command has older host-registration flags limited to:
-
-```text
-codex
-claude
-both
-```
-
-The normal installation command should be used for Gemini CLI, Kimi Code, Cursor, VS Code / GitHub Copilot, Antigravity, and other MCP clients.
+`connect` does not install or select an agent. Use the normal installation command first; it supports Codex, Claude Code, Gemini CLI, Kimi Code, Cursor, VS Code / GitHub Copilot, Antigravity, and other MCP clients. The `connect` command only authorizes the deployment already configured for the project.
 
 ## Disconnect an agent
 
@@ -414,8 +408,11 @@ Why this page is needed:
 ArtifactPass needs a domain you control for the private Worker and team login.
 
 What changes in Cloudflare:
+Choose Connect a domain, not Transfer a domain.
 Cloudflare adds the DNS zone and shows the nameservers.
-You update those nameservers at your registrar.
+You update those nameservers at your current registrar.
+This does not transfer your domain registration, unlock the domain,
+or require an authorization code.
 ArtifactPass never receives registrar credentials.
 
 What ArtifactPass reads afterward:
@@ -424,11 +421,16 @@ The zone ID, domain name, assigned nameservers, and activation status.
 Ready when:
 example.com appears in this account with status Active.
 
+Step-by-step guide:
+https://github.com/lordelogos/lordebuilds.artifact.pass/blob/main/docs/cloudflare-domain-setup.md
+
 Cloudflare page:
 <Cloudflare URL>
 ```
 
 The title is `Activate your domain in Cloudflare` when the domain already exists in the account but is still pending.
+
+This step keeps the domain at its current registrar. Only the registrar's nameserver fields change. See the illustrated [Cloudflare domain setup guide](./cloudflare-domain-setup.md).
 
 The handoff asks:
 

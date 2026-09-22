@@ -28,9 +28,11 @@ ArtifactPass asks for the domain, the hostname to use, how teammates sign in, wh
 
 Enter the domain by itself, such as `example.com`. Do not include `https://` or a path. ArtifactPass later suggests a deployment hostname such as `artifacts.example.com`.
 
+Adding the domain to Cloudflare does not transfer its registration. Keep the domain at its current registrar, choose **Connect a domain** in Cloudflare, review the imported DNS records, and replace only the registrar's nameservers. Follow the illustrated [Cloudflare domain setup guide](./cloudflare-domain-setup.md) before making the nameserver change.
+
 When Cloudflare needs first-time account setup, ArtifactPass opens the exact page and waits:
 
-- **Domain:** add the domain, then copy Cloudflare's nameservers into your registrar. Return when Cloudflare shows the domain as Active.
+- **Domain:** choose **Connect a domain**, not **Transfer a domain**. Review the imported DNS records, then copy Cloudflare's nameservers into the current registrar. Return when Cloudflare shows the domain as Active.
 - **R2:** review Cloudflare's plan or payment screen and enable R2 yourself.
 - **Zero Trust:** choose a team name and complete any plan or payment screen yourself.
 - **Company login:** add the provider in Cloudflare, then return and select it in ArtifactPass.

@@ -31,9 +31,7 @@ import { CloudflareClient } from "./cloudflare/client";
 import type { IdentityRule } from "./cloudflare/deployment";
 import { activatePublicArtifactPass } from "./cloudflare/public-activation";
 import { runDoctor } from "./doctor";
-import type { AgentHost } from "./hosts";
 import { openBrowser } from "./open-browser";
-import { installPortableIntegration } from "./portable-integration";
 import { migrateDefaultLocalState } from "./local-state-migration";
 import {
   parsePrivateDeploymentWizardArguments,
@@ -131,7 +129,7 @@ Commands:
   deployment auth disconnect --resume <hostname-or-id> [--json]
   deployment doctor --resume <hostname-or-id> [--json]
   deploy --account-id <id> --zone-id <id> --hostname <host> [--service-name <name>] --workers-subdomain <name> --pdf-key-id <id> --pdf-public-key <base64> (--allow-email <email> | --allow-domain <domain>) (--dry-run | --write-approval-manifest <path> | --approve-manifest <path>)
-  connect [base-url] [--profile <name>] [--workspace-root <path>] [--host codex|claude|both] [--no-host-install] [--marketplace <source>] [--open-development]
+  connect [base-url] [--profile <name>] [--workspace-root <path>] [--open-development]
   profile list
   profile use <name>
   disconnect [--profile <name>]
@@ -604,18 +602,6 @@ const main = async (): Promise<void> => {
   if (command === "connect") {
     const connectArguments = parseConnectArguments(args);
     const savedSettings = await readSavedSettings();
-    const installKnownHostAdapters = !booleanFlag(args, "--no-host-install");
-    const requestedHost = optionalValue(args, "--host");
-    const host = requestedHost ?? "both";
-    if (!new Set(["codex", "claude", "both"]).has(host)) throw new Error("--host must be codex, claude, or both");
-    if (!installKnownHostAdapters && requestedHost !== undefined) {
-      throw new Error("--host cannot be combined with --no-host-install");
-    }
-    const hosts = host === "both" ? undefined : [host as AgentHost];
-    const marketplaceSource = optionalValue(args, "--marketplace") ?? defaultMarketplace;
-    const portableIntegration = await installPortableIntegration({
-      marketplaceSource,
-    });
     const profileName = optionalValue(args, "--profile");
     const requestedWorkspaceRoots = values(args, "--workspace-root");
     const workspaceRoots = requestedWorkspaceRoots.length > 0
@@ -625,12 +611,10 @@ const main = async (): Promise<void> => {
       ...(profileName === undefined ? {} : { profileName }),
       baseUrl: resolveConnectDeploymentUrl(connectArguments, savedSettings, profileName, workspaceRoots[0]),
       workspaceRoots,
-      ...(hosts === undefined ? {} : { hosts }),
-      installKnownHostAdapters,
-      marketplaceSource: portableIntegration.marketplaceDirectory,
+      installKnownHostAdapters: false,
+      marketplaceSource: defaultMarketplace,
       openDevelopment: booleanFlag(args, "--open-development"),
     }, {
-      installPortable: async () => portableIntegration,
       deviceFlowDependencies: {
         openBrowser,
         onManualApprovalRequired: (url) => {
@@ -638,15 +622,10 @@ const main = async (): Promise<void> => {
         },
       },
     });
-    if (!installKnownHostAdapters || result.portableIntegration !== undefined) {
-      print({
-        ...result,
-        portableIntegration: result.portableIntegration ?? portableIntegration,
-        next: "Register the MCP configuration and Agent Skills directory in your agent system.",
-      });
-      return;
-    }
-    print({ ...result, next: "Start a new agent session so the plugin and bridge reload." });
+    print({
+      ...result,
+      next: "ArtifactPass is connected for this project. Existing agent sessions may need to reconnect.",
+    });
     return;
   }
   if (command === "profile") {
