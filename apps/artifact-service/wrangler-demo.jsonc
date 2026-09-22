@@ -24,6 +24,6 @@
   ],
   "assets": {
     "binding": "ASSETS",
-    "run_worker_first": ["/", "/privacy", "/terms", "/health", "/auth/*", "/upload", "/connect/*", "/api/*", "/a/*"]
+    "run_worker_first": ["/", "/privacy", "/terms", "/robots.txt", "/sitemap.xml", "/health", "/auth/*", "/upload", "/connect/*", "/api/*", "/a/*"]
   }
 }

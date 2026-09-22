@@ -202,7 +202,7 @@ export const createArtifactApplication = (options: ArtifactApplicationOptions = 
     if (context.env.ASSETS === undefined) {
       throw new ArtifactError("not_found", "Route is unavailable", 404);
     }
-    const assetUrl = new URL("/", context.req.url);
+    const assetUrl = new URL("/upload", context.req.url);
     return context.env.ASSETS.fetch(new Request(assetUrl, context.req.raw));
   });
 

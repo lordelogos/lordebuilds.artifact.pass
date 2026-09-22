@@ -1,15 +1,16 @@
 import { renderToStaticMarkup } from "react-dom/server";
+import { PUBLIC_ALLOWED_EXPIRY_SECONDS } from "artifact-protocol";
 
 import packageMetadata from "../../../../../package.json" with { type: "json" };
-import { PublicFooter, PublicNavigation } from "../components/public-chrome";
-import { expiryOptionsForHumans } from "../components/expiry-picker";
+import { PublicFooter, PublicNavigation } from "../components/public-chrome.tsx";
+import { expiryOptionsForHumans } from "../components/expiry-picker.tsx";
 import {
   HomePage,
   homepageBootScript,
   homepageInteractionScript,
   publicStyles,
   themeInteractionScript,
-} from "./public-homepage";
+} from "./public-homepage.tsx";
 
 export type PublicPage = "home" | "privacy" | "terms";
 
@@ -204,9 +205,9 @@ export const publicPageHeaders = (nonce: string) => ({
   "X-Content-Type-Options": "nosniff",
 } as const);
 
-export const renderPublicPage = (
+const renderPage = (
   page: PublicPage,
-  nonce: string,
+  nonce: string | undefined,
   requestUrl: string,
   configuration: PublicPageConfiguration,
 ): string => {
@@ -263,3 +264,20 @@ export const renderPublicPage = (
   );
   return `<!doctype html>${markup}`;
 };
+
+export const renderPublicPage = (
+  page: PublicPage,
+  nonce: string,
+  requestUrl: string,
+  configuration: PublicPageConfiguration,
+): string => renderPage(page, nonce, requestUrl, configuration);
+
+export const renderStaticPublicPage = (page: PublicPage): string => renderPage(
+  page,
+  undefined,
+  `${PUBLIC_SITE_ORIGIN}${pagePath(page)}`,
+  {
+    deploymentMode: "public",
+    allowedExpirySeconds: PUBLIC_ALLOWED_EXPIRY_SECONDS,
+  },
+);

@@ -11,7 +11,7 @@ const read = async (path: string): Promise<string> =>
 describe("ArtifactPass active identity", () => {
   it("uses ArtifactPass on active browser, CLI, bridge, and skill surfaces", async () => {
     const files = [
-      "apps/artifact-service/index.html",
+      "apps/artifact-service/upload.html",
       "apps/artifact-service/src/server/routes/connect.ts",
       "apps/artifact-service/src/web/routes/upload-page.tsx",
       "apps/artifact-service/src/web/routes/share-page.tsx",

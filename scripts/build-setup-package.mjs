@@ -42,6 +42,14 @@ await cp(resolve(serviceRoot, "storage-lifecycle.json"), resolve(deploymentRoot,
 const workerConfiguration = JSON.parse(await readFile(resolve(builtWorkerRoot, "wrangler.json"), "utf8"));
 workerConfiguration.main = "./index.js";
 workerConfiguration.assets.directory = "./client";
+workerConfiguration.assets.run_worker_first = [
+  "/",
+  "/privacy",
+  "/terms",
+  "/robots.txt",
+  "/sitemap.xml",
+  ...workerConfiguration.assets.run_worker_first,
+];
 workerConfiguration.d1_databases[0].migrations_dir = "./migrations";
 await writeFile(
   resolve(deploymentRoot, "wrangler-template.json"),

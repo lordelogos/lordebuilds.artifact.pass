@@ -1,0 +1,68 @@
+import { createHash } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
+import { resolve } from "node:path";
+import type { Plugin } from "vite";
+
+import {
+  homepageBootScript,
+  homepageInteractionScript,
+  publicStyles,
+  themeInteractionScript,
+} from "../web/routes/public-homepage.tsx";
+import {
+  PUBLIC_SITE_ORIGIN,
+  renderRobotsTxt,
+  renderSitemapXml,
+  renderStaticPublicPage,
+} from "../web/routes/public-pages.tsx";
+
+const contentHash = (content: string): string =>
+  `'sha256-${createHash("sha256").update(content).digest("base64")}'`;
+
+const staticContentSecurityPolicy = [
+  "default-src 'none'",
+  `style-src ${contentHash(publicStyles)}`,
+  `script-src 'self' ${[
+    homepageBootScript,
+    themeInteractionScript,
+    homepageInteractionScript,
+  ].map(contentHash).join(" ")}`,
+  "connect-src 'self'",
+  "img-src 'self'",
+  "frame-ancestors 'none'",
+  "base-uri 'none'",
+  "form-action 'self'",
+].join("; ");
+
+const staticHeaders = [
+  "/",
+  `/privacy`,
+  `/terms`,
+].map((path) => [
+  `${PUBLIC_SITE_ORIGIN}${path}`,
+  "  Cache-Control: public, max-age=0, must-revalidate",
+  "  Cross-Origin-Opener-Policy: same-origin-allow-popups",
+  `  Content-Security-Policy: ${staticContentSecurityPolicy}`,
+  "  Referrer-Policy: no-referrer",
+  "  X-Content-Type-Options: nosniff",
+].join("\n")).join("\n\n");
+
+export const staticPublicAssets = (outputDirectory: string): Plugin => ({
+  name: "artifactpass-static-public-assets",
+  apply: "build",
+  applyToEnvironment: (environment) => environment.name === "client",
+  async closeBundle() {
+    await mkdir(outputDirectory, { recursive: true });
+    await Promise.all([
+      writeFile(resolve(outputDirectory, "index.html"), renderStaticPublicPage("home")),
+      writeFile(resolve(outputDirectory, "privacy.html"), renderStaticPublicPage("privacy")),
+      writeFile(resolve(outputDirectory, "terms.html"), renderStaticPublicPage("terms")),
+      writeFile(
+        resolve(outputDirectory, "robots.txt"),
+        renderRobotsTxt(`${PUBLIC_SITE_ORIGIN}/robots.txt`),
+      ),
+      writeFile(resolve(outputDirectory, "sitemap.xml"), renderSitemapXml()),
+      writeFile(resolve(outputDirectory, "_headers"), `${staticHeaders}\n`),
+    ]);
+  },
+});

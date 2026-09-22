@@ -45,6 +45,8 @@
       "/",
       "/privacy",
       "/terms",
+      "/robots.txt",
+      "/sitemap.xml",
       "/health",
       "/auth/*",
       "/upload",
