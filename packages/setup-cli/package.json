@@ -17,7 +17,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
   "scripts": {
     "build": "pnpm --dir ../../apps/artifact-service build && node ../../scripts/build-setup-package.mjs",

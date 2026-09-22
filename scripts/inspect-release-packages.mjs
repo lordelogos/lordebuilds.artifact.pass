@@ -26,8 +26,10 @@ try {
   const unexpected = entries.filter((entry) =>
     entry !== "package/package.json" &&
     entry !== "package/LICENSE" &&
+    entry !== "package/README.md" &&
     !entry.startsWith("package/dist/"));
   if (unexpected.length > 0) fail(`unexpected setup CLI files: ${unexpected.join(", ")}`);
+  if (!entries.includes("package/README.md")) fail("setup CLI README is missing");
   if (!entries.includes("package/dist/cli.mjs")) fail("setup CLI entrypoint is missing");
   if (!entries.includes("package/dist/install-receipt.schema.json")) fail("install receipt schema is missing");
   if (!entries.includes("package/dist/install-receipt-v1.schema.json")) fail("legacy install receipt v1 schema is missing");
@@ -35,6 +37,14 @@ try {
   if (!entries.includes("package/dist/deployment/index.js")) fail("Worker deployment bundle is missing");
   if (!entries.includes("package/dist/marketplace/plugins/artifactpass/dist/cli.mjs")) {
     fail("attested plugin bundle is missing from setup CLI");
+  }
+  const packedReadme = execFileSync(
+    "tar",
+    ["-xOzf", archive, "package/README.md"],
+  );
+  const repositoryReadme = await readFile(resolve(repositoryRoot, "README.md"));
+  if (!packedReadme.equals(repositoryReadme)) {
+    fail("setup CLI README differs from the repository setup guide");
   }
 
   const packedManifest = JSON.parse(execFileSync(
