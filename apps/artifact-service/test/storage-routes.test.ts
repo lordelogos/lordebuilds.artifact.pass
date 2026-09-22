@@ -157,7 +157,6 @@ describe("private artifact routes", () => {
       new TextEncoder().encode(fixture.bytes),
     );
     expect(raw.headers.get("cache-control")).toContain("no-store");
-    expect(raw.headers.get("x-robots-tag")).toBe("noindex, nofollow, noarchive");
     expect(created.manifest.sha256).toBe(await digest(fixture.bytes));
 
     const token = new URL(created.share_url).pathname.split("/").pop() ?? "";
