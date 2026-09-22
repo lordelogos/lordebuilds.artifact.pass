@@ -1,6 +1,6 @@
 {
   "name": "artifactpass",
-  "version": "0.1.6",
+  "version": "0.1.7-rc.1",
   "description": "Share temporary Markdown, HTML, and PDF links between people and AI agents.",
   "author": {
     "name": "Lorde Builds"
