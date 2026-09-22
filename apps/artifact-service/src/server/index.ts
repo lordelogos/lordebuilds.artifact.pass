@@ -4,7 +4,7 @@ import {
   SUPPORTED_MIME_TYPES,
   protocolLimitsSchema,
 } from "artifact-protocol";
-import { Hono, type Context } from "hono";
+import { Hono, type Context, type Next } from "hono";
 import type { JWTVerifyGetKey } from "jose";
 
 import type { ArtifactServiceBindings } from "./adapters/cloudflare-bindings";
@@ -28,8 +28,11 @@ import { R2ArtifactObjectStore } from "./storage/r2-object-store";
 import { artifactPolicyFromBindings } from "./storage/validation";
 import { redactRequestPath } from "./observability/redact-request-path";
 import {
+  PUBLIC_SITE_ORIGIN,
   publicPageHeaders,
+  renderRobotsTxt,
   renderPublicPage,
+  renderSitemapXml,
   type PublicPage,
 } from "../web/routes/public-pages";
 
@@ -78,8 +81,21 @@ const createNonce = (): string => {
   return btoa(binary);
 };
 
+const preventSearchIndexing = async (
+  context: Context<ArtifactHonoEnvironment>,
+  next: Next,
+) => {
+  await next();
+  context.header("X-Robots-Tag", "noindex, nofollow, noarchive");
+};
+
 export const createArtifactApplication = (options: ArtifactApplicationOptions = {}) => {
   const app = new Hono<ArtifactHonoEnvironment>();
+  app.use("/auth/*", preventSearchIndexing);
+  app.use("/connect", preventSearchIndexing);
+  app.use("/connect/*", preventSearchIndexing);
+  app.use("/upload", preventSearchIndexing);
+  app.use("/upload/*", preventSearchIndexing);
   const authorizationOptions = {
     ...(options.now === undefined ? {} : { now: options.now }),
     ...(options.accessJwks === undefined ? {} : { accessJwks: options.accessJwks }),
@@ -119,6 +135,22 @@ export const createArtifactApplication = (options: ArtifactApplicationOptions = 
   app.get("/", (context) => servePublicPage("home", context));
   app.get("/privacy", (context) => servePublicPage("privacy", context));
   app.get("/terms", (context) => servePublicPage("terms", context));
+  app.get("/robots.txt", (context) => {
+    const canonical = new URL(context.req.url).origin === PUBLIC_SITE_ORIGIN;
+    return context.text(renderRobotsTxt(context.req.url), 200, {
+      "Cache-Control": canonical ? "public, max-age=3600" : "private, no-store, max-age=0",
+      "Content-Type": "text/plain; charset=UTF-8",
+    });
+  });
+  app.get("/sitemap.xml", (context) => {
+    if (new URL(context.req.url).origin !== PUBLIC_SITE_ORIGIN) {
+      return context.notFound();
+    }
+    return context.body(renderSitemapXml(), 200, {
+      "Cache-Control": "public, max-age=3600",
+      "Content-Type": "application/xml; charset=UTF-8",
+    });
+  });
 
   app.get("/health", (context) =>
     context.json({

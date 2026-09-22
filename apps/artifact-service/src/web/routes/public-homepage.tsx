@@ -62,7 +62,7 @@ export const HomePage = ({ installCommand, expiryOptions }: HomePageProps) => {
               <span className="hero-cycle-word">humans.</span>
             </span>
           </h1>
-          <p className="subhead">Exact, temporary artifact handoffs for developers and agentic teams.</p>
+          <p className="subhead">Share Markdown, HTML, and PDF files through expiring links, from the browser or your AI agent.</p>
           <section className="setup" id="install" aria-label="Set up ArtifactPass">
             <div className="setup-label"><strong>Set up ArtifactPass</strong><span>Run inside your workspace</span></div>
             <div className="command">

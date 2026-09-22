@@ -44,6 +44,7 @@ export const PUBLIC_RESPONSE_HEADERS = {
   "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'; sandbox",
   "Referrer-Policy": "no-referrer",
   "X-Content-Type-Options": "nosniff",
+  "X-Robots-Tag": "noindex, nofollow, noarchive",
 } as const;
 
 const bytesToBase64 = (bytes: Uint8Array): string => {
