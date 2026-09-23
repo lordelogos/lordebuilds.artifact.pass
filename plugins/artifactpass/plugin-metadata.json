@@ -1,6 +1,6 @@
 {
   "name": "artifactpass",
-  "version": "0.1.9-rc.1",
+  "version": "0.1.9-rc.2",
   "displayName": "ArtifactPass",
   "description": "Share temporary Markdown, HTML, and PDF links between people and AI agents.",
   "longDescription": "Publishes files from an approved workspace for people or agents to open, and reads supported ArtifactPass links created by either people or agents.",
