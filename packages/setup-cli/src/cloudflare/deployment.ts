@@ -937,7 +937,7 @@ export const deployArtifactShare = async (
   template.name = serviceName;
   template.main = resolve(dependencies.deploymentRoot, "index.js");
   template.assets.directory = resolve(dependencies.deploymentRoot, "client");
-  if (input.publicAuth !== undefined) {
+  if (input.publicAuth !== undefined && input.productionExistingResources === true) {
     template.assets.run_worker_first = template.assets.run_worker_first.filter(
       (route: string) => !publicStaticAssetRoutes.has(route),
     );
