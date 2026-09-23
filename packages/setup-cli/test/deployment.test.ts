@@ -53,7 +53,23 @@ const deploymentRoot = async (): Promise<string> => {
   await writeFile(resolve(root, "wrangler-template.json"), JSON.stringify({
     name: "template",
     main: "./index.js",
-    assets: { directory: "./client" },
+    assets: {
+      directory: "./client",
+      run_worker_first: [
+        "/",
+        "/privacy",
+        "/terms",
+        "/robots.txt",
+        "/sitemap.xml",
+        "/health",
+        "/auth/*",
+        "/upload",
+        "/upload/*",
+        "/connect/*",
+        "/api/*",
+        "/a/*",
+      ],
+    },
     vars: {},
     d1_databases: [{}],
     r2_buckets: [{}],
@@ -709,6 +725,19 @@ describe("Cloudflare deployment", () => {
     expect(deploymentConfiguration).toContain('"HUMAN_AUTH_MODE":"artifactpass"');
     expect(deploymentConfiguration).toContain('"ALLOWED_EXPIRY_SECONDS":"900,1800,3600,86400,604800"');
     expect(deploymentConfiguration).toContain('"MAX_EXPIRY_SECONDS":"604800"');
+    expect(JSON.parse(deploymentConfiguration)).toMatchObject({
+      assets: {
+        run_worker_first: [
+          "/health",
+          "/auth/*",
+          "/upload",
+          "/upload/*",
+          "/connect/*",
+          "/api/*",
+          "/a/*",
+        ],
+      },
+    });
     expect(deploymentConfiguration).not.toContain("google-client-secret");
     expect(deploymentConfiguration).not.toContain("github-client-secret");
     expect(client.requests).toContainEqual(expect.objectContaining({
@@ -1250,6 +1279,15 @@ describe("Cloudflare deployment", () => {
     ]));
     expect(configuration).toMatchObject({
       name: serviceName,
+      assets: {
+        run_worker_first: expect.arrayContaining([
+          "/",
+          "/privacy",
+          "/terms",
+          "/robots.txt",
+          "/sitemap.xml",
+        ]),
+      },
       d1_databases: [{ database_name: serviceName }],
       r2_buckets: [{ bucket_name: serviceName }],
       routes: [{ pattern: hostname, custom_domain: true }],

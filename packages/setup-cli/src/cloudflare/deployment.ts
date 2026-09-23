@@ -18,6 +18,14 @@ const approvedProductionPendingMigrationSets = [
   ["0007-public-auth.sql", "0008-private-deployment.sql", "0009-cleanup-indexes.sql"],
 ] as const;
 
+const publicStaticAssetRoutes = new Set([
+  "/",
+  "/privacy",
+  "/terms",
+  "/robots.txt",
+  "/sitemap.xml",
+]);
+
 export interface IdentityRule {
   readonly kind: "authenticated" | "email" | "domain";
   readonly value: string;
@@ -929,6 +937,11 @@ export const deployArtifactShare = async (
   template.name = serviceName;
   template.main = resolve(dependencies.deploymentRoot, "index.js");
   template.assets.directory = resolve(dependencies.deploymentRoot, "client");
+  if (input.publicAuth !== undefined) {
+    template.assets.run_worker_first = template.assets.run_worker_first.filter(
+      (route: string) => !publicStaticAssetRoutes.has(route),
+    );
+  }
   template.d1_databases[0] = {
     binding: "ARTIFACT_DB",
     database_name: databaseName,
