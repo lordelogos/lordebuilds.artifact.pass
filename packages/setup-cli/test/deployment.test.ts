@@ -661,7 +661,7 @@ describe("Cloudflare deployment", () => {
     expect(runner).not.toHaveBeenCalled();
   });
 
-  it("deploys public OAuth before removing the matching legacy Access gate", async () => {
+  it("keeps staging public pages Worker-rendered before removing the matching legacy Access gate", async () => {
     const client = fakeClient({ existing: true });
     const runnerCalls: Array<{
       readonly args: readonly string[];
@@ -728,6 +728,11 @@ describe("Cloudflare deployment", () => {
     expect(JSON.parse(deploymentConfiguration)).toMatchObject({
       assets: {
         run_worker_first: [
+          "/",
+          "/privacy",
+          "/terms",
+          "/robots.txt",
+          "/sitemap.xml",
           "/health",
           "/auth/*",
           "/upload",
@@ -773,9 +778,12 @@ describe("Cloudflare deployment", () => {
     let secretsPath = "";
     let secretsMode = 0;
     let secrets = "";
+    let deploymentConfiguration = "";
     const runner = vi.fn(async (_command: string, args: readonly string[]) => {
       runnerCalls.push([...args]);
       if (args[0] === "deploy") {
+        const configurationPath = args[args.indexOf("--config") + 1] ?? "";
+        deploymentConfiguration = await readFile(configurationPath, "utf8");
         secretsPath = args[args.indexOf("--secrets-file") + 1] ?? "";
         secretsMode = (await stat(secretsPath)).mode & 0o777;
         secrets = await readFile(secretsPath, "utf8");
@@ -821,6 +829,19 @@ describe("Cloudflare deployment", () => {
     expect(JSON.parse(secrets)).toEqual({
       GOOGLE_OAUTH_CLIENT_SECRET: "google-client-secret",
       GITHUB_OAUTH_CLIENT_SECRET: "github-client-secret",
+    });
+    expect(JSON.parse(deploymentConfiguration)).toMatchObject({
+      assets: {
+        run_worker_first: [
+          "/health",
+          "/auth/*",
+          "/upload",
+          "/upload/*",
+          "/connect/*",
+          "/api/*",
+          "/a/*",
+        ],
+      },
     });
     await expect(stat(secretsPath)).rejects.toMatchObject({ code: "ENOENT" });
     expect(client.requests).not.toContainEqual(expect.objectContaining({
