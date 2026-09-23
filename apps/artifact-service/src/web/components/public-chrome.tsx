@@ -1,7 +1,7 @@
 import { PlusSignIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
-import { ArtifactPassIcon, GitHubIcon, ThemeIcon } from "./brand-icons";
+import { ArtifactPassIcon, GitHubIcon, ThemeIcon } from "./brand-icons.tsx";
 
 export type PublicTheme = "dark" | "light";
 

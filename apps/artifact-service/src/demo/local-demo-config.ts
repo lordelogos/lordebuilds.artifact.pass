@@ -33,6 +33,18 @@ export const createLocalDemoConfiguration = (options: LocalDemoConfigurationOpti
   }],
   assets: {
     binding: "ASSETS",
-    run_worker_first: ["/health", "/upload", "/connect/*", "/api/*", "/a/*", "/__local-test/*"],
+    run_worker_first: [
+      "/",
+      "/privacy",
+      "/terms",
+      "/robots.txt",
+      "/sitemap.xml",
+      "/health",
+      "/upload",
+      "/connect/*",
+      "/api/*",
+      "/a/*",
+      "/__local-test/*",
+    ],
   },
 });

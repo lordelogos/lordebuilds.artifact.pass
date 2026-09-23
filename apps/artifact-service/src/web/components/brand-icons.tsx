@@ -4,7 +4,7 @@ import {
   ARTIFACTPASS_MARK_NAME,
   ARTIFACTPASS_MARK_PATHS,
   ARTIFACTPASS_MARK_VIEW_BOX,
-} from "../../brand/artifactpass-mark";
+} from "../../brand/artifactpass-mark.ts";
 
 type BrandIconProps = SVGAttributes<SVGSVGElement>;
 

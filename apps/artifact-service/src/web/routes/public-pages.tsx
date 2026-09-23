@@ -1,15 +1,16 @@
 import { renderToStaticMarkup } from "react-dom/server";
+import { PUBLIC_ALLOWED_EXPIRY_SECONDS } from "artifact-protocol";
 
 import packageMetadata from "../../../../../package.json" with { type: "json" };
-import { PublicFooter, PublicNavigation } from "../components/public-chrome";
-import { expiryOptionsForHumans } from "../components/expiry-picker";
+import { PublicFooter, PublicNavigation } from "../components/public-chrome.tsx";
+import { expiryOptionsForHumans } from "../components/expiry-picker.tsx";
 import {
   HomePage,
   homepageBootScript,
   homepageInteractionScript,
   publicStyles,
   themeInteractionScript,
-} from "./public-homepage";
+} from "./public-homepage.tsx";
 
 export type PublicPage = "home" | "privacy" | "terms";
 
@@ -19,6 +20,62 @@ export interface PublicPageConfiguration {
 }
 
 const repositoryUrl = "https://github.com/lordelogos/lordebuilds.artifact.pass";
+export const PUBLIC_SITE_ORIGIN = "https://artifactpass.com";
+const homepageDescription = "Create expiring links for Markdown, HTML, and PDF files. Share exact work between people and AI agents from the browser, CLI, or MCP.";
+
+const pagePath = (page: PublicPage): string => {
+  if (page === "privacy") return "/privacy";
+  if (page === "terms") return "/terms";
+  return "/";
+};
+
+const pageDescription = (page: PublicPage): string => {
+  if (page === "privacy") {
+    return "Learn how ArtifactPass processes identity, temporary artifacts, authorization, and operational data.";
+  }
+  if (page === "terms") {
+    return "Read the terms for using ArtifactPass to create and open temporary artifact links.";
+  }
+  return homepageDescription;
+};
+
+const isCanonicalDeployment = (
+  url: URL,
+  configuration: PublicPageConfiguration,
+): boolean => configuration.deploymentMode === "public" && url.origin === PUBLIC_SITE_ORIGIN;
+
+const homepageStructuredData = JSON.stringify({
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": `${PUBLIC_SITE_ORIGIN}/#website`,
+      url: `${PUBLIC_SITE_ORIGIN}/`,
+      name: "ArtifactPass",
+      description: homepageDescription,
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": `${PUBLIC_SITE_ORIGIN}/#application`,
+      url: `${PUBLIC_SITE_ORIGIN}/`,
+      name: "ArtifactPass",
+      description: homepageDescription,
+      applicationCategory: "DeveloperApplication",
+      operatingSystem: "Any",
+      browserRequirements: "Requires a modern web browser",
+      offers: {
+        "@type": "Offer",
+        price: "0",
+        priceCurrency: "USD",
+      },
+      featureList: [
+        "Temporary links for Markdown, HTML, and PDF files",
+        "Browser, command-line, and MCP sharing",
+        "Exact source-file handoffs between people and AI agents",
+      ],
+    },
+  ],
+}).replaceAll("<", "\\u003c");
 
 const EnvironmentNotice = () => (
   <aside className="environment-notice">
@@ -115,7 +172,20 @@ const pageContent = (page: PublicPage, url: URL, configuration: PublicPageConfig
 const pageTitle = (page: PublicPage): string => {
   if (page === "privacy") return "Privacy · ArtifactPass";
   if (page === "terms") return "Terms · ArtifactPass";
-  return "ArtifactPass · Pass work between agents";
+  return "ArtifactPass | Temporary File Sharing for People and AI Agents";
+};
+
+export const renderRobotsTxt = (requestUrl: string): string => {
+  const url = new URL(requestUrl);
+  if (url.origin !== PUBLIC_SITE_ORIGIN) return "User-agent: *\nDisallow: /\n";
+  return `User-agent: *\nAllow: /\n\nSitemap: ${PUBLIC_SITE_ORIGIN}/sitemap.xml\n`;
+};
+
+export const renderSitemapXml = (): string => {
+  const urls = (["/", "/privacy", "/terms"] as const)
+    .map((path) => `  <url><loc>${PUBLIC_SITE_ORIGIN}${path}</loc></url>`)
+    .join("\n");
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`;
 };
 
 export const publicPageHeaders = (nonce: string) => ({
@@ -135,13 +205,17 @@ export const publicPageHeaders = (nonce: string) => ({
   "X-Content-Type-Options": "nosniff",
 } as const);
 
-export const renderPublicPage = (
+const renderPage = (
   page: PublicPage,
-  nonce: string,
+  nonce: string | undefined,
   requestUrl: string,
   configuration: PublicPageConfiguration,
 ): string => {
   const url = new URL(requestUrl);
+  const indexable = isCanonicalDeployment(url, configuration);
+  const title = pageTitle(page);
+  const description = pageDescription(page);
+  const canonicalUrl = `${PUBLIC_SITE_ORIGIN}${pagePath(page)}`;
   const markup = renderToStaticMarkup(
     <html lang="en">
       <head>
@@ -149,8 +223,28 @@ export const renderPublicPage = (
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="referrer" content="no-referrer" />
         <meta name="theme-color" content="#0b0c0e" />
+        <meta name="description" content={description} />
+        <meta
+          name="robots"
+          content={indexable ? "index, follow, max-image-preview:large" : "noindex, nofollow, noarchive"}
+        />
+        <meta property="og:type" content="website" />
+        <meta property="og:site_name" content="ArtifactPass" />
+        <meta property="og:title" content={title} />
+        <meta property="og:description" content={description} />
+        <meta property="og:url" content={indexable ? canonicalUrl : url.origin + pagePath(page)} />
+        <meta name="twitter:card" content="summary" />
+        <meta name="twitter:title" content={title} />
+        <meta name="twitter:description" content={description} />
+        {indexable && <link rel="canonical" href={canonicalUrl} />}
         <link rel="icon" href="/artifactpass-logo.svg" type="image/svg+xml" />
-        <title>{pageTitle(page)}</title>
+        <title>{title}</title>
+        {indexable && page === "home" && (
+          <script
+            type="application/ld+json"
+            dangerouslySetInnerHTML={{ __html: homepageStructuredData }}
+          />
+        )}
         <script nonce={nonce} dangerouslySetInnerHTML={{ __html: homepageBootScript }} />
         <style nonce={nonce} dangerouslySetInnerHTML={{ __html: publicStyles }} />
       </head>
@@ -170,3 +264,20 @@ export const renderPublicPage = (
   );
   return `<!doctype html>${markup}`;
 };
+
+export const renderPublicPage = (
+  page: PublicPage,
+  nonce: string,
+  requestUrl: string,
+  configuration: PublicPageConfiguration,
+): string => renderPage(page, nonce, requestUrl, configuration);
+
+export const renderStaticPublicPage = (page: PublicPage): string => renderPage(
+  page,
+  undefined,
+  `${PUBLIC_SITE_ORIGIN}${pagePath(page)}`,
+  {
+    deploymentMode: "public",
+    allowedExpirySeconds: PUBLIC_ALLOWED_EXPIRY_SECONDS,
+  },
+);

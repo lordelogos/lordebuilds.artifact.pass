@@ -95,7 +95,6 @@ describe("public service pages", () => {
       `pnpm dlx artifactpass@${packageMetadata.version} --base-url https://staging.artifactpass.com`,
     );
     expect(markup).toContain("Setup applies only to the project folder you run it from.");
-    expect(markup).toContain("Exact, temporary artifact handoffs for developers and agentic teams.");
     expect(markup).toContain('id="theme-toggle"');
     expect(markup).toContain("theme-symbol");
     expect(markup).toContain('class="header-divider"');

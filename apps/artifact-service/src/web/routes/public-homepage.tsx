@@ -1,7 +1,7 @@
 import { Upload01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
-import { formatDuration, formatDurationList } from "../components/expiry-picker";
+import { formatDuration, formatDurationList } from "../components/expiry-picker.tsx";
 
 export const publicStyles = `
 :root{--void:#0b0c0e;--graphite:#121418;--panel:rgba(255,255,255,.055);--panel-strong:rgba(255,255,255,.085);--line:rgba(255,255,255,.13);--line-strong:rgba(255,255,255,.22);--bone:#efefec;--ash:#b8babd;--slate:#797d82;--ink:#17181a;--white:#f9f9f7;--amber:#b98458;--violet:#716de4;--blue:#557fbd;--command-bg:#17191d;--agent-bg:rgba(255,255,255,.06);--artifact-bg:rgba(8,9,11,.62);--trace-bg:rgba(4,5,6,.52);--dialog-bg:#121418;--dialog-backdrop:rgba(3,4,5,.72);--preview-bg:rgba(5,6,8,.48);--overlay-bg:rgba(10,11,13,.9);--stage-warm:rgba(185,132,88,.12);--stage-cool:rgba(85,127,189,.12);--stage-sheen:rgba(113,109,228,.10);--trust-warm:rgba(185,132,88,.09);--sans:"Avenir Next",Avenir,"Helvetica Neue",Helvetica,sans-serif;--display:"Lyondisplay App","Lyon Display App",Georgia,"Times New Roman",serif;--mono:"SFMono-Regular",Consolas,"Liberation Mono",monospace;color-scheme:dark}
@@ -62,7 +62,7 @@ export const HomePage = ({ installCommand, expiryOptions }: HomePageProps) => {
               <span className="hero-cycle-word">humans.</span>
             </span>
           </h1>
-          <p className="subhead">Exact, temporary artifact handoffs for developers and agentic teams.</p>
+          <p className="subhead">Share Markdown, HTML, and PDF files through expiring links, from the browser or your AI agent.</p>
           <section className="setup" id="install" aria-label="Set up ArtifactPass">
             <div className="setup-label"><strong>Set up ArtifactPass</strong><span>Run inside your workspace</span></div>
             <div className="command">

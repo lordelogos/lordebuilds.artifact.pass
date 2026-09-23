@@ -208,12 +208,21 @@ describe("Cloudflare Access assertions", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({ user_code: device.user_code });
 
+    let requestedAssetUrl: string | undefined;
     const uploadSurface = await request(
       "/upload",
       { headers: await accessHeaders() },
-      { ASSETS: { fetch: async () => new Response("upload asset") } },
+      {
+        ASSETS: {
+          fetch: async (assetRequest: Request) => {
+            requestedAssetUrl = assetRequest.url;
+            return new Response("upload asset");
+          },
+        },
+      },
     );
     expect(uploadSurface.status).toBe(200);
+    expect(requestedAssetUrl).toBe("https://artifacts.example/upload");
   });
 
   it("renders and submits the hosted Access approval form with a same-origin browser request", async () => {

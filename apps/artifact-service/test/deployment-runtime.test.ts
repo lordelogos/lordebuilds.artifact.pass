@@ -28,7 +28,7 @@ describe("deployment runtime", () => {
     });
   });
 
-  it("binds frontend assets in both production and local demo Workers", () => {
+  it("serves production public pages as static assets while keeping demo pages dynamic", () => {
     const productionConfig = JSON.parse(productionConfigSource) as {
       assets?: { binding?: string; run_worker_first?: readonly string[] };
       main?: string;
@@ -42,9 +42,12 @@ describe("deployment runtime", () => {
       main: "src/server/index.ts",
       assets: {
         binding: "ASSETS",
-        run_worker_first: expect.arrayContaining(["/", "/privacy", "/terms"]),
+        html_handling: "drop-trailing-slash",
       },
     });
+    for (const route of ["/", "/privacy", "/terms"]) {
+      expect(productionConfig.assets?.run_worker_first).not.toContain(route);
+    }
     expect(demoConfig).toMatchObject({
       main: "src/demo/index.ts",
       assets: {
