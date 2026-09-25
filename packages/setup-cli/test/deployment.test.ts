@@ -93,6 +93,7 @@ const fakeClient = (options: {
   appliedMigrations?: readonly string[];
   workersDevEnabled?: boolean;
   previewUrlsEnabled?: boolean;
+  workerDomain?: boolean;
   workerRoutes?: readonly { readonly id: string; readonly pattern: string; readonly script?: string }[];
 } = {}) => {
   const hostname = options.hostname ?? "artifacts.example.com";
@@ -184,7 +185,7 @@ const fakeClient = (options: {
     if (path.endsWith("/workers/domains")) {
       return options.collision
         ? [{ hostname, service: "other" }]
-        : options.existing ? [{ hostname, service: serviceName }] : [];
+        : options.existing && options.workerDomain !== false ? [{ hostname, service: serviceName }] : [];
     }
     return {};
   });
@@ -726,6 +727,7 @@ describe("Cloudflare deployment", () => {
     expect(deploymentConfiguration).toContain('"ALLOWED_EXPIRY_SECONDS":"900,1800,3600,86400,604800"');
     expect(deploymentConfiguration).toContain('"MAX_EXPIRY_SECONDS":"604800"');
     expect(JSON.parse(deploymentConfiguration)).toMatchObject({
+      routes: [{ pattern: "artifacts.example.com", custom_domain: true }],
       assets: {
         run_worker_first: [
           "/",
@@ -758,7 +760,7 @@ describe("Cloudflare deployment", () => {
     const root = await deploymentRoot();
     const manifestRoot = await mkdtemp(resolve(tmpdir(), "artifact-share-approval-test-"));
     const manifestPath = resolve(manifestRoot, "production-approval.json");
-    const client = fakeClient({ existing: true });
+    const client = fakeClient({ existing: true, workerDomain: false });
     const productionInput: DeployInput = {
       ...input,
       identities: [],
@@ -831,6 +833,7 @@ describe("Cloudflare deployment", () => {
       GITHUB_OAUTH_CLIENT_SECRET: "github-client-secret",
     });
     expect(JSON.parse(deploymentConfiguration)).toMatchObject({
+      routes: [],
       assets: {
         run_worker_first: [
           "/health",
@@ -867,7 +870,7 @@ describe("Cloudflare deployment", () => {
       },
       writeApprovalManifest: resolve(root, "production-approval.json"),
     }, { client: client.client, deploymentRoot: root, runner })).rejects.toThrow(
-      "existing Worker, D1, R2, custom domain, and Access application",
+      "existing Worker, D1, R2, Pages front door, and Access application",
     );
 
     expect(runner).not.toHaveBeenCalled();
@@ -879,6 +882,7 @@ describe("Cloudflare deployment", () => {
     const manifestPath = resolve(root, "production-approval.json");
     const client = fakeClient({
       existing: true,
+      workerDomain: false,
       appliedMigrations: testMigrationNames.slice(0, 6),
     });
     const runner = vi.fn();
@@ -905,6 +909,7 @@ describe("Cloudflare deployment", () => {
     const manifestPath = resolve(root, "production-approval.json");
     const client = fakeClient({
       existing: true,
+      workerDomain: false,
       appliedMigrations: testMigrationNames,
     });
     const runner = vi.fn();
@@ -930,6 +935,7 @@ describe("Cloudflare deployment", () => {
     const root = await deploymentRoot();
     const client = fakeClient({
       existing: true,
+      workerDomain: false,
       appliedMigrations: testMigrationNames.slice(0, 7),
     });
     const runner = vi.fn();
@@ -954,7 +960,7 @@ describe("Cloudflare deployment", () => {
 
   it("stops before mutation when production has an alternate Worker ingress", async () => {
     const root = await deploymentRoot();
-    const client = fakeClient({ existing: true, workersDevEnabled: true });
+    const client = fakeClient({ existing: true, workerDomain: false, workersDevEnabled: true });
     const runner = vi.fn();
 
     await expect(deployArtifactShare({
@@ -969,7 +975,7 @@ describe("Cloudflare deployment", () => {
       },
       writeApprovalManifest: resolve(root, "production-approval.json"),
     }, { client: client.client, deploymentRoot: root, runner })).rejects.toThrow(
-      "existing Worker, D1, R2, custom domain, and Access application",
+      "existing Worker, D1, R2, Pages front door, and Access application",
     );
 
     expect(runner).not.toHaveBeenCalled();

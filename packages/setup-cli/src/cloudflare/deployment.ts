@@ -267,12 +267,12 @@ export const deploymentPlan = (input: DeployInput): readonly string[] => {
     return [
       "verify the short-lived Cloudflare API token, selected zone, and Workers account subdomain",
       input.productionExistingResources === true
-        ? "verify the approved existing Worker, D1 database, R2 bucket, custom domain, and Access gate"
+        ? "verify the approved existing Worker, D1 database, R2 bucket, Pages front door, and Access gate"
         : "reuse or create the private D1 database and R2 bucket",
       "prepare the public Worker configuration with Google and GitHub OAuth secrets",
       "apply D1 migrations and the R2 cleanup lifecycle",
       input.productionExistingResources === true
-        ? "deploy code and OAuth secrets atomically while retaining the Access containment gate"
+        ? "deploy code and OAuth secrets behind the existing Pages front door while retaining the Access containment gate"
         : "deploy the Worker and verify ArtifactPass authentication before removing the old Access gate",
       input.productionExistingResources === true
         ? "verify provider starts, health, and the retained Access boundary"
@@ -524,19 +524,19 @@ const approvalBinding = async (
       workersSubdomain?.subdomain !== input.workersSubdomain ||
       zone.status !== "active" ||
       (input.hostname !== zone.name && !input.hostname.endsWith(`.${zone.name}`)) ||
-      domain?.service !== serviceName ||
+      domain !== undefined ||
       database === null ||
       bucket === null ||
       worker === undefined ||
       application === undefined ||
       canonicalJson(destinations) !== canonicalJson(expectedDestinations(input.hostname)) ||
-      serviceDomains.length !== 1 ||
+      serviceDomains.length !== 0 ||
       serviceRoutes.length !== 0 ||
       workerSubdomain?.enabled !== false ||
       workerSubdomain.previews_enabled !== false
     ) {
       throw new Error(
-        "Production requires the approved existing Worker, D1, R2, custom domain, and Access application",
+        "Production requires the approved existing Worker, D1, R2, Pages front door, and Access application",
       );
     }
     const localMigrations = (await readdir(resolve(dependencies.deploymentRoot, "migrations")))
@@ -949,7 +949,9 @@ export const deployArtifactShare = async (
     migrations_dir: resolve(dependencies.deploymentRoot, "migrations"),
   };
   template.r2_buckets[0] = { binding: "ARTIFACTS", bucket_name: serviceName };
-  template.routes = [{ pattern: input.hostname, custom_domain: true }];
+  template.routes = input.publicAuth !== undefined && input.productionExistingResources === true
+    ? []
+    : [{ pattern: input.hostname, custom_domain: true }];
   template.workers_dev = false;
   template.preview_urls = false;
   if (input.publicAuth === undefined) {
