@@ -1,0 +1,15 @@
+{
+  "name": "artifactpass-pages",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "pnpm --dir ../artifact-service build",
+    "deploy": "wrangler pages deploy",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "wrangler": "^4.131.1"
+  }
+}

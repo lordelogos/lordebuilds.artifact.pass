@@ -2,7 +2,9 @@ import { exports } from "cloudflare:workers";
 import { describe, expect, it, vi } from "vitest";
 
 import demoConfigSource from "../wrangler-demo.jsonc?raw";
+import pagesConfigSource from "../../artifact-pages/wrangler.jsonc?raw";
 import productionConfigSource from "../wrangler.jsonc?raw";
+import { pagesFunctionRoutes } from "../src/build/static-public-assets";
 
 vi.mock("@cloudflare/vite-plugin", () => ({
   cloudflare: () => ({ name: "cloudflare" }),
@@ -55,6 +57,35 @@ describe("deployment runtime", () => {
         run_worker_first: expect.arrayContaining(["/", "/privacy", "/terms"]),
       },
     });
+  });
+
+  it("routes only application requests from Pages to the production Worker", () => {
+    const pagesConfig = JSON.parse(pagesConfigSource) as {
+      name?: string;
+      pages_build_output_dir?: string;
+      services?: readonly { binding?: string; service?: string }[];
+    };
+
+    expect(pagesConfig).toMatchObject({
+      name: "artifactpass-site",
+      pages_build_output_dir: "../artifact-service/dist/client",
+      services: [{
+        binding: "ARTIFACT_APPLICATION",
+        service: "lordebuilds-artifacts-share",
+      }],
+    });
+    expect(pagesFunctionRoutes.include).toEqual(expect.arrayContaining([
+      "/health",
+      "/session/*",
+      "/auth/*",
+      "/upload",
+      "/connect/*",
+      "/api/*",
+      "/a/*",
+    ]));
+    for (const route of ["/", "/privacy", "/terms", "/robots.txt", "/sitemap.xml"]) {
+      expect(pagesFunctionRoutes.include).not.toContain(route);
+    }
   });
 
   it("binds the local demo Vite server to the fixed public listener", async () => {
