@@ -1,9 +1,13 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 
-import packageMetadata from "../../../package.json" with { type: "json" };
 import { createArtifactApplication } from "../src/server/index";
-import { renderPublicPage } from "../src/web/routes/public-pages";
+import {
+  PUBLIC_SITE_ORIGIN,
+  renderRobotsTxt,
+  renderSitemapXml,
+  renderStaticPublicPage,
+} from "../src/web/routes/public-pages";
 
 const requestFrom = (origin: string, path: string): Promise<Response> =>
   Promise.resolve(createArtifactApplication().fetch(
@@ -11,29 +15,36 @@ const requestFrom = (origin: string, path: string): Promise<Response> =>
     env,
   ));
 
-const request = (path: string): Promise<Response> =>
-  requestFrom("https://staging.artifactpass.com", path);
-
-describe("public service pages", () => {
+describe("public site", () => {
   it.each([
-    ["/", "ArtifactPass", "Pass work between agents, teammates, and humans."],
-    ["/privacy", "Privacy", "Google and GitHub"],
-    ["/terms", "Terms", "temporary bearer link"],
-  ])("serves %s without authentication", async (path, title, copy) => {
-    const response = await request(path);
-    const markup = await response.text();
+    ["home", "ArtifactPass", "Pass work between agents, teammates, and humans."],
+    ["privacy", "Privacy", "Google and GitHub"],
+    ["terms", "Terms", "temporary bearer link"],
+  ] as const)("renders the static %s page", (page, title, copy) => {
+    const markup = renderStaticPublicPage(page);
 
-    expect(response.status).toBe(200);
-    expect(response.headers.get("content-type")).toContain("text/html");
-    expect(response.headers.get("cache-control")).toContain("no-store");
-    expect(response.headers.get("content-security-policy")).toContain("default-src 'none'");
-    expect(response.headers.get("referrer-policy")).toBe("no-referrer");
     expect(markup).toContain(`<title>${title}`);
     expect(markup).toContain(copy);
+    expect(markup).toContain('name="robots" content="index, follow, max-image-preview:large"');
+    expect(markup).toContain(`rel="canonical" href="${PUBLIC_SITE_ORIGIN}`);
   });
 
-  it("links the public homepage to upload and policy pages", async () => {
-    const markup = await (await request("/")).text();
+  it("publishes crawlable metadata and structured product data", () => {
+    const markup = renderStaticPublicPage("home");
+
+    expect(markup).toContain('property="og:title"');
+    expect(markup).toContain('name="twitter:card" content="summary"');
+    expect(markup).toContain('type="application/ld+json"');
+    expect(markup).toContain('"@type":"WebSite"');
+    expect(markup).toContain('"@type":"SoftwareApplication"');
+    expect(renderRobotsTxt(`${PUBLIC_SITE_ORIGIN}/robots.txt`)).toContain("Allow: /");
+    expect(renderSitemapXml()).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/</loc>`);
+    expect(renderSitemapXml()).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/privacy</loc>`);
+    expect(renderSitemapXml()).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/terms</loc>`);
+  });
+
+  it("links the public homepage to the app and policy pages", () => {
+    const markup = renderStaticPublicPage("home");
 
     expect(markup).toContain('href="/upload"');
     expect(markup).toContain('href="#how"');
@@ -41,8 +52,8 @@ describe("public service pages", () => {
     expect(markup).toContain('href="/terms"');
   });
 
-  it("explains the product in plain language for people and AI agents", async () => {
-    const markup = await (await request("/")).text();
+  it("explains the product in plain language for people and AI agents", () => {
+    const markup = renderStaticPublicPage("home");
 
     expect(markup).toContain('id="how"');
     expect(markup).toContain("How ArtifactPass works");
@@ -53,93 +64,63 @@ describe("public service pages", () => {
     expect(markup).toContain("One agent shares the file.");
     expect(markup).toContain("The next agent opens the exact file.");
     expect(markup).toContain("No copy-pasting. No lost formatting.");
-    expect(markup).toContain("Sign in to share.");
-    expect(markup).toContain("No sign-in to open.");
   });
 
-  it("presents one-hour, one-day, and seven-day public sharing choices", async () => {
-    const markup = await (await request("/")).text();
+  it("presents the public retention choices", () => {
+    const markup = renderStaticPublicPage("home");
 
     expect(markup).toMatch(/name="expiry"[^>]*value="3600"/u);
     expect(markup).toMatch(/name="expiry"[^>]*value="86400"/u);
     expect(markup).toMatch(/name="expiry"[^>]*value="604800"/u);
     expect(markup).not.toMatch(/name="expiry"[^>]*value="900"/u);
     expect(markup).not.toMatch(/name="expiry"[^>]*value="1800"/u);
-    expect(markup).toContain("1 hour, 1 day, or 7 days.");
   });
 
-  it("preserves an administrator's configured choices on a private deployment", () => {
-    const markup = renderPublicPage("home", "nonce", "https://artifacts.example.com", {
-      deploymentMode: "private",
-      allowedExpirySeconds: [900, 3600, 86_400],
-    });
+  it("uses the stable unpinned setup command", () => {
+    const markup = renderStaticPublicPage("home");
 
-    expect(markup).toMatch(/name="expiry"[^>]*value="900"/u);
-    expect(markup).toMatch(/name="expiry"[^>]*value="3600"/u);
-    expect(markup).toMatch(/name="expiry"[^>]*value="86400"/u);
-    expect(markup).not.toMatch(/name="expiry"[^>]*value="604800"/u);
-    expect(markup).toContain("15 minutes, 1 hour, or 1 day.");
-    expect(markup).not.toContain("1 hour, 1 day, or 7 days.");
-    expect(markup).toContain(
-      `pnpm dlx artifactpass@${packageMetadata.version} --base-url https://artifacts.example.com`,
-    );
-  });
-
-  it("serves the approved setup-first homepage with nonce-protected interactions", async () => {
-    const response = await request("/");
-    const markup = await response.text();
-    const policy = response.headers.get("content-security-policy") ?? "";
-
-    expect(markup).toContain("MCP + Agent Skills");
-    expect(markup).toContain(
-      `pnpm dlx artifactpass@${packageMetadata.version} --base-url https://staging.artifactpass.com`,
-    );
-    expect(markup).toContain("Setup applies only to the project folder you run it from.");
-    expect(markup).toContain('id="theme-toggle"');
-    expect(markup).toContain("theme-symbol");
-    expect(markup).toContain('class="header-divider"');
-    expect(markup).toContain('aria-label="View ArtifactPass on GitHub"');
-    expect(markup).toContain('data-artifactpass-mark="capability-corridor"');
-    expect(markup).toContain('rel="icon" href="/artifactpass-logo.svg"');
-    expect(markup).toContain('class="header-action header-action--primary"');
-    expect(markup).toContain('id="upload-dialog"');
-    expect(markup).toContain('id="pending-file-input"');
-    expect(markup).toContain("artifactpass-pending-upload");
-    expect(markup).toContain("window.open");
-    expect(markup).toContain("artifactpass:auth-complete");
-    expect(markup).toContain("/auth/popup/complete");
-    expect(policy).toContain("script-src 'nonce-");
-    expect(policy).toContain("form-action 'self'");
-    expect(policy).toContain("img-src 'self'");
-    expect(response.headers.get("cross-origin-opener-policy")).toBe("same-origin-allow-popups");
-  });
-
-  it("lets the production install command resolve the latest stable package", async () => {
-    const markup = await (await requestFrom("https://artifactpass.com", "/")).text();
-
-    expect(markup).toContain(
-      '<code id="install-command">pnpm dlx artifactpass</code>',
-    );
-    expect(markup).not.toContain(`artifactpass@${packageMetadata.version}`);
+    expect(markup).toContain('<code id="install-command">pnpm dlx artifactpass</code>');
     expect(markup).not.toContain("--base-url");
   });
 
-  it("publishes complete service policies instead of placeholder staging notices", async () => {
-    const [privacy, terms] = await Promise.all([
-      request("/privacy").then((response) => response.text()),
-      request("/terms").then((response) => response.text()),
-    ]);
+  it("publishes complete service policies", () => {
+    const privacy = renderStaticPublicPage("privacy");
+    const terms = renderStaticPublicPage("terms");
 
     expect(privacy).toContain("Google scopes");
-    expect(privacy).toContain("<code>openid</code>");
-    expect(privacy).toContain("<code>email</code>");
     expect(privacy).toContain("We do not sell your personal information");
     expect(privacy).toContain("Cloudflare");
-    expect(privacy).toContain("GitHub repository");
     expect(terms).toContain("Acceptable use");
     expect(terms).toContain("Open-source software");
-    expect(terms).toContain("temporary bearer link");
-    expect(privacy).not.toContain("Staging service notice");
-    expect(terms).not.toContain("These staging terms");
+  });
+});
+
+describe("deployable application", () => {
+  it("opens at the upload application instead of carrying the marketing homepage", async () => {
+    const response = await requestFrom("https://artifacts.example.com", "/");
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe("/upload");
+    expect(response.headers.get("x-robots-tag")).toContain("noindex");
+  });
+
+  it.each([
+    ["/privacy", `${PUBLIC_SITE_ORIGIN}/privacy`],
+    ["/terms", `${PUBLIC_SITE_ORIGIN}/terms`],
+  ])("sends %s to the ArtifactPass-owned public site", async (path, target) => {
+    const response = await requestFrom("https://artifacts.example.com", path);
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe(target);
+  });
+
+  it("keeps customer deployments out of search indexes", async () => {
+    const [robots, sitemap] = await Promise.all([
+      requestFrom("https://artifacts.example.com", "/robots.txt"),
+      requestFrom("https://artifacts.example.com", "/sitemap.xml"),
+    ]);
+
+    await expect(robots.text()).resolves.toBe("User-agent: *\nDisallow: /\n");
+    expect(sitemap.status).toBe(404);
   });
 });

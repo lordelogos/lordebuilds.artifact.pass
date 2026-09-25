@@ -4,6 +4,7 @@ import { PUBLIC_ALLOWED_EXPIRY_SECONDS } from "artifact-protocol";
 import packageMetadata from "../../../../../package.json" with { type: "json" };
 import { PublicFooter, PublicNavigation } from "../components/public-chrome.tsx";
 import { expiryOptionsForHumans } from "../components/expiry-picker.tsx";
+import { PUBLIC_SITE_ORIGIN } from "../public-site.ts";
 import {
   HomePage,
   homepageBootScript,
@@ -20,7 +21,7 @@ export interface PublicPageConfiguration {
 }
 
 const repositoryUrl = "https://github.com/lordelogos/lordebuilds.artifact.pass";
-export const PUBLIC_SITE_ORIGIN = "https://artifactpass.com";
+export { PUBLIC_SITE_ORIGIN };
 const homepageDescription = "Create expiring links for Markdown, HTML, and PDF files. Share exact work between people and AI agents from the browser, CLI, or MCP.";
 
 const pagePath = (page: PublicPage): string => {
