@@ -1,0 +1,12 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "artifactpass-site",
+  "pages_build_output_dir": "./dist",
+  "compatibility_date": "2026-08-16",
+  "services": [
+    {
+      "binding": "ARTIFACT_APPLICATION",
+      "service": "lordebuilds-artifacts-share"
+    }
+  ]
+}

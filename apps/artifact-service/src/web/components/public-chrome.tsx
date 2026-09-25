@@ -23,6 +23,7 @@ export const applyPublicTheme = (theme: PublicTheme): void => {
 };
 
 export interface PublicNavigationProps {
+  readonly homeHref?: string;
   readonly howHref?: string;
   readonly installHref?: string;
   readonly onThemeToggle?: () => void;
@@ -30,6 +31,7 @@ export interface PublicNavigationProps {
 }
 
 export const PublicNavigation = ({
+  homeHref = "/",
   howHref = "/#how",
   installHref = "/#install",
   onThemeToggle,
@@ -40,7 +42,7 @@ export const PublicNavigation = ({
 
   return (
     <header className="site-header">
-      <a className="brand" href="/">
+      <a className="brand" href={homeHref}>
         <ArtifactPassIcon className="brand-mark" aria-hidden="true" focusable="false" />
         ArtifactPass
       </a>
@@ -84,12 +86,20 @@ export const PublicNavigation = ({
   );
 };
 
-export const PublicFooter = () => (
+export interface PublicFooterProps {
+  readonly privacyHref?: string;
+  readonly termsHref?: string;
+}
+
+export const PublicFooter = ({
+  privacyHref = "/privacy",
+  termsHref = "/terms",
+}: PublicFooterProps) => (
   <footer className="page-footer">
     <span>ArtifactPass</span>
     <span className="footer-links">
-      <a href="/privacy">Privacy</a>
-      <a href="/terms">Terms</a>
+      <a href={privacyHref}>Privacy</a>
+      <a href={termsHref}>Terms</a>
       <span>Built for agentic handoffs.</span>
     </span>
   </footer>

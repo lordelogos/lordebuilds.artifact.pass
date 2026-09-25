@@ -87,12 +87,14 @@ const fakeClient = (options: {
   policyDecision?: string;
   allowedIdps?: readonly string[];
   autoRedirect?: boolean;
+  accessApplication?: boolean;
   remoteState?: { workerVersion: string; schemaVersion: string; lifecycleVersion: string };
   serviceName?: string;
   ownershipDeploymentId?: string;
   appliedMigrations?: readonly string[];
   workersDevEnabled?: boolean;
   previewUrlsEnabled?: boolean;
+  workerDomain?: boolean;
   workerRoutes?: readonly { readonly id: string; readonly pattern: string; readonly script?: string }[];
 } = {}) => {
   const hostname = options.hostname ?? "artifacts.example.com";
@@ -158,7 +160,7 @@ const fakeClient = (options: {
       return { id: "otp-provider-id", name: "ArtifactPass email code", type: "onetimepin" };
     }
     if (path.endsWith("/access/apps") && init.method !== "POST") {
-      return options.existing ? [{
+      return options.existing && options.accessApplication !== false ? [{
         id: "app-id",
         name: serviceName,
         aud: "audience",
@@ -184,7 +186,7 @@ const fakeClient = (options: {
     if (path.endsWith("/workers/domains")) {
       return options.collision
         ? [{ hostname, service: "other" }]
-        : options.existing ? [{ hostname, service: serviceName }] : [];
+        : options.existing && options.workerDomain !== false ? [{ hostname, service: serviceName }] : [];
     }
     return {};
   });
@@ -726,6 +728,7 @@ describe("Cloudflare deployment", () => {
     expect(deploymentConfiguration).toContain('"ALLOWED_EXPIRY_SECONDS":"900,1800,3600,86400,604800"');
     expect(deploymentConfiguration).toContain('"MAX_EXPIRY_SECONDS":"604800"');
     expect(JSON.parse(deploymentConfiguration)).toMatchObject({
+      routes: [{ pattern: "artifacts.example.com", custom_domain: true }],
       assets: {
         run_worker_first: [
           "/",
@@ -751,14 +754,11 @@ describe("Cloudflare deployment", () => {
     }));
   });
 
-  it.each([
-    ["Cloudflare Access", "https://team.cloudflareaccess.com/cdn-cgi/access/login"],
-    ["activated ArtifactPass sign-in", "/auth/sign-in?return_to=%2Fupload"],
-  ])("deploys production OAuth and code atomically through the %s boundary", async (_boundary, uploadLocation) => {
+  it("deploys production OAuth and code behind Pages with the ArtifactPass sign-in boundary", async () => {
     const root = await deploymentRoot();
     const manifestRoot = await mkdtemp(resolve(tmpdir(), "artifact-share-approval-test-"));
     const manifestPath = resolve(manifestRoot, "production-approval.json");
-    const client = fakeClient({ existing: true });
+    const client = fakeClient({ existing: true, workerDomain: false, accessApplication: false });
     const productionInput: DeployInput = {
       ...input,
       identities: [],
@@ -810,7 +810,7 @@ describe("Cloudflare deployment", () => {
       if (url.pathname === "/upload") {
         return new Response(null, {
           status: 302,
-          headers: { location: uploadLocation },
+          headers: { location: "/auth/sign-in?return_to=%2Fupload" },
         });
       }
       throw new Error(`Unexpected production deployment request: ${url}`);
@@ -831,6 +831,7 @@ describe("Cloudflare deployment", () => {
       GITHUB_OAUTH_CLIENT_SECRET: "github-client-secret",
     });
     expect(JSON.parse(deploymentConfiguration)).toMatchObject({
+      routes: [],
       assets: {
         run_worker_first: [
           "/health",
@@ -867,7 +868,7 @@ describe("Cloudflare deployment", () => {
       },
       writeApprovalManifest: resolve(root, "production-approval.json"),
     }, { client: client.client, deploymentRoot: root, runner })).rejects.toThrow(
-      "existing Worker, D1, R2, custom domain, and Access application",
+      "existing Worker, D1, R2, and Pages front door",
     );
 
     expect(runner).not.toHaveBeenCalled();
@@ -879,6 +880,7 @@ describe("Cloudflare deployment", () => {
     const manifestPath = resolve(root, "production-approval.json");
     const client = fakeClient({
       existing: true,
+      workerDomain: false,
       appliedMigrations: testMigrationNames.slice(0, 6),
     });
     const runner = vi.fn();
@@ -905,6 +907,7 @@ describe("Cloudflare deployment", () => {
     const manifestPath = resolve(root, "production-approval.json");
     const client = fakeClient({
       existing: true,
+      workerDomain: false,
       appliedMigrations: testMigrationNames,
     });
     const runner = vi.fn();
@@ -930,6 +933,7 @@ describe("Cloudflare deployment", () => {
     const root = await deploymentRoot();
     const client = fakeClient({
       existing: true,
+      workerDomain: false,
       appliedMigrations: testMigrationNames.slice(0, 7),
     });
     const runner = vi.fn();
@@ -954,7 +958,7 @@ describe("Cloudflare deployment", () => {
 
   it("stops before mutation when production has an alternate Worker ingress", async () => {
     const root = await deploymentRoot();
-    const client = fakeClient({ existing: true, workersDevEnabled: true });
+    const client = fakeClient({ existing: true, workerDomain: false, workersDevEnabled: true });
     const runner = vi.fn();
 
     await expect(deployArtifactShare({
@@ -969,7 +973,7 @@ describe("Cloudflare deployment", () => {
       },
       writeApprovalManifest: resolve(root, "production-approval.json"),
     }, { client: client.client, deploymentRoot: root, runner })).rejects.toThrow(
-      "existing Worker, D1, R2, custom domain, and Access application",
+      "existing Worker, D1, R2, and Pages front door",
     );
 
     expect(runner).not.toHaveBeenCalled();

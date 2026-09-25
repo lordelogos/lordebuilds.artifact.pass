@@ -10,10 +10,10 @@ import { publicPageHeaders } from "../../apps/artifact-service/src/web/routes/pu
 
 const origin = "http://artifactpass.test";
 const serviceRoot = resolve(import.meta.dirname, "../../apps/artifact-service");
-const builtValidatorPath = resolve(serviceRoot, "dist/client/assets/homepage-validation.js");
+const pagesRoot = resolve(import.meta.dirname, "../../apps/artifact-pages");
 
 test.beforeAll(() => {
-  execFileSync("pnpm", ["--dir", serviceRoot, "build"], { stdio: "pipe" });
+  execFileSync("pnpm", ["--dir", pagesRoot, "build"], { stdio: "pipe" });
 });
 const homepage = `<!doctype html><html data-theme="light"><body>
   <code id="install-command">pnpm dlx artifactpass</code><button id="copy-command">Copy</button>
@@ -148,10 +148,10 @@ test("loads the production validator under the real homepage CSP", async ({ cont
       });
       return;
     }
-    if (url.pathname === "/assets/homepage-validation.js") {
+    if (url.pathname.startsWith("/assets/")) {
       await route.fulfill({
         contentType: "application/javascript",
-        body: readFileSync(builtValidatorPath, "utf8"),
+        body: readFileSync(resolve(pagesRoot, "dist", url.pathname.slice(1)), "utf8"),
       });
       return;
     }

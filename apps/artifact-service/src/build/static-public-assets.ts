@@ -39,13 +39,37 @@ const staticHeaders = [
   `/privacy`,
   `/terms`,
 ].map((path) => [
-  `${PUBLIC_SITE_ORIGIN}${path}`,
+  path,
   "  Cache-Control: public, max-age=0, must-revalidate",
   "  Cross-Origin-Opener-Policy: same-origin-allow-popups",
   `  Content-Security-Policy: ${staticContentSecurityPolicy}`,
   "  Referrer-Policy: no-referrer",
   "  X-Content-Type-Options: nosniff",
 ].join("\n")).join("\n\n");
+
+const pagesPreviewHeaders = [
+  "https://artifactpass-site.pages.dev/*",
+  "  X-Robots-Tag: noindex, nofollow, noarchive",
+  "",
+  "https://*.artifactpass-site.pages.dev/*",
+  "  X-Robots-Tag: noindex, nofollow, noarchive",
+].join("\n");
+
+export const pagesFunctionRoutes = {
+  version: 1,
+  include: [
+    "/health",
+    "/session/*",
+    "/auth/*",
+    "/upload",
+    "/upload/*",
+    "/connect",
+    "/connect/*",
+    "/api/*",
+    "/a/*",
+  ],
+  exclude: [],
+} as const;
 
 export const staticPublicAssets = (outputDirectory: string): Plugin => ({
   name: "artifactpass-static-public-assets",
@@ -62,7 +86,14 @@ export const staticPublicAssets = (outputDirectory: string): Plugin => ({
         renderRobotsTxt(`${PUBLIC_SITE_ORIGIN}/robots.txt`),
       ),
       writeFile(resolve(outputDirectory, "sitemap.xml"), renderSitemapXml()),
-      writeFile(resolve(outputDirectory, "_headers"), `${staticHeaders}\n`),
+      writeFile(
+        resolve(outputDirectory, "_headers"),
+        `${staticHeaders}\n\n${pagesPreviewHeaders}\n`,
+      ),
+      writeFile(
+        resolve(outputDirectory, "_routes.json"),
+        `${JSON.stringify(pagesFunctionRoutes, null, 2)}\n`,
+      ),
     ]);
   },
 });

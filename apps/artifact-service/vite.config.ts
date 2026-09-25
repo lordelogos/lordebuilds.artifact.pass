@@ -3,8 +3,6 @@ import react from "@vitejs/plugin-react";
 import { fileURLToPath } from "node:url";
 import { defineConfig, type Plugin } from "vite";
 
-import { staticPublicAssets } from "./src/build/static-public-assets.ts";
-
 const browserTestUploadEntry = (): Plugin => ({
   name: "artifactpass-browser-test-upload-entry",
   configureServer(server) {
@@ -23,7 +21,6 @@ const browserTestUploadEntry = (): Plugin => ({
 export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
-    staticPublicAssets(fileURLToPath(new URL("./dist/client", import.meta.url))),
     ...(mode === "browser-test" ? [browserTestUploadEntry()] : [cloudflare()]),
   ],
   environments: {
@@ -32,13 +29,6 @@ export default defineConfig(({ mode }) => ({
         rollupOptions: {
           input: {
             main: fileURLToPath(new URL("./upload.html", import.meta.url)),
-            "homepage-validation": fileURLToPath(new URL("./src/web/file-validation.ts", import.meta.url)),
-          },
-          output: {
-            entryFileNames: (chunk) =>
-              chunk.name === "homepage-validation"
-                ? "assets/homepage-validation.js"
-                : "assets/[name]-[hash].js",
           },
         },
       },

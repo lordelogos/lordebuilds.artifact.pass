@@ -107,6 +107,7 @@ describe("safe human viewers", () => {
     expect(html).toContain("# Safe heading");
     expect(html).toContain('class="viewer-home"');
     expect(html).toContain('aria-label="ArtifactPass home"');
+    expect(html).toContain('href="https://artifactpass.com/"');
     expect(html).not.toContain('class="site-header"');
     expect(html).not.toContain("Georgia");
     expect(html).not.toContain("<script>document.cookie");
@@ -256,7 +257,8 @@ describe("safe human viewers", () => {
     expect(html).toContain("setTimeout");
     expect(html).toContain("Artifact expired");
     expect(html).toContain("Share a document");
-    expect(html).toContain('/?upload=1');
+    expect(html).toContain('href="/upload"');
+    expect(html).toContain('href="https://artifactpass.com/#install"');
 
     vi.setSystemTime(now + 900_000);
     expect((await fetch(created.share_url, undefined, request)).status).toBe(404);

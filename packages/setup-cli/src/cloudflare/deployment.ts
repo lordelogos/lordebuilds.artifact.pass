@@ -267,15 +267,15 @@ export const deploymentPlan = (input: DeployInput): readonly string[] => {
     return [
       "verify the short-lived Cloudflare API token, selected zone, and Workers account subdomain",
       input.productionExistingResources === true
-        ? "verify the approved existing Worker, D1 database, R2 bucket, custom domain, and Access gate"
+        ? "verify the approved existing Worker, D1 database, R2 bucket, and Pages front door"
         : "reuse or create the private D1 database and R2 bucket",
       "prepare the public Worker configuration with Google and GitHub OAuth secrets",
       "apply D1 migrations and the R2 cleanup lifecycle",
       input.productionExistingResources === true
-        ? "deploy code and OAuth secrets atomically while retaining the Access containment gate"
+        ? "deploy code and OAuth secrets behind the existing Pages front door"
         : "deploy the Worker and verify ArtifactPass authentication before removing the old Access gate",
       input.productionExistingResources === true
-        ? "verify provider starts, health, and the retained Access boundary"
+        ? "verify provider starts, health, and the ArtifactPass sign-in boundary"
         : "verify public sign-in, protected upload redirection, and health",
       "print the public connection command without persisting provisioning credentials",
     ];
@@ -519,24 +519,21 @@ const approvalBinding = async (
     const domain = domains.find((candidate) => candidate.hostname === input.hostname);
     const serviceDomains = domains.filter((candidate) => candidate.service === serviceName);
     const serviceRoutes = zoneRoutes.filter((candidate) => candidate.script === serviceName);
-    const destinations = application?.destinations ?? [];
     if (
       workersSubdomain?.subdomain !== input.workersSubdomain ||
       zone.status !== "active" ||
       (input.hostname !== zone.name && !input.hostname.endsWith(`.${zone.name}`)) ||
-      domain?.service !== serviceName ||
+      domain !== undefined ||
       database === null ||
       bucket === null ||
       worker === undefined ||
-      application === undefined ||
-      canonicalJson(destinations) !== canonicalJson(expectedDestinations(input.hostname)) ||
-      serviceDomains.length !== 1 ||
+      serviceDomains.length !== 0 ||
       serviceRoutes.length !== 0 ||
       workerSubdomain?.enabled !== false ||
       workerSubdomain.previews_enabled !== false
     ) {
       throw new Error(
-        "Production requires the approved existing Worker, D1, R2, custom domain, and Access application",
+        "Production requires the approved existing Worker, D1, R2, and Pages front door",
       );
     }
     const localMigrations = (await readdir(resolve(dependencies.deploymentRoot, "migrations")))
@@ -949,7 +946,9 @@ export const deployArtifactShare = async (
     migrations_dir: resolve(dependencies.deploymentRoot, "migrations"),
   };
   template.r2_buckets[0] = { binding: "ARTIFACTS", bucket_name: serviceName };
-  template.routes = [{ pattern: input.hostname, custom_domain: true }];
+  template.routes = input.publicAuth !== undefined && input.productionExistingResources === true
+    ? []
+    : [{ pattern: input.hostname, custom_domain: true }];
   template.workers_dev = false;
   template.preview_urls = false;
   if (input.publicAuth === undefined) {
@@ -1137,7 +1136,6 @@ export const deployArtifactShare = async (
       }
     }
     if (input.productionExistingResources === true) {
-      if (organization === null) throw new Error("Cloudflare Access organization is unavailable");
       const containedUpload = await fetchAfterDeploymentPropagation(
         fetchImplementation,
         `${baseUrl}/upload`,
@@ -1145,12 +1143,8 @@ export const deployArtifactShare = async (
         sleep,
         readinessTimeoutMilliseconds,
       );
-      const location = containedUpload.headers.get("location");
-      const accessHostname = new URL(`https://${organization.auth_domain}`).hostname;
-      const retainedAccessBoundary = [302, 303, 307, 401, 403].includes(containedUpload.status) &&
-        (location === null || new URL(location, baseUrl).hostname === accessHostname);
       const retainedArtifactPassBoundary = isArtifactPassUploadRedirect(containedUpload, baseUrl);
-      if (!retainedAccessBoundary && !retainedArtifactPassBoundary) {
+      if (!retainedArtifactPassBoundary) {
         throw new Error(`Production upload boundary is not protected (${containedUpload.status})`);
       }
       return {

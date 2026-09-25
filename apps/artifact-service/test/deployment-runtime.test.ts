@@ -2,7 +2,11 @@ import { exports } from "cloudflare:workers";
 import { describe, expect, it, vi } from "vitest";
 
 import demoConfigSource from "../wrangler-demo.jsonc?raw";
+import pagesConfigSource from "../../artifact-pages/wrangler.jsonc?raw";
+import pagesViteConfigSource from "../../artifact-pages/vite.config.ts?raw";
 import productionConfigSource from "../wrangler.jsonc?raw";
+import serviceViteConfigSource from "../vite.config.ts?raw";
+import { pagesFunctionRoutes } from "../src/build/static-public-assets";
 
 vi.mock("@cloudflare/vite-plugin", () => ({
   cloudflare: () => ({ name: "cloudflare" }),
@@ -28,7 +32,7 @@ describe("deployment runtime", () => {
     });
   });
 
-  it("serves production public pages as static assets while keeping demo pages dynamic", () => {
+  it("keeps the application Worker focused on application routes", () => {
     const productionConfig = JSON.parse(productionConfigSource) as {
       assets?: { binding?: string; run_worker_first?: readonly string[] };
       main?: string;
@@ -45,7 +49,7 @@ describe("deployment runtime", () => {
         html_handling: "drop-trailing-slash",
       },
     });
-    for (const route of ["/", "/privacy", "/terms"]) {
+    for (const route of ["/", "/privacy", "/terms", "/robots.txt", "/sitemap.xml"]) {
       expect(productionConfig.assets?.run_worker_first).not.toContain(route);
     }
     expect(demoConfig).toMatchObject({
@@ -55,6 +59,43 @@ describe("deployment runtime", () => {
         run_worker_first: expect.arrayContaining(["/", "/privacy", "/terms"]),
       },
     });
+  });
+
+  it("routes only application requests from Pages to the production Worker", () => {
+    const pagesConfig = JSON.parse(pagesConfigSource) as {
+      name?: string;
+      pages_build_output_dir?: string;
+      services?: readonly { binding?: string; service?: string }[];
+    };
+
+    expect(pagesConfig).toMatchObject({
+      name: "artifactpass-site",
+      pages_build_output_dir: "./dist",
+      services: [{
+        binding: "ARTIFACT_APPLICATION",
+        service: "lordebuilds-artifacts-share",
+      }],
+    });
+    expect(pagesFunctionRoutes.include).toEqual(expect.arrayContaining([
+      "/health",
+      "/session/*",
+      "/auth/*",
+      "/upload",
+      "/connect/*",
+      "/api/*",
+      "/a/*",
+    ]));
+    for (const route of ["/", "/privacy", "/terms", "/robots.txt", "/sitemap.xml"]) {
+      expect(pagesFunctionRoutes.include).not.toContain(route);
+    }
+  });
+
+  it("builds the public site and deployable application as separate artifacts", () => {
+    expect(pagesViteConfigSource).toContain("staticPublicAssets(outputDirectory)");
+    expect(pagesViteConfigSource).toContain('"homepage-validation"');
+    expect(pagesViteConfigSource).toContain('new URL("./dist"');
+    expect(serviceViteConfigSource).not.toContain("staticPublicAssets");
+    expect(serviceViteConfigSource).not.toContain("homepage-validation");
   });
 
   it("binds the local demo Vite server to the fixed public listener", async () => {
