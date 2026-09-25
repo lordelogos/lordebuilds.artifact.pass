@@ -87,6 +87,7 @@ const fakeClient = (options: {
   policyDecision?: string;
   allowedIdps?: readonly string[];
   autoRedirect?: boolean;
+  accessApplication?: boolean;
   remoteState?: { workerVersion: string; schemaVersion: string; lifecycleVersion: string };
   serviceName?: string;
   ownershipDeploymentId?: string;
@@ -159,7 +160,7 @@ const fakeClient = (options: {
       return { id: "otp-provider-id", name: "ArtifactPass email code", type: "onetimepin" };
     }
     if (path.endsWith("/access/apps") && init.method !== "POST") {
-      return options.existing ? [{
+      return options.existing && options.accessApplication !== false ? [{
         id: "app-id",
         name: serviceName,
         aud: "audience",
@@ -753,14 +754,11 @@ describe("Cloudflare deployment", () => {
     }));
   });
 
-  it.each([
-    ["Cloudflare Access", "https://team.cloudflareaccess.com/cdn-cgi/access/login"],
-    ["activated ArtifactPass sign-in", "/auth/sign-in?return_to=%2Fupload"],
-  ])("deploys production OAuth and code atomically through the %s boundary", async (_boundary, uploadLocation) => {
+  it("deploys production OAuth and code behind Pages with the ArtifactPass sign-in boundary", async () => {
     const root = await deploymentRoot();
     const manifestRoot = await mkdtemp(resolve(tmpdir(), "artifact-share-approval-test-"));
     const manifestPath = resolve(manifestRoot, "production-approval.json");
-    const client = fakeClient({ existing: true, workerDomain: false });
+    const client = fakeClient({ existing: true, workerDomain: false, accessApplication: false });
     const productionInput: DeployInput = {
       ...input,
       identities: [],
@@ -812,7 +810,7 @@ describe("Cloudflare deployment", () => {
       if (url.pathname === "/upload") {
         return new Response(null, {
           status: 302,
-          headers: { location: uploadLocation },
+          headers: { location: "/auth/sign-in?return_to=%2Fupload" },
         });
       }
       throw new Error(`Unexpected production deployment request: ${url}`);
@@ -870,7 +868,7 @@ describe("Cloudflare deployment", () => {
       },
       writeApprovalManifest: resolve(root, "production-approval.json"),
     }, { client: client.client, deploymentRoot: root, runner })).rejects.toThrow(
-      "existing Worker, D1, R2, Pages front door, and Access application",
+      "existing Worker, D1, R2, and Pages front door",
     );
 
     expect(runner).not.toHaveBeenCalled();
@@ -975,7 +973,7 @@ describe("Cloudflare deployment", () => {
       },
       writeApprovalManifest: resolve(root, "production-approval.json"),
     }, { client: client.client, deploymentRoot: root, runner })).rejects.toThrow(
-      "existing Worker, D1, R2, Pages front door, and Access application",
+      "existing Worker, D1, R2, and Pages front door",
     );
 
     expect(runner).not.toHaveBeenCalled();
