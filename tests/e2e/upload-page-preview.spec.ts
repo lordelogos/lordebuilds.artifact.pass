@@ -145,7 +145,7 @@ test.describe("local upload page preview", () => {
     expect(new Set(shareTokens).size).toBe(1);
 
     await page.getByRole("button", { name: "Share another document" }).click();
-    await expect(page).toHaveURL(new URL("/?upload=1", previewUrl).href);
+    await expect(page).toHaveURL(new URL("/upload", previewUrl).href);
   });
 
   test("keeps the publication identity when the page reloads after an uncertain response", async ({ page }) => {
@@ -273,7 +273,7 @@ test.describe("local upload page preview", () => {
 
     await expect(page.getByRole("heading", { name: "The link wasn’t created." })).toBeVisible();
     await expect(page.getByText("The selected document is no longer available. Choose it again.")).toBeVisible();
-    await expect(page.getByRole("link", { name: "Choose a document" })).toHaveAttribute("href", "/?upload=1");
+    await expect(page.getByRole("link", { name: "Choose a document" })).toHaveAttribute("href", "/upload");
   });
 
   test("restores a homepage document after sign-in without publishing it", async ({ page }) => {

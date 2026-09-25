@@ -12,6 +12,7 @@ export default defineConfig({
     outDir: outputDirectory,
     emptyOutDir: true,
     rollupOptions: {
+      preserveEntrySignatures: "strict",
       input: {
         "homepage-validation": fileURLToPath(new URL(
           "../artifact-service/src/web/file-validation.ts",
