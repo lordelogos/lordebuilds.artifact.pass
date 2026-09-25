@@ -58,6 +58,7 @@ const pagesPreviewHeaders = [
 export const pagesFunctionRoutes = {
   version: 1,
   include: [
+    "/assets/*",
     "/health",
     "/session/*",
     "/auth/*",

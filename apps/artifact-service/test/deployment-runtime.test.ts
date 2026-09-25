@@ -77,6 +77,7 @@ describe("deployment runtime", () => {
       }],
     });
     expect(pagesFunctionRoutes.include).toEqual(expect.arrayContaining([
+      "/assets/*",
       "/health",
       "/session/*",
       "/auth/*",
