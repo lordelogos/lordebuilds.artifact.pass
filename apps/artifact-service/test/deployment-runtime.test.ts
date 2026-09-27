@@ -49,7 +49,17 @@ describe("deployment runtime", () => {
         html_handling: "drop-trailing-slash",
       },
     });
-    for (const route of ["/", "/privacy", "/terms", "/robots.txt", "/sitemap.xml"]) {
+    for (const route of [
+      "/",
+      "/privacy",
+      "/terms",
+      "/robots.txt",
+      "/sitemap.xml",
+      "/llms.txt",
+      "/ai-catalog.json",
+      "/.well-known/ai-catalog.json",
+      "/.well-known/ard.json",
+    ]) {
       expect(productionConfig.assets?.run_worker_first).not.toContain(route);
     }
     expect(demoConfig).toMatchObject({
@@ -86,7 +96,17 @@ describe("deployment runtime", () => {
       "/api/*",
       "/a/*",
     ]));
-    for (const route of ["/", "/privacy", "/terms", "/robots.txt", "/sitemap.xml"]) {
+    for (const route of [
+      "/",
+      "/privacy",
+      "/terms",
+      "/robots.txt",
+      "/sitemap.xml",
+      "/llms.txt",
+      "/ai-catalog.json",
+      "/.well-known/ai-catalog.json",
+      "/.well-known/ard.json",
+    ]) {
       expect(pagesFunctionRoutes.include).not.toContain(route);
     }
   });
