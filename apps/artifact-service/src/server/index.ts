@@ -6,6 +6,7 @@ import {
 } from "artifact-protocol";
 import { Hono, type Context, type Next } from "hono";
 import type { JWTVerifyGetKey } from "jose";
+import packageMetadata from "../../../../package.json" with { type: "json" };
 
 import type { ArtifactServiceBindings } from "./adapters/cloudflare-bindings";
 import { AgentTokenRepository } from "./auth/agent-token";
@@ -121,6 +122,7 @@ export const createArtifactApplication = (options: ArtifactApplicationOptions = 
     context.json({
       service: "lordebuilds.artifacts.share",
       status: "ok",
+      artifactpass_version: packageMetadata.version,
       ...(context.env.ARTIFACTPASS_DEPLOYMENT_ID === undefined
         ? {}
         : { deployment_id: context.env.ARTIFACTPASS_DEPLOYMENT_ID }),
