@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="title description">
+  <title id="title">Review a private ArtifactPass deployment</title>
+  <desc id="description">A terminal review lists the example organization hostname, domain, login, publisher rules, storage, and edit choices.</desc>
+  <rect width="1200" height="720" fill="#0b0c0e"/><rect x="48" y="38" width="1104" height="644" rx="24" fill="#121418" stroke="#34373d" stroke-width="2"/>
+  <text x="88" y="100" font-family="Arial, sans-serif" font-size="28" font-weight="700" fill="#efefec">Review this private ArtifactPass deployment</text>
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17">
+    <text x="88" y="150" fill="#797d82">Hostname</text><text x="320" y="150" fill="#efefec">artifacts.example.com</text>
+    <text x="88" y="188" fill="#797d82">Cloudflare domain</text><text x="320" y="188" fill="#efefec">example.com</text>
+    <text x="88" y="226" fill="#797d82">Login</text><text x="320" y="226" fill="#efefec">Email verification code</text>
+    <text x="88" y="264" fill="#797d82">Publisher rules</text><text x="320" y="264" fill="#efefec">2 specific email addresses</text>
+    <text x="88" y="302" fill="#797d82">Link lifetimes</text><text x="320" y="302" fill="#efefec">15 min, 30 min, 1 hr, 1 day, 7 days</text>
+    <text x="88" y="340" fill="#797d82">Storage</text><text x="320" y="340" fill="#efefec">R2 in this Cloudflare account</text>
+    <text x="88" y="378" fill="#797d82">Metadata</text><text x="320" y="378" fill="#efefec">D1 in this Cloudflare account</text>
+    <text x="88" y="416" fill="#797d82">Placement</text><text x="320" y="416" fill="#efefec">Cloudflare Automatic</text>
+  </g>
+  <line x1="88" y1="452" x2="1112" y2="452" stroke="#34373d"/>
+  <text x="88" y="500" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#efefec">What should ArtifactPass do?</text>
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" fill="#b8babd">
+    <text x="88" y="544" fill="#efefec">1. Approve and deploy</text><text x="390" y="544">2. Edit hostname</text><text x="680" y="544">3. Edit sign-in</text>
+    <text x="88" y="586">4. Edit allowed people</text><text x="390" y="586">5. Edit link lifetimes</text><text x="680" y="586">6. Save and exit</text>
+  </g>
+  <rect x="88" y="622" width="6" height="28" fill="#efefec"/>
+</svg>

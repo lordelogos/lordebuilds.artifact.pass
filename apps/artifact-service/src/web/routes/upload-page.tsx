@@ -398,6 +398,7 @@ export function UploadPage() {
     <div className="share-shell">
       <PublicNavigation
         homeHref={publicSiteUrl()}
+        guidesHref={publicSiteUrl("/guides")}
         howHref={publicSiteUrl("/#how")}
         installHref={publicSiteUrl("/#install")}
         theme={theme}
@@ -551,6 +552,7 @@ export function UploadPage() {
         </section>
       </main>
       <PublicFooter
+        guidesHref={publicSiteUrl("/guides")}
         privacyHref={publicSiteUrl("/privacy")}
         termsHref={publicSiteUrl("/terms")}
       />

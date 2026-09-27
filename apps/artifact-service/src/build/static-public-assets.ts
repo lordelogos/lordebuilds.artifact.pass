@@ -11,6 +11,7 @@ import {
 } from "../web/routes/public-homepage.tsx";
 import {
   PUBLIC_SITE_ORIGIN,
+  guideInteractionScript,
   renderAiCatalogJson,
   renderLlmsTxt,
   renderRobotsTxt,
@@ -28,6 +29,7 @@ const staticContentSecurityPolicy = [
     homepageBootScript,
     themeInteractionScript,
     homepageInteractionScript,
+    guideInteractionScript,
   ].map(contentHash).join(" ")}`,
   "connect-src 'self' https://cloudflareinsights.com",
   "img-src 'self'",
@@ -41,6 +43,10 @@ const staticHeaders = [
   "/how-it-works",
   "/for-ai-agents",
   "/private-deployments",
+  "/guides",
+  "/guides/agent-setup",
+  "/guides/private-deployment",
+  "/guides/private-teammate",
   "/security",
   `/privacy`,
   `/terms`,
@@ -85,12 +91,17 @@ export const staticPublicAssets = (outputDirectory: string): Plugin => ({
   async closeBundle() {
     await mkdir(outputDirectory, { recursive: true });
     await mkdir(resolve(outputDirectory, ".well-known"), { recursive: true });
+    await mkdir(resolve(outputDirectory, "guides"), { recursive: true });
     const aiCatalog = renderAiCatalogJson();
     await Promise.all([
       writeFile(resolve(outputDirectory, "index.html"), renderStaticPublicPage("home")),
       writeFile(resolve(outputDirectory, "how-it-works.html"), renderStaticPublicPage("how-it-works")),
       writeFile(resolve(outputDirectory, "for-ai-agents.html"), renderStaticPublicPage("for-ai-agents")),
       writeFile(resolve(outputDirectory, "private-deployments.html"), renderStaticPublicPage("private-deployments")),
+      writeFile(resolve(outputDirectory, "guides.html"), renderStaticPublicPage("guides")),
+      writeFile(resolve(outputDirectory, "guides", "agent-setup.html"), renderStaticPublicPage("agent-setup-guide")),
+      writeFile(resolve(outputDirectory, "guides", "private-deployment.html"), renderStaticPublicPage("private-deployment-guide")),
+      writeFile(resolve(outputDirectory, "guides", "private-teammate.html"), renderStaticPublicPage("private-teammate-guide")),
       writeFile(resolve(outputDirectory, "security.html"), renderStaticPublicPage("security")),
       writeFile(resolve(outputDirectory, "privacy.html"), renderStaticPublicPage("privacy")),
       writeFile(resolve(outputDirectory, "terms.html"), renderStaticPublicPage("terms")),

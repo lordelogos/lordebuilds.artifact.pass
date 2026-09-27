@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="title description">
+  <title id="title">Replace nameservers for example.com</title>
+  <desc id="description">Two Cloudflare nameservers are copied to the current registrar without transferring the domain.</desc>
+  <rect width="1200" height="720" fill="#f7f7f8"/>
+  <text x="72" y="78" font-family="Arial, sans-serif" font-size="40" font-weight="700" fill="#111827">Change nameservers at the current registrar</text>
+  <text x="72" y="118" font-family="Arial, sans-serif" font-size="20" fill="#4b5563">example.com stays registered where it is. Only DNS authority changes.</text>
+  <rect x="72" y="172" width="460" height="328" rx="18" fill="#fff" stroke="#f97316" stroke-width="3"/>
+  <text x="104" y="220" font-family="Arial, sans-serif" font-size="24" font-weight="700" fill="#111827">Cloudflare</text><text x="104" y="258" font-family="Arial, sans-serif" font-size="18" fill="#6b7280">Assigned nameservers</text>
+  <rect x="104" y="288" width="396" height="58" rx="10" fill="#f3f4f6"/><text x="126" y="324" font-family="monospace" font-size="18" fill="#111827">ASSIGNED-NAMESERVER-1</text>
+  <rect x="104" y="364" width="396" height="58" rx="10" fill="#f3f4f6"/><text x="126" y="400" font-family="monospace" font-size="18" fill="#111827">ASSIGNED-NAMESERVER-2</text>
+  <text x="104" y="462" font-family="Arial, sans-serif" font-size="17" fill="#4b5563">Copy both values exactly.</text>
+  <path d="M558 336h84" stroke="#2563eb" stroke-width="8" stroke-linecap="round"/><path d="M624 314l28 22-28 22" fill="none" stroke="#2563eb" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="674" y="172" width="454" height="328" rx="18" fill="#fff" stroke="#2563eb" stroke-width="3"/>
+  <text x="706" y="220" font-family="Arial, sans-serif" font-size="24" font-weight="700" fill="#111827">Current registrar</text><text x="706" y="258" font-family="Arial, sans-serif" font-size="18" fill="#6b7280">Nameserver settings</text>
+  <rect x="706" y="288" width="390" height="58" rx="10" fill="#eff6ff"/><text x="728" y="324" font-family="monospace" font-size="18" fill="#111827">ASSIGNED-NAMESERVER-1</text>
+  <rect x="706" y="364" width="390" height="58" rx="10" fill="#eff6ff"/><text x="728" y="400" font-family="monospace" font-size="18" fill="#111827">ASSIGNED-NAMESERVER-2</text>
+  <text x="706" y="462" font-family="Arial, sans-serif" font-size="17" fill="#4b5563">Save the replacement nameservers.</text>
+  <rect x="72" y="548" width="1056" height="104" rx="14" fill="#ecfdf5" stroke="#86efac" stroke-width="2"/>
+  <text x="100" y="588" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#166534">No domain transfer</text>
+  <text x="100" y="621" font-family="Arial, sans-serif" font-size="18" fill="#166534">Do not unlock the domain, request an EPP code, or change its registration owner.</text>
+</svg>
