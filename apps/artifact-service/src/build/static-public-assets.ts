@@ -38,6 +38,10 @@ const staticContentSecurityPolicy = [
 
 const staticHeaders = [
   "/",
+  "/how-it-works",
+  "/for-ai-agents",
+  "/private-deployments",
+  "/security",
   `/privacy`,
   `/terms`,
 ].map((path) => [
@@ -84,6 +88,10 @@ export const staticPublicAssets = (outputDirectory: string): Plugin => ({
     const aiCatalog = renderAiCatalogJson();
     await Promise.all([
       writeFile(resolve(outputDirectory, "index.html"), renderStaticPublicPage("home")),
+      writeFile(resolve(outputDirectory, "how-it-works.html"), renderStaticPublicPage("how-it-works")),
+      writeFile(resolve(outputDirectory, "for-ai-agents.html"), renderStaticPublicPage("for-ai-agents")),
+      writeFile(resolve(outputDirectory, "private-deployments.html"), renderStaticPublicPage("private-deployments")),
+      writeFile(resolve(outputDirectory, "security.html"), renderStaticPublicPage("security")),
       writeFile(resolve(outputDirectory, "privacy.html"), renderStaticPublicPage("privacy")),
       writeFile(resolve(outputDirectory, "terms.html"), renderStaticPublicPage("terms")),
       writeFile(
