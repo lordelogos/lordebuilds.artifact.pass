@@ -2,8 +2,8 @@
   <title id="title">Start an ArtifactPass private deployment</title>
   <desc id="description">A terminal explains the Cloudflare Worker, D1, R2, and Access resources before continuing.</desc>
   <rect width="1200" height="720" fill="#0b0c0e"/><rect x="50" y="42" width="1100" height="636" rx="24" fill="#121418" stroke="#34373d" stroke-width="2"/>
-  <circle cx="88" cy="80" r="7" fill="#b98458"/><circle cx="114" cy="80" r="7" fill="#716de4"/><circle cx="140" cy="80" r="7" fill="#557fbd"/>
-  <text x="88" y="142" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="22" fill="#797d82">terminal %</text><text x="232" y="142" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="22" fill="#efefec">pnpm dlx artifactpass deploy --new</text>
+  <text x="88" y="89" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" fill="#797d82">Terminal</text>
+  <text x="88" y="142" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="22" fill="#efefec">pnpm dlx artifactpass deploy --new</text>
   <text x="88" y="208" font-family="Arial, sans-serif" font-size="26" font-weight="700" fill="#efefec">What ArtifactPass will set up</text>
   <text x="88" y="256" font-family="Arial, sans-serif" font-size="20" fill="#b8babd">ArtifactPass will deploy these resources into your Cloudflare account:</text>
   <g font-family="Arial, sans-serif" font-size="19" fill="#efefec">

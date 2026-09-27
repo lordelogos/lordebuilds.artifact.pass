@@ -46,6 +46,60 @@ test("serves every clean guide route from built output under the generated CSP",
   expect(cspErrors).toEqual([]);
 });
 
+test("serves the real Cloudflare guide screenshots with image content types", async ({ request }) => {
+  const screenshots = [
+    ["/guides/private-deployment/connect-domain.jpg", "image/jpeg"],
+    ["/guides/private-deployment/connect-domain-form.jpg", "image/jpeg"],
+    ["/guides/private-deployment/review-dns.png", "image/png"],
+    ["/guides/private-deployment/cloudflare-access-application.png", "image/png"],
+  ] as const;
+
+  for (const [path, contentType] of screenshots) {
+    const response = await request.get(path);
+    expect(response.status()).toBe(200);
+    expect(response.headers()["content-type"]).toBe(contentType);
+    expect((await response.body()).byteLength).toBeGreaterThan(10_000);
+  }
+});
+
+test("renders every real Cloudflare screenshot in the private deployment guide", async ({ page }) => {
+  await page.goto("/guides/private-deployment");
+  const screenshotSources = [
+    "/guides/private-deployment/connect-domain.jpg",
+    "/guides/private-deployment/connect-domain-form.jpg",
+    "/guides/private-deployment/review-dns.png",
+    "/guides/private-deployment/cloudflare-access-application.png",
+  ] as const;
+
+  for (const src of screenshotSources) {
+    const image = page.locator(`img[src="${src}"]`);
+    await image.scrollIntoViewIfNeeded();
+    await expect.poll(() => image.evaluate((element) => (element as HTMLImageElement).naturalWidth)).toBeGreaterThan(1_000);
+    await expect(image).toBeVisible();
+  }
+});
+
+test("moves through the complete setup-guide journey without dead ends", async ({ page }) => {
+  await page.goto("/guides");
+  await page.getByRole("link", { name: /Set up ArtifactPass in a project/u }).click();
+  await expect(page).toHaveURL(/\/guides\/agent-setup$/u);
+
+  const agentNavigation = page.getByRole("navigation", { name: "Guide navigation" });
+  await expect(agentNavigation.locator('a[href="/guides"]')).toBeVisible();
+  await agentNavigation.locator('a[href="/guides/private-deployment"]').click();
+  await expect(page).toHaveURL(/\/guides\/private-deployment$/u);
+
+  const deploymentNavigation = page.getByRole("navigation", { name: "Guide navigation" });
+  await expect(deploymentNavigation.locator('a[href="/guides/agent-setup"]')).toBeVisible();
+  await deploymentNavigation.locator('a[href="/guides/private-teammate"]').click();
+  await expect(page).toHaveURL(/\/guides\/private-teammate$/u);
+
+  const teammateNavigation = page.getByRole("navigation", { name: "Guide navigation" });
+  await expect(teammateNavigation.locator('a[href="/guides/private-deployment"]')).toBeVisible();
+  await teammateNavigation.locator('a[href="/guides"]').click();
+  await expect(page).toHaveURL(/\/guides$/u);
+});
+
 test("keyboard copy succeeds, announces, retains focus, and resets", async ({ page }) => {
   await page.addInitScript(() => {
     Object.defineProperty(navigator, "clipboard", {
@@ -162,4 +216,18 @@ test("uses only approved documentation namespaces in guides and generated assets
     ![...approvedDomains].some((approved) => domain === approved || domain.endsWith(`.${approved}`))
   );
   expect(unexpectedDomains).toEqual([]);
+});
+
+test("keeps guide illustrations free of decorative terminal and status icons", async () => {
+  const runCommand = await readFile(resolve("apps/artifact-service/public/guides/agent-setup/run-command.svg"), "utf8");
+  const shareResult = await readFile(resolve("apps/artifact-service/public/guides/agent-setup/share-result.svg"), "utf8");
+  const startDeployment = await readFile(resolve("apps/artifact-service/public/guides/private-deployment/start-deployment.svg"), "utf8");
+  const connectAgent = await readFile(resolve("apps/artifact-service/public/guides/agent-setup/connect-agent.svg"), "utf8");
+
+  expect(runCommand).not.toContain("<circle");
+  expect(runCommand).not.toContain("◇");
+  expect(shareResult).not.toContain("<circle");
+  expect(shareResult).not.toContain("Published");
+  expect(startDeployment).not.toContain("<circle");
+  expect(connectAgent).not.toContain("<circle");
 });
