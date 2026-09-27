@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "policy_id": "artifactpass-0.1.10-rc.1-search-discoverability-release",
-  "candidate_sha256": "a10bcaf3f631b7d91e70b31325323000f3725a72d882fcf0283471f23fc34461",
+  "policy_id": "artifactpass-0.1.10-rc.2-search-discoverability-release",
+  "candidate_sha256": "769f6ceefb193f892606c4b61d9322a4067b4a049db5314d68120cea7f9766b9",
   "scorer_version": "1.0.0",
-  "created_at": "2026-09-27T03:45:37.000Z",
+  "created_at": "2026-09-27T04:22:00.000Z",
   "cohorts": [
     {
       "id": "generic-to-generic-fidelity",
