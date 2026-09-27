@@ -11,6 +11,8 @@ import {
 } from "../web/routes/public-homepage.tsx";
 import {
   PUBLIC_SITE_ORIGIN,
+  renderAiCatalogJson,
+  renderLlmsTxt,
   renderRobotsTxt,
   renderSitemapXml,
   renderStaticPublicPage,
@@ -22,12 +24,12 @@ const contentHash = (content: string): string =>
 const staticContentSecurityPolicy = [
   "default-src 'none'",
   `style-src ${contentHash(publicStyles)}`,
-  `script-src 'self' ${[
+  `script-src 'self' https://static.cloudflareinsights.com ${[
     homepageBootScript,
     themeInteractionScript,
     homepageInteractionScript,
   ].map(contentHash).join(" ")}`,
-  "connect-src 'self'",
+  "connect-src 'self' https://cloudflareinsights.com",
   "img-src 'self'",
   "frame-ancestors 'none'",
   "base-uri 'none'",
@@ -78,6 +80,8 @@ export const staticPublicAssets = (outputDirectory: string): Plugin => ({
   applyToEnvironment: (environment) => environment.name === "client",
   async closeBundle() {
     await mkdir(outputDirectory, { recursive: true });
+    await mkdir(resolve(outputDirectory, ".well-known"), { recursive: true });
+    const aiCatalog = renderAiCatalogJson();
     await Promise.all([
       writeFile(resolve(outputDirectory, "index.html"), renderStaticPublicPage("home")),
       writeFile(resolve(outputDirectory, "privacy.html"), renderStaticPublicPage("privacy")),
@@ -87,6 +91,10 @@ export const staticPublicAssets = (outputDirectory: string): Plugin => ({
         renderRobotsTxt(`${PUBLIC_SITE_ORIGIN}/robots.txt`),
       ),
       writeFile(resolve(outputDirectory, "sitemap.xml"), renderSitemapXml()),
+      writeFile(resolve(outputDirectory, "llms.txt"), renderLlmsTxt()),
+      writeFile(resolve(outputDirectory, "ai-catalog.json"), aiCatalog),
+      writeFile(resolve(outputDirectory, ".well-known", "ai-catalog.json"), aiCatalog),
+      writeFile(resolve(outputDirectory, ".well-known", "ard.json"), aiCatalog),
       writeFile(
         resolve(outputDirectory, "_headers"),
         `${staticHeaders}\n\n${pagesPreviewHeaders}\n`,

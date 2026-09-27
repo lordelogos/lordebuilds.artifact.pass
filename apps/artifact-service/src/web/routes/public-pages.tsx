@@ -21,6 +21,7 @@ export interface PublicPageConfiguration {
 }
 
 const repositoryUrl = "https://github.com/lordelogos/lordebuilds.artifact.pass";
+const rawRepositoryUrl = "https://raw.githubusercontent.com/lordelogos/lordebuilds.artifact.pass/main";
 export { PUBLIC_SITE_ORIGIN };
 const homepageDescription = "Create expiring links for Markdown, HTML, and PDF files. Share exact work between people and AI agents from the browser, CLI, or MCP.";
 
@@ -189,14 +190,69 @@ export const renderSitemapXml = (): string => {
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`;
 };
 
+export const renderLlmsTxt = (): string => `# ArtifactPass
+
+ArtifactPass creates temporary links for Markdown, HTML, and PDF files so people and AI agents can hand off exact work without losing formatting.
+
+## Use ArtifactPass
+
+- [ArtifactPass homepage](${PUBLIC_SITE_ORIGIN}/): Learn what ArtifactPass does and create a temporary link.
+- [ArtifactPass repository](${repositoryUrl}): Install the CLI, MCP server, or agent skills and inspect the source.
+- [Privacy policy](${PUBLIC_SITE_ORIGIN}/privacy): How the hosted service handles identity, artifacts, and operational data.
+- [Terms of service](${PUBLIC_SITE_ORIGIN}/terms): Rules for using the hosted service.
+
+## Agent capabilities
+
+- [Share an artifact](${rawRepositoryUrl}/plugins/artifactpass/skills/share-artifact/SKILL.md): Publish one Markdown, HTML, or PDF artifact and return its temporary link.
+- [Read a shared artifact](${rawRepositoryUrl}/plugins/artifactpass/skills/read-shared-artifact/SKILL.md): Retrieve and inspect a valid ArtifactPass handoff link.
+`;
+
+export const renderAiCatalogJson = (): string => `${JSON.stringify({
+  specVersion: "1.0",
+  host: {
+    displayName: "ArtifactPass",
+    identifier: "did:web:artifactpass.com",
+    documentationUrl: repositoryUrl,
+    logoUrl: `${PUBLIC_SITE_ORIGIN}/artifactpass-logo.svg`,
+  },
+  entries: [
+    {
+      identifier: "urn:air:artifactpass.com:skill:share-artifact",
+      displayName: "Share an artifact",
+      type: 'text/markdown; profile="urn:air:agent-skills"',
+      url: `${rawRepositoryUrl}/plugins/artifactpass/skills/share-artifact/SKILL.md`,
+      description: "Publish one Markdown, HTML, or PDF artifact and return its temporary ArtifactPass link.",
+      tags: ["artifact-sharing", "handoff", "temporary-link"],
+      capabilities: ["ShareArtifact"],
+      representativeQueries: [
+        "Share this HTML, Markdown, or PDF file with another person or AI agent.",
+        "Create a temporary ArtifactPass link for this artifact.",
+      ],
+    },
+    {
+      identifier: "urn:air:artifactpass.com:skill:read-shared-artifact",
+      displayName: "Read a shared artifact",
+      type: 'text/markdown; profile="urn:air:agent-skills"',
+      url: `${rawRepositoryUrl}/plugins/artifactpass/skills/read-shared-artifact/SKILL.md`,
+      description: "Retrieve and inspect a valid ArtifactPass handoff link.",
+      tags: ["artifact-reading", "handoff", "temporary-link"],
+      capabilities: ["ReadSharedArtifact"],
+      representativeQueries: [
+        "Open and inspect this ArtifactPass link.",
+        "Read the file shared through this ArtifactPass handoff.",
+      ],
+    },
+  ],
+}, null, 2)}\n`;
+
 export const publicPageHeaders = (nonce: string) => ({
   "Cache-Control": "private, no-store, max-age=0",
   "Cross-Origin-Opener-Policy": "same-origin-allow-popups",
   "Content-Security-Policy": [
     "default-src 'none'",
     `style-src 'nonce-${nonce}'`,
-    `script-src 'nonce-${nonce}' 'self'`,
-    "connect-src 'self'",
+    `script-src 'nonce-${nonce}' 'self' https://static.cloudflareinsights.com`,
+    "connect-src 'self' https://cloudflareinsights.com",
     "img-src 'self'",
     "frame-ancestors 'none'",
     "base-uri 'none'",
@@ -238,6 +294,8 @@ const renderPage = (
         <meta name="twitter:title" content={title} />
         <meta name="twitter:description" content={description} />
         {indexable && <link rel="canonical" href={canonicalUrl} />}
+        {indexable && page === "home" && <link rel="ai-catalog" href="/.well-known/ai-catalog.json" />}
+        {indexable && page === "home" && <link rel="ard" href="/.well-known/ard.json" />}
         <link rel="icon" href="/artifactpass-logo.svg" type="image/svg+xml" />
         <title>{title}</title>
         {indexable && page === "home" && (

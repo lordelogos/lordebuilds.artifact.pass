@@ -4,6 +4,9 @@ import { describe, expect, it } from "vitest";
 import { createArtifactApplication } from "../src/server/index";
 import {
   PUBLIC_SITE_ORIGIN,
+  publicPageHeaders,
+  renderAiCatalogJson,
+  renderLlmsTxt,
   renderRobotsTxt,
   renderSitemapXml,
   renderStaticPublicPage,
@@ -41,6 +44,38 @@ describe("public site", () => {
     expect(renderSitemapXml()).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/</loc>`);
     expect(renderSitemapXml()).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/privacy</loc>`);
     expect(renderSitemapXml()).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/terms</loc>`);
+    expect(markup).toContain('rel="ai-catalog" href="/.well-known/ai-catalog.json"');
+    expect(markup).toContain('rel="ard" href="/.well-known/ard.json"');
+  });
+
+  it("publishes machine-readable agent discovery documents", () => {
+    const llmsTxt = renderLlmsTxt();
+    const catalog = JSON.parse(renderAiCatalogJson()) as {
+      specVersion?: string;
+      entries?: readonly { identifier?: string; type?: string; url?: string }[];
+    };
+
+    expect(llmsTxt).toMatch(/^# ArtifactPass\n/u);
+    expect(llmsTxt).toContain(`[ArtifactPass homepage](${PUBLIC_SITE_ORIGIN}/)`);
+    expect(llmsTxt).toContain("share-artifact/SKILL.md");
+    expect(catalog.specVersion).toBe("1.0");
+    expect(catalog.entries).toHaveLength(2);
+    expect(catalog.entries).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        identifier: "urn:air:artifactpass.com:skill:share-artifact",
+        type: 'text/markdown; profile="urn:air:agent-skills"',
+        url: expect.stringContaining("share-artifact/SKILL.md"),
+      }),
+    ]));
+  });
+
+  it("keeps public labels and Cloudflare analytics compatible with quality audits", () => {
+    const markup = renderStaticPublicPage("home");
+    const contentSecurityPolicy = publicPageHeaders("test")["Content-Security-Policy"];
+
+    expect(markup).toContain(".explain-label{display:block;margin-bottom:20px;color:var(--ash)");
+    expect(contentSecurityPolicy).toContain("https://static.cloudflareinsights.com");
+    expect(contentSecurityPolicy).toContain("https://cloudflareinsights.com");
   });
 
   it("links the public homepage to the app and policy pages", () => {
