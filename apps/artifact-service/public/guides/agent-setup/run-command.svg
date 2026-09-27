@@ -3,14 +3,12 @@
   <desc id="description">A dark terminal showing pnpm dlx artifactpass followed by supported AI agent choices.</desc>
   <rect width="1200" height="720" fill="#0b0c0e"/>
   <rect x="44" y="44" width="1112" height="632" rx="24" fill="#121418" stroke="#34373d" stroke-width="2"/>
-  <circle cx="86" cy="82" r="7" fill="#b98458"/><circle cx="112" cy="82" r="7" fill="#716de4"/><circle cx="138" cy="82" r="7" fill="#557fbd"/>
-  <text x="86" y="148" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="24" fill="#797d82">your-project %</text>
-  <text x="286" y="148" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="24" fill="#efefec">pnpm dlx artifactpass</text>
-  <text x="86" y="214" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" fill="#b98458">◇</text>
-  <text x="122" y="214" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="22" font-weight="700" fill="#efefec">Which agent are you setting up?</text>
+  <text x="86" y="91" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" fill="#797d82">Terminal · ~/your-project</text>
+  <text x="86" y="148" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="24" fill="#efefec">pnpm dlx artifactpass</text>
+  <text x="86" y="214" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="22" font-weight="700" fill="#efefec">Which agent are you setting up?</text>
   <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="20" fill="#b8babd">
-    <text x="122" y="264">1. Codex</text><text x="122" y="304">2. Claude Code</text>
-    <text x="122" y="344">3. Gemini CLI</text><text x="122" y="384">4. Kimi Code</text>
+    <text x="86" y="264">1. Codex</text><text x="86" y="304">2. Claude Code</text>
+    <text x="86" y="344">3. Gemini CLI</text><text x="86" y="384">4. Kimi Code</text>
     <text x="540" y="264">5. Cursor</text><text x="540" y="304">6. VS Code / GitHub Copilot</text>
     <text x="540" y="344">7. Antigravity</text><text x="540" y="384">8. Other MCP client</text>
   </g>

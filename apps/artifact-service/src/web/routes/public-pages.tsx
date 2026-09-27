@@ -340,12 +340,17 @@ const GuidesPage = () => (
 interface GuideImageProps {
   readonly alt: string;
   readonly caption: string;
+  readonly focus?: "access-application" | "connect-domain";
+  readonly height?: number;
   readonly src: string;
+  readonly width?: number;
 }
 
-const GuideImage = ({ alt, caption, src }: GuideImageProps) => (
+const GuideImage = ({ alt, caption, focus, height = 720, src, width = 1200 }: GuideImageProps) => (
   <figure className="guide-figure">
-    <img src={src} alt={alt} width="1200" height="720" loading="lazy" decoding="async" />
+    <div className={`guide-figure-frame${focus === undefined ? "" : ` guide-figure-frame--${focus}`}`}>
+      <img src={src} alt={alt} width={width} height={height} loading="lazy" decoding="async" />
+    </div>
     <figcaption>{caption}</figcaption>
   </figure>
 );
@@ -365,8 +370,39 @@ const GuideNote = ({ children, title }: { readonly children: ReactNode; readonly
   </aside>
 );
 
+interface GuideJourneyLink {
+  readonly href: string;
+  readonly label: string;
+  readonly title: string;
+}
+
+const GuideTrail = ({ current, position }: { readonly current: string; readonly position: string }) => (
+  <nav className="guide-trail" aria-label="Guide path">
+    <a href="/guides">All guides</a>
+    <span aria-hidden="true">/</span>
+    <span aria-current="page">{position} · {current}</span>
+  </nav>
+);
+
+const GuidePager = ({ next, previous }: {
+  readonly next: GuideJourneyLink;
+  readonly previous: GuideJourneyLink;
+}) => (
+  <nav className="guide-pager" aria-label="Guide navigation">
+    <a className="guide-pager-link" href={previous.href}>
+      <span>← {previous.label}</span>
+      <strong>{previous.title}</strong>
+    </a>
+    <a className="guide-pager-link guide-pager-link--next" href={next.href}>
+      <span>{next.label} →</span>
+      <strong>{next.title}</strong>
+    </a>
+  </nav>
+);
+
 const AgentSetupGuidePage = () => (
   <article className="document guide-document">
+    <GuideTrail current="Agent setup" position="1 of 3" />
     <p className="eyebrow">Setup guide</p>
     <h1>Set up ArtifactPass for an AI agent</h1>
     <p className="guide-deck">Install ArtifactPass in one project, connect your agent, and publish a first temporary link.</p>
@@ -467,11 +503,16 @@ const AgentSetupGuidePage = () => (
         <p><a href="/guides/private-deployment">Need your own Cloudflare deployment? Follow the private deployment guide.</a></p>
       </section>
     </div>
+    <GuidePager
+      previous={{ href: "/guides", label: "Back", title: "All setup guides" }}
+      next={{ href: "/guides/private-deployment", label: "Next guide", title: "Deploy ArtifactPass on Cloudflare" }}
+    />
   </article>
 );
 
 const PrivateDeploymentGuidePage = () => (
   <article className="document guide-document">
+    <GuideTrail current="Private deployment" position="2 of 3" />
     <p className="eyebrow">Administrator guide</p>
     <h1>Deploy a private ArtifactPass on Cloudflare</h1>
     <p className="guide-deck">Create <strong>artifacts.example.com</strong> in your Cloudflare account, choose who may publish, and keep control of every resource.</p>
@@ -526,15 +567,27 @@ const PrivateDeploymentGuidePage = () => (
         <h2>Connect example.com to Cloudflare DNS</h2>
         <p>If <code>example.com</code> is already Active in this account, select it. Otherwise open the Cloudflare link printed by the CLI and choose <strong>Connect a domain</strong>. Do not choose <strong>Transfer a domain</strong>.</p>
         <GuideImage
-          src="/guides/private-deployment/connect-domain.svg"
-          alt="Cloudflare Add a site screen with Connect a domain highlighted and Transfer a domain marked as incorrect"
-          caption="Connecting DNS is enough. Domain registration does not need to move to Cloudflare."
+          src="/guides/private-deployment/connect-domain.jpg"
+          alt="Cloudflare Add a site screen with Connect a domain, Transfer a domain, and Buy a domain choices"
+          caption="Choose Connect a domain. Domain registration does not need to move to Cloudflare."
+          width={1300}
+          height={700}
+          focus="connect-domain"
+        />
+        <GuideImage
+          src="/guides/private-deployment/connect-domain-form.jpg"
+          alt="Cloudflare Connect your domain form with example.com entered as the domain name"
+          caption="Enter only the root domain, such as example.com. Do not include https, www, or a path."
+          width={1300}
+          height={790}
         />
         <p>Let Cloudflare scan the existing DNS records. Before changing nameservers, compare the imported records with your current DNS provider. Check the apex website record, <code>www</code>, email MX records, and verification or mail TXT records.</p>
         <GuideImage
-          src="/guides/private-deployment/review-dns.svg"
-          alt="A Cloudflare DNS review table showing website, www, email, and TXT records for example.com"
+          src="/guides/private-deployment/review-dns.png"
+          alt="Cloudflare DNS records table showing website, www, email, and TXT records for example.com"
           caption="Add any missing website or email records before the nameserver change."
+          width={1951}
+          height={806}
         />
         <p>Cloudflare assigns two nameservers. At the current registrar, replace the old authoritative nameservers with those exact two values. Do not unlock the domain and do not request a transfer authorization code.</p>
         <GuideImage
@@ -561,6 +614,15 @@ const PrivateDeploymentGuidePage = () => (
           src="/guides/private-deployment/configure-access.svg"
           alt="ArtifactPass questions for publisher access, example email addresses, link lifetimes, and the artifacts.example.com hostname"
           caption="For an address allow list, include the administrator and every teammate who needs to publish."
+        />
+        <p>After deployment, open <strong>Cloudflare Zero Trust → Access controls → Applications</strong> to view the protected ArtifactPass destination and the policy that controls who may publish.</p>
+        <GuideImage
+          src="/guides/private-deployment/cloudflare-access-application.png"
+          alt="Cloudflare Zero Trust Applications table showing an ArtifactPass application, protected destination, and publisher policy"
+          caption="The Access application connects the private ArtifactPass URL to its publisher policy."
+          width={1735}
+          height={907}
+          focus="access-application"
         />
       </section>
 
@@ -613,11 +675,16 @@ const PrivateDeploymentGuidePage = () => (
         <p>Share the deployment URL and <a href="/guides/private-teammate">private teammate setup guide</a>. People who only receive live artifact links do not need publisher access.</p>
       </section>
     </div>
+    <GuidePager
+      previous={{ href: "/guides/agent-setup", label: "Previous guide", title: "Set up ArtifactPass for an AI agent" }}
+      next={{ href: "/guides/private-teammate", label: "Next guide", title: "Join a private deployment" }}
+    />
   </article>
 );
 
 const PrivateTeammateGuidePage = () => (
   <article className="document guide-document">
+    <GuideTrail current="Private teammate setup" position="3 of 3" />
     <p className="eyebrow">Teammate guide</p>
     <h1>Join a private ArtifactPass deployment</h1>
     <p className="guide-deck">Connect one project to <strong>artifacts.example.com</strong>, sign in through your team’s Cloudflare Access policy, and verify publishing.</p>
@@ -703,6 +770,10 @@ const PrivateTeammateGuidePage = () => (
         <GuideCommand>pnpm dlx artifactpass doctor</GuideCommand>
       </section>
     </div>
+    <GuidePager
+      previous={{ href: "/guides/private-deployment", label: "Previous guide", title: "Deploy ArtifactPass on Cloudflare" }}
+      next={{ href: "/guides", label: "All guides", title: "Browse setup guides" }}
+    />
   </article>
 );
 

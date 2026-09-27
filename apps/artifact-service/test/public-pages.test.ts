@@ -169,13 +169,26 @@ describe("public site", () => {
     expect(privateDeployment).toMatch(/administrator[^.]*outside[^.]*domain[^.]*specific-address/iu);
     expect(privateDeployment).toContain("example.com");
     expect(privateDeployment).toContain("artifacts.example.com");
-    expect(privateDeployment).toContain('/guides/private-deployment/connect-domain.svg');
+    expect(privateDeployment).toContain('/guides/private-deployment/connect-domain.jpg');
+    expect(privateDeployment).toContain('/guides/private-deployment/connect-domain-form.jpg');
+    expect(privateDeployment).toContain('/guides/private-deployment/review-dns.png');
+    expect(privateDeployment).toContain('/guides/private-deployment/cloudflare-access-application.png');
 
     expect(privateTeammate).toContain('"@type":"HowTo"');
     expect(privateTeammate).toContain("Email verification code");
     expect(privateTeammate).toContain("Existing company login");
     expect(privateTeammate).toContain("pnpm dlx artifactpass --base-url https://artifacts.example.com");
     expect(privateTeammate).toContain('/guides/private-teammate/teammate-setup.svg');
+
+    for (const markup of [agentSetup, privateDeployment, privateTeammate]) {
+      expect(markup).toContain('class="guide-trail"');
+      expect(markup).toContain('class="guide-pager"');
+      expect(markup).toContain('href="/guides"');
+    }
+    expect(agentSetup).toContain('class="guide-pager-link guide-pager-link--next" href="/guides/private-deployment"');
+    expect(privateDeployment).toContain('class="guide-pager-link" href="/guides/agent-setup"');
+    expect(privateDeployment).toContain('class="guide-pager-link guide-pager-link--next" href="/guides/private-teammate"');
+    expect(privateTeammate).toContain('class="guide-pager-link" href="/guides/private-deployment"');
 
     for (const markup of [guides, agentSetup, privateDeployment, privateTeammate]) {
       expect(markup).not.toContain("lordebuilds.com");

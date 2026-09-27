@@ -13,6 +13,4 @@
   <text x="270" y="406" font-family="Arial, sans-serif" font-size="18" fill="#b8babd">Expires in 1 day · exact source retained</text>
   <rect x="270" y="440" width="748" height="70" rx="12" fill="#0b0c0e" stroke="#557fbd"/>
   <text x="294" y="484" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" fill="#efefec">https://artifactpass.com/a/••••••••••••••••</text>
-  <circle cx="1018" cy="594" r="20" fill="#557fbd"/><path d="M1009 594l7 7 13-15" fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-  <text x="978" y="603" text-anchor="end" font-family="Arial, sans-serif" font-size="18" fill="#b8babd">Published</text>
 </svg>
