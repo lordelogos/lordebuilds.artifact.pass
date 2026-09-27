@@ -21,6 +21,10 @@ const requestFrom = (origin: string, path: string): Promise<Response> =>
 describe("public site", () => {
   it.each([
     ["home", "ArtifactPass", "Pass work between agents, teammates, and humans."],
+    ["how-it-works", "How ArtifactPass Works", "temporary link"],
+    ["for-ai-agents", "Artifact Sharing for AI Agents", "MCP-compatible"],
+    ["private-deployments", "Private ArtifactPass Deployments", "Cloudflare account"],
+    ["security", "ArtifactPass Security", "bearer link"],
     ["privacy", "Privacy", "Google and GitHub"],
     ["terms", "Terms", "temporary bearer link"],
   ] as const)("renders the static %s page", (page, title, copy) => {
@@ -42,6 +46,10 @@ describe("public site", () => {
     expect(markup).toContain('"@type":"SoftwareApplication"');
     expect(renderRobotsTxt(`${PUBLIC_SITE_ORIGIN}/robots.txt`)).toContain("Allow: /");
     expect(renderSitemapXml()).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/</loc>`);
+    expect(renderSitemapXml()).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/how-it-works</loc>`);
+    expect(renderSitemapXml()).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/for-ai-agents</loc>`);
+    expect(renderSitemapXml()).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/private-deployments</loc>`);
+    expect(renderSitemapXml()).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/security</loc>`);
     expect(renderSitemapXml()).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/privacy</loc>`);
     expect(renderSitemapXml()).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/terms</loc>`);
     expect(markup).toContain('rel="ai-catalog" href="/.well-known/ai-catalog.json"');
@@ -85,6 +93,22 @@ describe("public site", () => {
     expect(markup).toContain('href="#how"');
     expect(markup).toContain('href="/privacy"');
     expect(markup).toContain('href="/terms"');
+    expect(markup).toContain('href="/how-it-works"');
+    expect(markup).toContain('href="/for-ai-agents"');
+    expect(markup).toContain('href="/private-deployments"');
+    expect(markup).toContain('href="/security"');
+  });
+
+  it("gives each discovery page unique metadata and structured data", () => {
+    for (const page of ["how-it-works", "for-ai-agents", "private-deployments", "security"] as const) {
+      const markup = renderStaticPublicPage(page);
+
+      expect(markup).toContain(`rel="canonical" href="${PUBLIC_SITE_ORIGIN}/${page}"`);
+      expect(markup).toContain('type="application/ld+json"');
+      expect(markup).toContain('"@type":"WebPage"');
+      expect(markup).toContain('"@type":"BreadcrumbList"');
+      expect(markup).toContain('href="/upload"');
+    }
   });
 
   it("explains the product in plain language for people and AI agents", () => {

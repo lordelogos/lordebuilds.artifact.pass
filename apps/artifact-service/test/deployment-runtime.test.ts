@@ -51,6 +51,10 @@ describe("deployment runtime", () => {
     });
     for (const route of [
       "/",
+      "/how-it-works",
+      "/for-ai-agents",
+      "/private-deployments",
+      "/security",
       "/privacy",
       "/terms",
       "/robots.txt",
@@ -98,6 +102,10 @@ describe("deployment runtime", () => {
     ]));
     for (const route of [
       "/",
+      "/how-it-works",
+      "/for-ai-agents",
+      "/private-deployments",
+      "/security",
       "/privacy",
       "/terms",
       "/robots.txt",

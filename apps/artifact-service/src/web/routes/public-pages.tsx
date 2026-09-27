@@ -13,7 +13,14 @@ import {
   themeInteractionScript,
 } from "./public-homepage.tsx";
 
-export type PublicPage = "home" | "privacy" | "terms";
+export type PublicPage =
+  | "home"
+  | "how-it-works"
+  | "for-ai-agents"
+  | "private-deployments"
+  | "security"
+  | "privacy"
+  | "terms";
 
 export interface PublicPageConfiguration {
   readonly deploymentMode: "public" | "private";
@@ -26,12 +33,28 @@ export { PUBLIC_SITE_ORIGIN };
 const homepageDescription = "Create expiring links for Markdown, HTML, and PDF files. Share exact work between people and AI agents from the browser, CLI, or MCP.";
 
 const pagePath = (page: PublicPage): string => {
+  if (page === "how-it-works") return "/how-it-works";
+  if (page === "for-ai-agents") return "/for-ai-agents";
+  if (page === "private-deployments") return "/private-deployments";
+  if (page === "security") return "/security";
   if (page === "privacy") return "/privacy";
   if (page === "terms") return "/terms";
   return "/";
 };
 
 const pageDescription = (page: PublicPage): string => {
+  if (page === "how-it-works") {
+    return "See how ArtifactPass turns Markdown, HTML, and PDF files into temporary links for people and AI agents.";
+  }
+  if (page === "for-ai-agents") {
+    return "Share exact Markdown, HTML, and PDF files between MCP-compatible AI agents with temporary ArtifactPass links.";
+  }
+  if (page === "private-deployments") {
+    return "Deploy a private ArtifactPass app to your Cloudflare account with your domain, storage, database, and team access rules.";
+  }
+  if (page === "security") {
+    return "Learn how ArtifactPass protects temporary files, share links, agent credentials, HTML previews, and private deployments.";
+  }
   if (page === "privacy") {
     return "Learn how ArtifactPass processes identity, temporary artifacts, authorization, and operational data.";
   }
@@ -79,11 +102,135 @@ const homepageStructuredData = JSON.stringify({
   ],
 }).replaceAll("<", "\\u003c");
 
+const secondaryPageStructuredData = (page: Exclude<PublicPage, "home">): string => JSON.stringify({
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebPage",
+      "@id": `${PUBLIC_SITE_ORIGIN}${pagePath(page)}#webpage`,
+      url: `${PUBLIC_SITE_ORIGIN}${pagePath(page)}`,
+      name: pageTitle(page),
+      description: pageDescription(page),
+      isPartOf: { "@id": `${PUBLIC_SITE_ORIGIN}/#website` },
+    },
+    {
+      "@type": "BreadcrumbList",
+      itemListElement: [
+        {
+          "@type": "ListItem",
+          position: 1,
+          name: "ArtifactPass",
+          item: `${PUBLIC_SITE_ORIGIN}/`,
+        },
+        {
+          "@type": "ListItem",
+          position: 2,
+          name: pageTitle(page).replace(" · ArtifactPass", ""),
+          item: `${PUBLIC_SITE_ORIGIN}${pagePath(page)}`,
+        },
+      ],
+    },
+  ],
+}).replaceAll("<", "\\u003c");
+
 const EnvironmentNotice = () => (
   <aside className="environment-notice">
     <strong>Staging environment</strong>
     <span>Use synthetic test documents only. This deployment may be reset during release validation.</span>
   </aside>
+);
+
+const HowItWorksPage = () => (
+  <section className="document">
+    <p className="eyebrow">Temporary file sharing</p>
+    <h1>How ArtifactPass works</h1>
+    <p className="updated">One file. One temporary link. No formatting lost.</p>
+    <div className="prose">
+      <p>ArtifactPass moves a finished Markdown, HTML, or PDF file between people and AI agents. It preserves the uploaded bytes, gives the file a browser preview, and removes access after the lifetime you choose.</p>
+      <h2>1. Choose the file</h2>
+      <p>Upload one Markdown, HTML, or PDF document from the <a href="/upload">browser app</a>, or publish it from an agent workspace through the ArtifactPass CLI, MCP server, or agent skill. The public service accepts files up to 25 MB.</p>
+      <h2>2. Choose how long it should live</h2>
+      <p>Select 1 hour, 1 day, or 7 days. ArtifactPass stores the file and its metadata only for that temporary handoff. It is not a permanent drive, project history, or backup.</p>
+      <h2>3. Send the link</h2>
+      <p>The recipient opens the link in a browser. Markdown is rendered, PDFs scale to the viewer, and HTML can be read as source or previewed with JavaScript disabled. If the file contains JavaScript, the recipient can choose whether to enable it in an isolated browser preview.</p>
+      <h2>4. The link expires</h2>
+      <p>The link is a bearer capability: anyone who has it can open the file until expiry. ArtifactPass schedules the file and metadata for deletion when that time ends.</p>
+      <h2>Use it with people or agents</h2>
+      <p>A person can share from the browser. An AI agent can publish the exact output it created, return the link, and let the next person or agent inspect the same file without copy-pasting its contents into chat.</p>
+      <p><a href="/for-ai-agents">See the AI agent workflow</a>, review <a href="/security">how previews and temporary links are protected</a>, or <a href="/upload">create a temporary link</a>.</p>
+    </div>
+  </section>
+);
+
+const ForAiAgentsPage = () => (
+  <section className="document">
+    <p className="eyebrow">MCP and agent skills</p>
+    <h1>Artifact sharing for AI agents</h1>
+    <p className="updated">Pass exact files between agent workspaces and people.</p>
+    <div className="prose">
+      <p>Chat is useful for discussion, but it is a poor transport for a finished document. ArtifactPass gives MCP-compatible AI agents a narrow tool for publishing and reading Markdown, HTML, and PDF artifacts without flattening the file into a message.</p>
+      <h2>What an agent can do</h2>
+      <ul>
+        <li><strong>Publish one artifact:</strong> upload a completed file and return a temporary link.</li>
+        <li><strong>Read a shared artifact:</strong> retrieve a valid ArtifactPass link and inspect the original file.</li>
+        <li><strong>Keep the handoff scoped:</strong> use a workspace connection that expires and can be revoked.</li>
+      </ul>
+      <h2>Works across MCP-compatible clients</h2>
+      <p>The setup command asks which agent or editor you use, then writes the project-level configuration that client expects. ArtifactPass supports named flows for Codex, Claude Code, Gemini CLI, Kimi Code, Cursor, VS Code with GitHub Copilot, Antigravity, and a generic MCP client option.</p>
+      <h2>Why use a link instead of pasting?</h2>
+      <p>The recipient gets the exact file, its filename, media type, size, and remaining lifetime. HTML stays HTML, Markdown stays Markdown, and PDF layout remains intact. That makes reviews and multi-agent handoffs easier to verify.</p>
+      <h2>Install for the current project</h2>
+      <p>Run <code>pnpm dlx artifactpass</code> inside the project where you want the integration. The CLI connects that workspace to the hosted service and installs the portable MCP and agent skill configuration for the client you select.</p>
+      <p>See <a href="/how-it-works">the full sharing flow</a>, inspect the <a href={repositoryUrl}>open-source repository</a>, <a href="/security">review the security model</a>, or <a href="/upload">share a file from the browser</a>.</p>
+    </div>
+  </section>
+);
+
+const PrivateDeploymentsPage = () => (
+  <section className="document">
+    <p className="eyebrow">Cloudflare deployment</p>
+    <h1>Private ArtifactPass deployments</h1>
+    <p className="updated">Your domain, access rules, database, and object storage.</p>
+    <div className="prose">
+      <p>A private deployment places the ArtifactPass application in your Cloudflare account. The app runs on your domain while the public ArtifactPass marketing, privacy, and terms pages remain on artifactpass.com.</p>
+      <h2>What gets deployed</h2>
+      <ul>
+        <li>A Cloudflare Worker for publishing, authentication, and artifact viewing.</li>
+        <li>An R2 bucket for the files your users share.</li>
+        <li>A D1 database for temporary metadata, access state, and expiry records.</li>
+        <li>A Cloudflare Access application for the people allowed to publish.</li>
+      </ul>
+      <h2>You do not have to transfer your domain</h2>
+      <p>You connect a domain you control to Cloudflare by adding its DNS zone and updating nameservers at your registrar. The domain can remain registered with its current registrar. ArtifactPass never receives your registrar credentials.</p>
+      <h2>Control who can publish</h2>
+      <p>Use approved company email domains or specific email addresses. Include the administrator’s own email when using an address allow list. Anyone with a live ArtifactPass share link can read that artifact until it expires, but publishing remains behind your Access policy.</p>
+      <h2>Updates are deliberate</h2>
+      <p>A private deployment stays on the ArtifactPass version that created it. Run the deployment update command when you want to move that installation to a newer release.</p>
+      <p>Read the <a href={repositoryUrl}>setup and deployment instructions</a>, see <a href="/security">the security model</a>, or try the <a href="/upload">hosted public service</a> first.</p>
+    </div>
+  </section>
+);
+
+const SecurityPage = () => (
+  <section className="document">
+    <p className="eyebrow">Security model</p>
+    <h1>ArtifactPass security</h1>
+    <p className="updated">Designed for temporary handoffs, not permanent storage.</p>
+    <div className="prose">
+      <p>ArtifactPass limits what it stores, how long a share remains available, and what uploaded HTML can do in the viewer. The service is built for intentional, short-lived file handoffs.</p>
+      <h2>Temporary bearer links</h2>
+      <p>Each share URL is a bearer capability. Anyone holding the URL can read and download the file until expiry, so send it only to intended recipients. ArtifactPass cannot recall copies that a recipient has already downloaded.</p>
+      <h2>Private storage and automatic expiry</h2>
+      <p>Files are stored in a private Cloudflare R2 bucket. Metadata is kept in D1. Public links last 1 hour, 1 day, or 7 days, and cleanup is retried if an expiry operation does not complete on its first attempt.</p>
+      <h2>HTML and JavaScript previews</h2>
+      <p>Uploaded HTML opens with JavaScript disabled. If JavaScript is present, the viewer says so and lets the recipient enable or disable it. Enabled code runs inside a sandboxed browser frame with network access blocked; it does not execute on ArtifactPass servers.</p>
+      <h2>Scoped authentication</h2>
+      <p>Browser sessions and agent workspace connections expire. ArtifactPass stores one-way hashes of bearer credentials rather than their reusable plaintext values. Google and GitHub sign-in request only the identity scopes needed to identify a verified account.</p>
+      <h2>Private deployment boundaries</h2>
+      <p>Private deployments keep their R2 bucket, D1 database, Worker, and publisher rules in the operator’s Cloudflare account. Cloudflare Access protects publishing while temporary share URLs remain readable until their chosen expiry.</p>
+      <p>Read the full <a href="/privacy">privacy policy</a>, review the <a href="/terms">service terms</a>, <a href="/upload">create a temporary link</a>, or report a vulnerability privately through the <a href={repositoryUrl}>GitHub repository</a>.</p>
+    </div>
+  </section>
 );
 
 const PrivacyPage = ({ staging }: { readonly staging: boolean }) => (
@@ -160,6 +307,10 @@ const installCommandFor = (url: URL): string => {
 
 const pageContent = (page: PublicPage, url: URL, configuration: PublicPageConfiguration) => {
   const staging = url.hostname === "staging.artifactpass.com";
+  if (page === "how-it-works") return <HowItWorksPage />;
+  if (page === "for-ai-agents") return <ForAiAgentsPage />;
+  if (page === "private-deployments") return <PrivateDeploymentsPage />;
+  if (page === "security") return <SecurityPage />;
   if (page === "privacy") return <PrivacyPage staging={staging} />;
   if (page === "terms") return <TermsPage staging={staging} />;
   return <HomePage
@@ -172,6 +323,10 @@ const pageContent = (page: PublicPage, url: URL, configuration: PublicPageConfig
 };
 
 const pageTitle = (page: PublicPage): string => {
+  if (page === "how-it-works") return "How ArtifactPass Works · Temporary File Sharing";
+  if (page === "for-ai-agents") return "Artifact Sharing for AI Agents · ArtifactPass";
+  if (page === "private-deployments") return "Private ArtifactPass Deployments on Cloudflare";
+  if (page === "security") return "ArtifactPass Security · Temporary Links and Safe Previews";
   if (page === "privacy") return "Privacy · ArtifactPass";
   if (page === "terms") return "Terms · ArtifactPass";
   return "ArtifactPass | Temporary File Sharing for People and AI Agents";
@@ -184,7 +339,15 @@ export const renderRobotsTxt = (requestUrl: string): string => {
 };
 
 export const renderSitemapXml = (): string => {
-  const urls = (["/", "/privacy", "/terms"] as const)
+  const urls = ([
+    "/",
+    "/how-it-works",
+    "/for-ai-agents",
+    "/private-deployments",
+    "/security",
+    "/privacy",
+    "/terms",
+  ] as const)
     .map((path) => `  <url><loc>${PUBLIC_SITE_ORIGIN}${path}</loc></url>`)
     .join("\n");
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`;
@@ -197,6 +360,10 @@ ArtifactPass creates temporary links for Markdown, HTML, and PDF files so people
 ## Use ArtifactPass
 
 - [ArtifactPass homepage](${PUBLIC_SITE_ORIGIN}/): Learn what ArtifactPass does and create a temporary link.
+- [How ArtifactPass works](${PUBLIC_SITE_ORIGIN}/how-it-works): The browser and agent sharing flow, from upload to expiry.
+- [Artifact sharing for AI agents](${PUBLIC_SITE_ORIGIN}/for-ai-agents): MCP, agent skills, supported clients, and exact-file handoffs.
+- [Private deployments](${PUBLIC_SITE_ORIGIN}/private-deployments): Run ArtifactPass in your own Cloudflare account and domain.
+- [Security](${PUBLIC_SITE_ORIGIN}/security): Temporary links, storage, authentication, and isolated HTML previews.
 - [ArtifactPass repository](${repositoryUrl}): Install the CLI, MCP server, or agent skills and inspect the source.
 - [Privacy policy](${PUBLIC_SITE_ORIGIN}/privacy): How the hosted service handles identity, artifacts, and operational data.
 - [Terms of service](${PUBLIC_SITE_ORIGIN}/terms): Rules for using the hosted service.
@@ -298,10 +465,12 @@ const renderPage = (
         {indexable && page === "home" && <link rel="ard" href="/.well-known/ard.json" />}
         <link rel="icon" href="/artifactpass-logo.svg" type="image/svg+xml" />
         <title>{title}</title>
-        {indexable && page === "home" && (
+        {indexable && (
           <script
             type="application/ld+json"
-            dangerouslySetInnerHTML={{ __html: homepageStructuredData }}
+            dangerouslySetInnerHTML={{
+              __html: page === "home" ? homepageStructuredData : secondaryPageStructuredData(page),
+            }}
           />
         )}
         <script nonce={nonce} dangerouslySetInnerHTML={{ __html: homepageBootScript }} />

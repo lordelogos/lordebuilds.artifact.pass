@@ -2,6 +2,18 @@
   "name": "artifactpass",
   "version": "0.1.9",
   "description": "Install and connect ArtifactPass for compatible AI agent systems.",
+  "homepage": "https://artifactpass.com",
+  "keywords": [
+    "artifact-sharing",
+    "ai-agents",
+    "mcp",
+    "model-context-protocol",
+    "temporary-file-sharing",
+    "markdown",
+    "html",
+    "pdf",
+    "cloudflare"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/lordelogos/lordebuilds.artifact.pass.git"

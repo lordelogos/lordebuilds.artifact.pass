@@ -98,9 +98,12 @@ export const PublicFooter = ({
   <footer className="page-footer">
     <span>ArtifactPass</span>
     <span className="footer-links">
+      <a href="/how-it-works">How it works</a>
+      <a href="/for-ai-agents">For AI agents</a>
+      <a href="/private-deployments">Private deployments</a>
+      <a href="/security">Security</a>
       <a href={privacyHref}>Privacy</a>
       <a href={termsHref}>Terms</a>
-      <span>Built for agentic handoffs.</span>
     </span>
   </footer>
 );
