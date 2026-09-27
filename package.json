@@ -31,7 +31,7 @@
     "security:licenses": "node scripts/audit-licenses.mjs",
     "security:secrets": "node scripts/scan-secrets.mjs --history",
     "test": "vitest run --config vitest.workspace.ts",
-    "test:browser": "playwright test",
+    "test:browser": "playwright test && playwright test --config playwright-guides.config.ts",
     "test:browser:live": "playwright test tests/e2e/browser-share.spec.ts tests/e2e/end-to-end-handoff.spec.ts",
     "test:local-demo": "vitest run --config tests/local-demo.vitest.config.ts",
     "test:network": "vitest run --config tests/network.vitest.config.ts",

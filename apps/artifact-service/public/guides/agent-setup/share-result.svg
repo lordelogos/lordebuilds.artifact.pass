@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="title description">
+  <title id="title">Publish a first ArtifactPass link</title>
+  <desc id="description">An agent conversation showing a request to share report.md for one day and a successful temporary ArtifactPass link.</desc>
+  <rect width="1200" height="720" fill="#0b0c0e"/>
+  <rect x="90" y="58" width="1020" height="604" rx="28" fill="#121418" stroke="#34373d" stroke-width="2"/>
+  <text x="138" y="118" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#efefec">Project agent</text>
+  <rect x="138" y="158" width="824" height="86" rx="16" fill="#17191d"/>
+  <text x="166" y="192" font-family="Arial, sans-serif" font-size="16" fill="#797d82">You</text>
+  <text x="166" y="222" font-family="Arial, sans-serif" font-size="20" fill="#efefec">Share ./report.md for 1 day.</text>
+  <rect x="238" y="280" width="824" height="272" rx="18" fill="#17191d" stroke="#34373d"/>
+  <text x="270" y="322" font-family="Arial, sans-serif" font-size="16" fill="#797d82">ArtifactPass</text>
+  <text x="270" y="362" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#efefec">report.md is ready</text>
+  <text x="270" y="406" font-family="Arial, sans-serif" font-size="18" fill="#b8babd">Expires in 1 day · exact source retained</text>
+  <rect x="270" y="440" width="748" height="70" rx="12" fill="#0b0c0e" stroke="#557fbd"/>
+  <text x="294" y="484" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" fill="#efefec">https://artifactpass.com/a/••••••••••••••••</text>
+  <circle cx="1018" cy="594" r="20" fill="#557fbd"/><path d="M1009 594l7 7 13-15" fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="978" y="603" text-anchor="end" font-family="Arial, sans-serif" font-size="18" fill="#b8babd">Published</text>
+</svg>

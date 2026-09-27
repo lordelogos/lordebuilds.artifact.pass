@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { createArtifactApplication } from "../src/server/index";
 import {
   PUBLIC_SITE_ORIGIN,
+  guideInteractionScript,
   publicPageHeaders,
   renderAiCatalogJson,
   renderLlmsTxt,
@@ -24,6 +25,10 @@ describe("public site", () => {
     ["how-it-works", "How ArtifactPass Works", "temporary link"],
     ["for-ai-agents", "Artifact Sharing for AI Agents", "MCP-compatible"],
     ["private-deployments", "Private ArtifactPass Deployments", "Cloudflare account"],
+    ["guides", "ArtifactPass Setup Guides", "Choose the setup path"],
+    ["agent-setup-guide", "Set Up ArtifactPass for an AI Agent", "project-specific"],
+    ["private-deployment-guide", "Private ArtifactPass Deployment Guide", "artifacts.example.com"],
+    ["private-teammate-guide", "Join a Private ArtifactPass Deployment", "publisher access"],
     ["security", "ArtifactPass Security", "bearer link"],
     ["privacy", "Privacy", "Google and GitHub"],
     ["terms", "Terms", "temporary bearer link"],
@@ -45,13 +50,18 @@ describe("public site", () => {
     expect(markup).toContain('"@type":"WebSite"');
     expect(markup).toContain('"@type":"SoftwareApplication"');
     expect(renderRobotsTxt(`${PUBLIC_SITE_ORIGIN}/robots.txt`)).toContain("Allow: /");
-    expect(renderSitemapXml()).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/</loc>`);
-    expect(renderSitemapXml()).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/how-it-works</loc>`);
-    expect(renderSitemapXml()).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/for-ai-agents</loc>`);
-    expect(renderSitemapXml()).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/private-deployments</loc>`);
-    expect(renderSitemapXml()).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/security</loc>`);
-    expect(renderSitemapXml()).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/privacy</loc>`);
-    expect(renderSitemapXml()).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/terms</loc>`);
+    const sitemap = renderSitemapXml();
+    expect(sitemap).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/</loc>`);
+    expect(sitemap).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/how-it-works</loc>`);
+    expect(sitemap).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/for-ai-agents</loc>`);
+    expect(sitemap).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/private-deployments</loc>`);
+    expect(sitemap).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/guides</loc>`);
+    expect(sitemap).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/guides/agent-setup</loc>`);
+    expect(sitemap).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/guides/private-deployment</loc>`);
+    expect(sitemap).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/guides/private-teammate</loc>`);
+    expect(sitemap).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/security</loc>`);
+    expect(sitemap).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/privacy</loc>`);
+    expect(sitemap).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/terms</loc>`);
     expect(markup).toContain('rel="ai-catalog" href="/.well-known/ai-catalog.json"');
     expect(markup).toContain('rel="ard" href="/.well-known/ard.json"');
   });
@@ -96,19 +106,99 @@ describe("public site", () => {
     expect(markup).toContain('href="/how-it-works"');
     expect(markup).toContain('href="/for-ai-agents"');
     expect(markup).toContain('href="/private-deployments"');
+    expect(markup).toContain('href="/guides"');
     expect(markup).toContain('href="/security"');
   });
 
   it("gives each discovery page unique metadata and structured data", () => {
-    for (const page of ["how-it-works", "for-ai-agents", "private-deployments", "security"] as const) {
+    for (const [page, path] of [
+      ["how-it-works", "/how-it-works"],
+      ["for-ai-agents", "/for-ai-agents"],
+      ["private-deployments", "/private-deployments"],
+      ["guides", "/guides"],
+      ["agent-setup-guide", "/guides/agent-setup"],
+      ["private-deployment-guide", "/guides/private-deployment"],
+      ["private-teammate-guide", "/guides/private-teammate"],
+      ["security", "/security"],
+    ] as const) {
       const markup = renderStaticPublicPage(page);
 
-      expect(markup).toContain(`rel="canonical" href="${PUBLIC_SITE_ORIGIN}/${page}"`);
+      expect(markup).toContain(`rel="canonical" href="${PUBLIC_SITE_ORIGIN}${path}"`);
       expect(markup).toContain('type="application/ld+json"');
-      expect(markup).toContain('"@type":"WebPage"');
+      expect(markup).toMatch(/"@type":"(?:WebPage|HowTo)"/u);
       expect(markup).toContain('"@type":"BreadcrumbList"');
-      expect(markup).toContain('href="/upload"');
     }
+  });
+
+  it("publishes image-led setup guides with complete user paths", () => {
+    const guides = renderStaticPublicPage("guides");
+    const agentSetup = renderStaticPublicPage("agent-setup-guide");
+    const privateDeployment = renderStaticPublicPage("private-deployment-guide");
+    const privateTeammate = renderStaticPublicPage("private-teammate-guide");
+
+    expect(guides).toContain('href="/guides/agent-setup"');
+    expect(guides).toContain('href="/guides/private-deployment"');
+    expect(guides).toContain('href="/guides/private-teammate"');
+
+    expect(agentSetup).toContain('"@type":"HowTo"');
+    expect(agentSetup).toContain("pnpm dlx artifactpass");
+    expect(agentSetup).toContain("Connect ArtifactPass");
+    expect(agentSetup).toContain('data-copy-command=""');
+    expect(agentSetup).toContain(guideInteractionScript);
+    expect(agentSetup).toContain('/guides/agent-setup/run-command.svg');
+    expect(agentSetup).toContain('/guides/agent-setup/connect-agent.svg');
+    expect(agentSetup).toContain("If the browser does not open");
+    expect(agentSetup).not.toContain("prints the approval URL as well as trying to open it");
+
+    expect(privateDeployment).toContain('"@type":"HowTo"');
+    expect(privateDeployment).toContain("Administrator guide");
+    expect(privateDeployment).toContain("15 minutes");
+    expect(privateDeployment).toContain("30 minutes");
+    expect(privateDeployment).toContain("1 hour");
+    expect(privateDeployment).toContain("1 day");
+    expect(privateDeployment).toContain("7 days");
+    expect(privateDeployment).toContain("Edit hostname");
+    expect(privateDeployment).toContain("Edit sign-in");
+    expect(privateDeployment).toContain("Edit allowed people");
+    expect(privateDeployment).toContain("Edit link lifetimes");
+    expect(privateDeployment).toContain("Save and exit");
+    expect(privateDeployment).toContain("Approved company email domains:");
+    expect(privateDeployment).toContain("Specific email addresses:");
+    expect(privateDeployment).toContain("Existing company login");
+    expect(privateDeployment).toContain("does not create a separate ArtifactPass email-address allow list");
+    expect(privateDeployment).toMatch(/administrator[^.]*outside[^.]*domain[^.]*specific-address/iu);
+    expect(privateDeployment).toContain("example.com");
+    expect(privateDeployment).toContain("artifacts.example.com");
+    expect(privateDeployment).toContain('/guides/private-deployment/connect-domain.svg');
+
+    expect(privateTeammate).toContain('"@type":"HowTo"');
+    expect(privateTeammate).toContain("Email verification code");
+    expect(privateTeammate).toContain("Existing company login");
+    expect(privateTeammate).toContain("pnpm dlx artifactpass --base-url https://artifacts.example.com");
+    expect(privateTeammate).toContain('/guides/private-teammate/teammate-setup.svg');
+
+    for (const markup of [guides, agentSetup, privateDeployment, privateTeammate]) {
+      expect(markup).not.toContain("lordebuilds.com");
+      expect(markup).not.toContain("lordegraphics");
+      expect(markup).not.toContain("paulehiks");
+    }
+  });
+
+  it("puts every pnpm guide command inside the accessible copy control", () => {
+    const guideMarkup = [
+      renderStaticPublicPage("guides"),
+      renderStaticPublicPage("agent-setup-guide"),
+      renderStaticPublicPage("private-deployment-guide"),
+      renderStaticPublicPage("private-teammate-guide"),
+    ].join("\n");
+    const pnpmCommands = [...guideMarkup.matchAll(/<code(?:\s[^>]*)?>(pnpm dlx [^<]+)<\/code>/gu)]
+      .map((match) => match[1]);
+    const copyablePnpmCommands = [...guideMarkup.matchAll(
+      /<div class="guide-command"><code data-guide-command="">(pnpm dlx [^<]+)<\/code><button type="button" data-copy-command="" aria-label="Copy command: [^"]+">Copy<\/button><span class="visually-hidden" data-copy-status="" aria-live="polite"><\/span><\/div>/gu,
+    )].map((match) => match[1]);
+
+    expect(pnpmCommands).not.toHaveLength(0);
+    expect(copyablePnpmCommands).toEqual(pnpmCommands);
   });
 
   it("explains the product in plain language for people and AI agents", () => {
