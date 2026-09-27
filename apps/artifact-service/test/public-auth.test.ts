@@ -148,6 +148,7 @@ describe("public ArtifactPass authentication", () => {
     const body = await response.json();
     expect(body).toMatchObject({
       status: "ok",
+      artifactpass_version: expect.stringMatching(/^\d+\.\d+\.\d+(?:-rc\.\d+)?$/u),
       human_auth_mode: "artifactpass",
       authentication_configured: true,
     });

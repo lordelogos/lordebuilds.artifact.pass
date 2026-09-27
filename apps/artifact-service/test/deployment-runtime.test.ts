@@ -7,6 +7,7 @@ import pagesViteConfigSource from "../../artifact-pages/vite.config.ts?raw";
 import productionConfigSource from "../wrangler.jsonc?raw";
 import serviceViteConfigSource from "../vite.config.ts?raw";
 import { pagesFunctionRoutes } from "../src/build/static-public-assets";
+import packageMetadata from "../../../package.json" with { type: "json" };
 
 vi.mock("@cloudflare/vite-plugin", () => ({
   cloudflare: () => ({ name: "cloudflare" }),
@@ -27,6 +28,7 @@ describe("deployment runtime", () => {
     await expect(response.json()).resolves.toEqual({
       service: "lordebuilds.artifacts.share",
       status: "ok",
+      artifactpass_version: packageMetadata.version,
       human_auth_mode: "artifactpass",
       authentication_configured: false,
     });
