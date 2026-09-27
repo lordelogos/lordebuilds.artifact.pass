@@ -338,6 +338,12 @@ test.describe("local upload page preview", () => {
 
     await page.setViewportSize({ width: 340, height: 844 });
     await expect(page.getByRole("group", { name: "How long should the link work?" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "ArtifactPass setup guides" })).toHaveText("Guides");
+    expect(await page.evaluate(() => {
+      const header = document.querySelector<HTMLElement>(".site-header")?.getBoundingClientRect();
+      const actions = document.querySelector<HTMLElement>(".header-actions")?.getBoundingClientRect();
+      return header !== undefined && actions !== undefined && actions.right <= header.right;
+    })).toBe(true);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.screenshot({ path: "test-results/u4-upload-mobile.png", fullPage: true });
   });
