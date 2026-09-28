@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="description" content="How to share Markdown, HTML, and PDF files without creating permanent public URLs.">
+  <title>Share temporary files without permanent public URLs | ArtifactPass</title>
+  <link rel="stylesheet" href="case-study.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="https://artifactpass.com">ArtifactPass</a>
+      <nav class="header-nav" aria-label="Primary navigation">
+        <a href="https://artifactpass.com/guides">Setup guides</a>
+        <a href="https://github.com/lordelogos/lordebuilds.artifact.pass">GitHub</a>
+        <a class="primary-link" href="https://artifactpass.com/upload">Share a file</a>
+      </nav>
+    </div>
+  </header>
+  <nav class="series-bar" aria-label="Article series">
+    <div class="series-inner">
+      <span class="series-label">Practical guides</span>
+      <a href="share-interactive-html-prototype.html">Interactive HTML</a>
+      <a href="share-files-from-ai-agents.html">AI agent sharing</a>
+      <a href="deploy-private-artifactpass-cloudflare.html">Private deployment</a>
+      <a href="javascript-preview-security.html">JavaScript previews</a>
+      <a aria-current="page" href="share-temporary-files.html">Temporary file links</a>
+    </div>
+  </nav>
+
+  <main class="page-shell">
+    <header class="hero">
+      <p class="eyebrow">Temporary sharing</p>
+      <h1>Share a file without leaving a permanent public URL</h1>
+      <p class="deck">Publish one file for 1 hour, 1 day, or 7 days.</p>
+    </header>
+
+    <div class="article-grid">
+      <nav class="contents" aria-label="On this guide">
+        <h2>On this guide</h2>
+        <ol>
+          <li><a href="#problem">Permanent by accident</a></li>
+          <li><a href="#lifetime">Choose a lifetime</a></li>
+          <li><a href="#share">Publish and send</a></li>
+          <li><a href="#expiry">What expiry means</a></li>
+          <li><a href="#fit">When to use something else</a></li>
+          <li><a href="#faq">Questions</a></li>
+        </ol>
+      </nav>
+
+      <article class="article">
+        <div class="summary">
+          <strong>The problem</strong>
+          <p>A file needed for one review often ends up behind a URL that keeps working long after the review is over.</p>
+        </div>
+
+        <section id="problem">
+          <h2>Set the cutoff when you publish</h2>
+          <p>ArtifactPass makes the lifetime part of the publishing step and shows the remaining time in the viewer. When the cutoff arrives, the link stops serving the artifact.</p>
+        </section>
+
+        <section id="lifetime">
+          <h2>Choose the shortest useful lifetime</h2>
+          <p>The public service offers three human-scale choices. Pick based on when the recipient can realistically review the file, not on a vague desire to keep access around just in case.</p>
+
+          <div class="facts" aria-label="Artifact lifetime choices">
+            <div class="fact"><strong>1 hour</strong><span>A live call, immediate review, or same-session handoff.</span></div>
+            <div class="fact"><strong>1 day</strong><span>An asynchronous review that should be completed today or tomorrow.</span></div>
+            <div class="fact"><strong>7 days</strong><span>A wider review window across schedules or time zones.</span></div>
+            <div class="fact"><strong>No permanent option</strong><span>ArtifactPass is not a drive, archive, or long-term publishing platform.</span></div>
+          </div>
+
+          <p>A private deployment can choose which supported lifetimes appear for its users. The maximum remains 7 days. Administrators can change the offered choices by resuming the deployment and reviewing its configuration.</p>
+
+          <aside class="note">
+            <strong>Expiry is not recall</strong>
+            <p>Expiry stops the ArtifactPass URL. It cannot remove a file that a recipient already downloaded, copied, or redistributed while the link was live.</p>
+          </aside>
+        </section>
+
+        <section id="share">
+          <h2>Publish from the browser or a connected agent</h2>
+          <p>From the browser, choose one supported file, select its lifetime, and create the temporary link. Public ArtifactPass accepts Markdown, HTML, and PDF files up to 25 MB.</p>
+          <p>From an agent workspace, name the file and lifetime in the request:</p>
+
+          <div class="command">
+            <code>Share ./client-review.pdf for 7 days.</code>
+            <button class="copy-button" type="button" data-copy>Copy</button>
+          </div>
+
+          <p>The agent publishes from an approved project root and returns the URL. Only the publisher signs in. A recipient can open the live link without an ArtifactPass account.</p>
+
+          <figure class="figure">
+            <div class="figure-frame">
+              <img src="assets/upload-selected-markdown.png" alt="ArtifactPass upload page with a Markdown file selected and a one day lifetime chosen" width="1440" height="900">
+            </div>
+            <figcaption>The publisher chooses the file and cutoff together instead of creating an indefinite link by default.</figcaption>
+          </figure>
+
+          <figure class="figure">
+            <div class="figure-frame">
+              <img src="assets/viewer-markdown.png" alt="ArtifactPass viewer displaying a shared Markdown release note with its remaining lifetime" width="1440" height="900">
+            </div>
+            <figcaption>While the link is live, the viewer keeps the filename, remaining lifetime, source, and download visible.</figcaption>
+          </figure>
+
+          <h3>Treat the URL as the read credential</h3>
+          <p>The share token is carried in the URL. Anyone holding that URL can read and download the artifact until expiry. Do not place live links in public issues, analytics, durable logs, or posts intended for an unrestricted audience.</p>
+          <p>If the content needs authenticated readers rather than temporary bearer access, use a system with reader accounts and per-recipient permissions.</p>
+        </section>
+
+        <section id="expiry">
+          <h2>What happens when the link expires</h2>
+          <p>ArtifactPass evaluates access against the exact expiry time. At the cutoff, the artifact representations become unreachable and non-cacheable through the service.</p>
+          <p>Cleanup removes the source and derived objects from private R2 storage, then deletes the related metadata from D1. If a cleanup operation fails on its first attempt, the deletion state is recorded and retried. As a fallback, the public R2 lifecycle removes any remaining artifact object after 8 days, which is one day beyond the 7-day maximum link lifetime.</p>
+
+          <figure class="figure">
+            <div class="figure-frame figure-frame--card">
+              <img src="assets/viewer-expired.png" alt="ArtifactPass expired link screen explaining that the temporary cutoff has been reached" width="560" height="356">
+            </div>
+            <figcaption>After the cutoff, the same URL shows a clear expiry state instead of the artifact.</figcaption>
+          </figure>
+
+          <div class="comparison">
+            <table>
+              <thead><tr><th>State</th><th>Recipient access</th><th>Storage behavior</th></tr></thead>
+              <tbody>
+                <tr><td>Link is live</td><td>Anyone with the URL can open and download</td><td>Source and required preview data remain in private storage</td></tr>
+                <tr><td>Cutoff reached</td><td>Artifact becomes unreachable through the share URL</td><td>Cleanup is scheduled and cacheable responses are prevented</td></tr>
+                <tr><td>Cleanup completes</td><td>No ArtifactPass access remains</td><td>Artifact objects and metadata are removed</td></tr>
+                <tr><td>Recipient downloaded earlier</td><td>Their local copy remains</td><td>ArtifactPass cannot control an external copy</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="fit">
+          <h2>Use the right sharing model</h2>
+          <p>Temporary links work best when the access window is known and the artifact is a finished handoff. They are not automatically safer for every situation, and they do not replace judgment about who receives the link.</p>
+
+          <h3>Use ArtifactPass when</h3>
+          <ul>
+            <li>A reviewer needs the exact file for a limited period.</li>
+            <li>An AI agent created a finished artifact that should leave the chat context intact.</li>
+            <li>The recipient should open the file without creating an account.</li>
+            <li>A prototype or report should not become a permanent public page.</li>
+          </ul>
+
+          <h3>Use another system when</h3>
+          <ul>
+            <li>The document needs permanent storage, search, history, or recovery.</li>
+            <li>Readers need individual accounts, revocation, or an audit trail.</li>
+            <li>Several people must edit the same document.</li>
+            <li>The URL is meant to rank in search or remain a stable public reference.</li>
+            <li>The content requires a backend, database, or normal application hosting.</li>
+          </ul>
+
+          <p>The useful distinction is not private versus public. It is durable access versus a bounded handoff. ArtifactPass deliberately chooses the second.</p>
+        </section>
+
+        <section id="checklist">
+          <h2>A quick sharing checklist</h2>
+          <ol>
+            <li>Remove secrets and unnecessary personal information from the file.</li>
+            <li>Choose the shortest lifetime that still gives the recipient enough time.</li>
+            <li>Send the link through an appropriate channel to the intended people.</li>
+            <li>Explain whether the recipient should preview, inspect source, or download.</li>
+            <li>Move durable knowledge into the proper repository or documentation system after review.</li>
+          </ol>
+        </section>
+
+        <section class="faq" id="faq">
+          <h2>Common questions</h2>
+          <details>
+            <summary>Can I delete a live link early?</summary>
+            <p>The current public workflow centers on the selected expiry. Choose a short lifetime when early access removal is a requirement you cannot otherwise control.</p>
+          </details>
+          <details>
+            <summary>Are ArtifactPass links private?</summary>
+            <p>They are unlisted bearer links, not reader-authenticated private documents. Anyone with the live URL can open the artifact.</p>
+          </details>
+          <details>
+            <summary>Are shared artifacts indexed by search engines?</summary>
+            <p>Artifact viewer routes are excluded from indexing. The link should still be treated as a temporary secret because exclusion from search is not access control.</p>
+          </details>
+          <details>
+            <summary>Can I use ArtifactPass as a backup?</summary>
+            <p>No. Files are intentionally temporary and are removed after expiry. Keep the durable original in the appropriate source system.</p>
+          </details>
+        </section>
+
+        <a class="next-guide" href="share-interactive-html-prototype.html">
+          <span>Back to the first practical guide</span>
+          <strong>Share an interactive HTML prototype</strong>
+        </a>
+      </article>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <span>ArtifactPass practical guide prototype</span>
+      <a href="https://artifactpass.com/how-it-works">See how ArtifactPass works</a>
+    </div>
+  </footer>
+  <script src="case-study.js"></script>
+</body>
+</html>

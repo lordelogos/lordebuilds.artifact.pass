@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="description" content="A practical guide to sharing an interactive HTML prototype with one temporary link using ArtifactPass.">
+  <title>Share an interactive HTML prototype with one link | ArtifactPass</title>
+  <link rel="stylesheet" href="case-study.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="https://artifactpass.com">ArtifactPass</a>
+      <nav class="header-nav" aria-label="Primary navigation">
+        <a href="https://artifactpass.com/guides">Setup guides</a>
+        <a href="https://github.com/lordelogos/lordebuilds.artifact.pass">GitHub</a>
+        <a class="primary-link" href="https://artifactpass.com/upload">Share a file</a>
+      </nav>
+    </div>
+  </header>
+  <nav class="series-bar" aria-label="Article series">
+    <div class="series-inner">
+      <span class="series-label">Practical guides</span>
+      <a aria-current="page" href="share-interactive-html-prototype.html">Interactive HTML</a>
+      <a href="share-files-from-ai-agents.html">AI agent sharing</a>
+      <a href="deploy-private-artifactpass-cloudflare.html">Private deployment</a>
+      <a href="javascript-preview-security.html">JavaScript previews</a>
+      <a href="share-temporary-files.html">Temporary file links</a>
+    </div>
+  </nav>
+
+  <main class="page-shell">
+    <header class="hero">
+      <p class="eyebrow">Interactive HTML</p>
+      <h1>Share an interactive HTML prototype with one link</h1>
+      <p class="deck">Turn one self-contained HTML file into a temporary link that opens in the browser.</p>
+    </header>
+
+    <div class="article-grid">
+      <nav class="contents" aria-label="On this guide">
+        <h2>On this guide</h2>
+        <ol>
+          <li><a href="#problem">The problem</a></li>
+          <li><a href="#prepare">Prepare the file</a></li>
+          <li><a href="#publish">Publish it</a></li>
+          <li><a href="#recipient">What the recipient sees</a></li>
+          <li><a href="#limits">Important limits</a></li>
+          <li><a href="#faq">Questions</a></li>
+        </ol>
+      </nav>
+
+      <article class="article">
+        <div class="summary">
+          <strong>The problem</strong>
+          <p>An interactive HTML file is awkward to share. Attachments make people download it, chat can alter it, and deploying a site is too much work for a quick review.</p>
+        </div>
+
+        <section id="problem">
+          <h2>Share the file, not a new website</h2>
+          <p>ArtifactPass turns one HTML file into a temporary browser link. The recipient can preview it, inspect the exact source, download it, and decide whether its JavaScript runs.</p>
+
+          <div class="facts" aria-label="What the handoff includes">
+            <div class="fact"><strong>One source file</strong><span>The exact uploaded HTML remains available for source review and download.</span></div>
+            <div class="fact"><strong>One browser link</strong><span>The recipient does not need an ArtifactPass account to open a live link.</span></div>
+            <div class="fact"><strong>A clear expiry</strong><span>Choose 1 hour, 1 day, or 7 days for the public service.</span></div>
+            <div class="fact"><strong>Controlled JavaScript</strong><span>The file opens with JavaScript disabled until the recipient enables it.</span></div>
+          </div>
+        </section>
+
+        <section id="prepare">
+          <h2>Prepare a self-contained HTML file</h2>
+          <p>The strongest handoff is a single file that carries its own markup, styles, and scripts. Inline the CSS and JavaScript that belong to the demo. Avoid runtime dependencies on APIs, remote fonts, CDNs, analytics, or external images.</p>
+          <p>This is not only about portability. ArtifactPass blocks network access inside the enabled JavaScript preview. A demo that depends on a remote endpoint may still display its static shell, but the network-dependent behavior will not complete.</p>
+
+          <h3>Check the file before publishing</h3>
+          <ul>
+            <li>Open it locally and confirm the core interaction works without a build server.</li>
+            <li>Keep the file at or below the public service limit of 25 MB.</li>
+            <li>Remove secrets, tokens, private endpoints, and data that should not leave the project.</li>
+            <li>Use embedded sample data when the interaction normally depends on an API.</li>
+            <li>Give the file a meaningful name, such as <code>artifactpass-project-pulse-demo.html</code>.</li>
+          </ul>
+
+          <aside class="note">
+            <strong>Good fit</strong>
+            <p>Charts, interface prototypes, data stories, calculators, animation studies, and single-page demos are good candidates. A full application with a backend, login, routing, or live API access should use normal application hosting.</p>
+          </aside>
+        </section>
+
+        <section id="publish">
+          <h2>Publish from the browser or your agent</h2>
+          <p>For a one-off share, open the ArtifactPass upload page, choose the HTML file, select its lifetime, and create the temporary link.</p>
+          <p>If the file was produced inside an agent workspace, ask the connected agent to publish it. The request can stay natural and specific:</p>
+
+          <div class="command">
+            <code>Share ./artifactpass-project-pulse-demo.html for 1 day.</code>
+            <button class="copy-button" type="button" data-copy>Copy</button>
+          </div>
+
+          <p>The agent uses the ArtifactPass MCP tool to read the approved local file, publish it, and return the temporary HTTPS link. If ArtifactPass is not installed in that project yet, run the setup command first.</p>
+
+          <div class="command">
+            <code>pnpm dlx artifactpass</code>
+            <button class="copy-button" type="button" data-copy>Copy</button>
+          </div>
+
+          <figure class="figure">
+            <div class="figure-frame">
+              <img src="assets/upload-selected-html.png" alt="ArtifactPass upload page with a fictional project-status demo selected and a one day lifetime chosen" width="1440" height="900">
+            </div>
+            <figcaption>The browser flow confirms the exact file and lifetime before publishing.</figcaption>
+          </figure>
+
+          <figure class="figure">
+            <div class="figure-frame">
+              <img src="assets/upload-success.png" alt="ArtifactPass confirmation page showing that a temporary link is live" width="1440" height="900">
+            </div>
+            <figcaption>After publishing, ArtifactPass presents the temporary link and its exact cutoff.</figcaption>
+          </figure>
+        </section>
+
+        <section id="recipient">
+          <h2>What the recipient sees</h2>
+          <p>The viewer keeps the important actions close together: the filename, Preview and Source controls, Download, and the JavaScript control when the file contains a script.</p>
+          <p>The first preview is passive. JavaScript is disabled, so the recipient can inspect the page before allowing code to run. The banner states that the file contains JavaScript and offers a direct Enable JavaScript action. After enabling it, the same control lets the recipient disable it again.</p>
+
+          <figure class="figure">
+            <div class="figure-frame figure-frame--viewer-controls">
+              <img src="assets/viewer-javascript-disabled-mobile.png" alt="ArtifactPass HTML viewer with JavaScript disabled and an Enable button" width="390" height="260">
+            </div>
+            <figcaption>The initial viewer state names the JavaScript clearly and leaves execution off.</figcaption>
+          </figure>
+
+          <figure class="figure">
+            <div class="figure-frame">
+              <img src="assets/viewer-javascript-enabled.png" alt="ArtifactPass viewer running a fictional project-status demo after JavaScript is enabled" width="1440" height="900">
+            </div>
+            <figcaption>Once enabled, the prototype behaves normally inside the isolated preview.</figcaption>
+          </figure>
+
+          <p>Source remains available during either state. That matters for review because a recipient can compare the rendered result with the exact HTML that produced it. Download returns the original uploaded bytes rather than a rewritten preview copy.</p>
+
+          <figure class="figure">
+            <div class="figure-frame">
+              <img src="assets/viewer-source.png" alt="ArtifactPass source view showing the exact uploaded HTML" width="1440" height="900">
+            </div>
+            <figcaption>Source view stays beside Preview so the rendered behavior can be checked against the uploaded HTML.</figcaption>
+          </figure>
+
+          <div class="comparison">
+            <table>
+              <thead><tr><th>Action</th><th>What it is for</th><th>What runs</th></tr></thead>
+              <tbody>
+                <tr><td>Preview with JavaScript disabled</td><td>Read the static layout safely</td><td>No uploaded JavaScript</td></tr>
+                <tr><td>Enable JavaScript</td><td>Try the intended interaction</td><td>Code inside an isolated browser frame</td></tr>
+                <tr><td>Source</td><td>Inspect the exact HTML</td><td>No page script execution</td></tr>
+                <tr><td>Download</td><td>Keep the original file</td><td>Nothing until the recipient opens it elsewhere</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="limits">
+          <h2>Important limits to explain</h2>
+          <p>An ArtifactPass URL is a temporary bearer link. Anyone who receives the live URL can open and redistribute the artifact until it expires. Send it only to the people who should see it.</p>
+          <p>Enabling JavaScript does not turn ArtifactPass into a hosted application server. The code runs on the recipient's device, inside the browser preview. ArtifactPass does not allocate a server process for each open demo, and the preview cannot make network requests.</p>
+          <p>Expiry stops access through ArtifactPass, but it cannot remove a copy that someone already downloaded. If the work needs durable permissions, revocation, audit history, or a permanent URL, use a system designed for that job.</p>
+        </section>
+
+        <section class="faq" id="faq">
+          <h2>Common questions</h2>
+          <details>
+            <summary>Can the preview call an API?</summary>
+            <p>No. Network access is blocked inside the enabled JavaScript preview. Embed representative sample data for the review.</p>
+          </details>
+          <details>
+            <summary>Does the recipient need to sign in?</summary>
+            <p>No. Only the publisher signs in. Anyone with the live share URL can open the artifact until it expires.</p>
+          </details>
+          <details>
+            <summary>Can an agent read the HTML too?</summary>
+            <p>Yes. A connected agent can read a valid ArtifactPass link and inspect the supported source instead of relying on a screenshot or copied chat text.</p>
+          </details>
+          <details>
+            <summary>What if the prototype needs several files?</summary>
+            <p>Bundle it into one self-contained HTML file, or use normal application hosting. ArtifactPass publishes one supported artifact per link.</p>
+          </details>
+        </section>
+
+        <a class="next-guide" href="share-files-from-ai-agents.html">
+          <span>Next practical guide</span>
+          <strong>Share files directly from AI agents</strong>
+        </a>
+      </article>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <span>ArtifactPass practical guide prototype</span>
+      <a href="https://artifactpass.com/security">Read the security model</a>
+    </div>
+  </footer>
+  <script src="case-study.js"></script>
+</body>
+</html>

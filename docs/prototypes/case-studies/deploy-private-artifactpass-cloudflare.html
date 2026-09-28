@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="description" content="A practical guide to deploying ArtifactPass on a company-controlled Cloudflare account and domain.">
+  <title>Deploy a private ArtifactPass on Cloudflare | ArtifactPass</title>
+  <link rel="stylesheet" href="case-study.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="https://artifactpass.com">ArtifactPass</a>
+      <nav class="header-nav" aria-label="Primary navigation">
+        <a href="https://artifactpass.com/guides">Setup guides</a>
+        <a href="https://github.com/lordelogos/lordebuilds.artifact.pass">GitHub</a>
+        <a class="primary-link" href="https://artifactpass.com/upload">Share a file</a>
+      </nav>
+    </div>
+  </header>
+  <nav class="series-bar" aria-label="Article series">
+    <div class="series-inner">
+      <span class="series-label">Practical guides</span>
+      <a href="share-interactive-html-prototype.html">Interactive HTML</a>
+      <a href="share-files-from-ai-agents.html">AI agent sharing</a>
+      <a aria-current="page" href="deploy-private-artifactpass-cloudflare.html">Private deployment</a>
+      <a href="javascript-preview-security.html">JavaScript previews</a>
+      <a href="share-temporary-files.html">Temporary file links</a>
+    </div>
+  </nav>
+
+  <main class="page-shell">
+    <header class="hero">
+      <p class="eyebrow">Cloudflare deployment</p>
+      <h1>Deploy a private ArtifactPass without transferring your domain</h1>
+      <p class="deck">Deploy the sharing app, storage, metadata, and publisher rules inside your Cloudflare account.</p>
+    </header>
+
+    <div class="article-grid">
+      <nav class="contents" aria-label="On this guide">
+        <h2>On this guide</h2>
+        <ol>
+          <li><a href="#ownership">What stays in your account</a></li>
+          <li><a href="#domain">Connect the domain</a></li>
+          <li><a href="#deploy">Run the deployment</a></li>
+          <li><a href="#access">Choose who may publish</a></li>
+          <li><a href="#operate">Operate and update it</a></li>
+          <li><a href="#faq">Questions</a></li>
+        </ol>
+      </nav>
+
+      <article class="article">
+        <div class="summary">
+          <strong>The problem</strong>
+          <p>Cloudflare must manage the domain's DNS, but the domain registration stays with your current registrar. You do not have to transfer the domain to Cloudflare.</p>
+        </div>
+
+        <section id="ownership">
+          <h2>Keep the deployment in your Cloudflare account</h2>
+          <p>ArtifactPass creates a Worker for the app, an R2 bucket for files, a D1 database for temporary metadata and access state, and a Cloudflare Access application for publisher sign-in. The viewer runs on your private hostname.</p>
+
+          <div class="facts" aria-label="Private deployment resources">
+            <div class="fact"><strong>Worker</strong><span>Handles publishing, authentication, artifact viewing, and expiry work.</span></div>
+            <div class="fact"><strong>R2</strong><span>Stores the shared file bytes in a private bucket owned by the operator.</span></div>
+            <div class="fact"><strong>D1</strong><span>Stores temporary metadata, tokens, Access state, and deletion records.</span></div>
+            <div class="fact"><strong>Cloudflare Access</strong><span>Controls which people may publish through the private deployment.</span></div>
+          </div>
+
+          <p>The public ArtifactPass landing page, privacy policy, terms, and general guides remain on <code>artifactpass.com</code>. A customer deployment receives the actual sharing application, not a copied marketing site.</p>
+        </section>
+
+        <section id="domain">
+          <h2>Connect the domain to Cloudflare DNS</h2>
+          <p>This is the most important distinction in the setup: connecting a domain to Cloudflare does not mean transferring the registration to Cloudflare Registrar.</p>
+          <p>The domain can remain registered with the current registrar. Cloudflare asks you to add the DNS zone, reviews the existing records it found, and assigns two authoritative nameservers. You replace the current nameservers at the registrar with the Cloudflare pair.</p>
+
+          <figure class="figure">
+            <div class="figure-frame">
+              <img src="../../../apps/artifact-service/public/guides/private-deployment/connect-domain.jpg" alt="Cloudflare Connect your domain page with example.com entered as the domain name" width="1544" height="1138">
+            </div>
+            <figcaption>Choose Connect a domain. Enter a bare domain such as example.com, not a URL.</figcaption>
+          </figure>
+
+          <h3>Before changing nameservers</h3>
+          <ul>
+            <li>Compare Cloudflare's imported DNS records with the current provider.</li>
+            <li>Preserve website records such as the apex A or CNAME and the <code>www</code> record.</li>
+            <li>Preserve email records, including MX, SPF, DKIM, and DMARC.</li>
+            <li>Add any uncommon subdomains the automatic scan missed.</li>
+            <li>Do not delete working origin records simply because ArtifactPass will use a subdomain.</li>
+          </ul>
+
+          <figure class="figure">
+            <div class="figure-frame">
+              <img src="../../../apps/artifact-service/public/guides/private-deployment/review-dns.png" alt="Cloudflare DNS review showing website and mail records for example.com" width="1468" height="954">
+            </div>
+            <figcaption>Review the imported records before Cloudflare becomes authoritative for the domain.</figcaption>
+          </figure>
+
+          <p>After the nameserver change propagates, Cloudflare marks the zone Active. ArtifactPass waits for that state before it plans the application hostname.</p>
+
+          <aside class="note">
+            <strong>ArtifactPass never needs registrar credentials</strong>
+            <p>The nameserver update happens directly between you and the registrar. ArtifactPass reads the Cloudflare zone ID, domain, assigned nameservers, and activation status through the authorized Cloudflare account.</p>
+          </aside>
+        </section>
+
+        <section id="deploy">
+          <h2>Run the deployment wizard</h2>
+          <p>Start from a trusted project folder with Node.js 24 or newer and pnpm available.</p>
+
+          <div class="command">
+            <code>pnpm dlx artifactpass deploy --new</code>
+            <button class="copy-button" type="button" data-copy>Copy</button>
+          </div>
+
+          <p>The CLI prints the Cloudflare authorization link as well as attempting to open it. That lets you choose the correct browser profile when more than one Cloudflare account is signed in.</p>
+          <p>Cloudflare shows the requested permissions before approval. The deployment needs enough authority to create and update the Worker, D1 database, R2 storage, route or custom hostname, and Access configuration. It also reads account and zone information needed to build the plan.</p>
+
+          <p>When the wizard asks for the domain, enter only the bare domain:</p>
+          <div class="command">
+            <code>example.com</code>
+            <button class="copy-button" type="button" data-copy>Copy</button>
+          </div>
+          <p>Do not enter <code>https://example.com</code>. Later, the wizard proposes a deployment hostname such as <code>artifacts.example.com</code>.</p>
+        </section>
+
+        <section id="access">
+          <h2>Choose who may publish</h2>
+          <p>The private viewer and publishing application use different trust rules. Publishing is authenticated through Cloudflare Access. A live artifact URL remains a bearer link that anyone holding it can read until expiry.</p>
+          <p>The wizard supports two publisher models:</p>
+
+          <h3>Approved company email domains</h3>
+          <p>Use this when everyone with an address at a controlled company domain may publish. Enter the email domain, not a website URL. For example, use <code>example.com</code>.</p>
+
+          <h3>Specific email addresses</h3>
+          <p>Use this for a small team, a group of collaborators, or an operator who does not have a company email domain. Include the administrator's own email address in the allow list. Cloudflare Access evaluates the same list for the admin and every teammate.</p>
+
+          <figure class="figure">
+            <div class="figure-frame">
+              <img src="../../../apps/artifact-service/public/guides/private-deployment/cloudflare-access-application.png" alt="Cloudflare Access applications page showing an ArtifactPass application at artifacts.example.com with a publisher policy" width="1735" height="907">
+            </div>
+            <figcaption>ArtifactPass creates a Cloudflare Access application for the private hostname and attaches the publisher policy selected during setup.</figcaption>
+          </figure>
+
+          <p>ArtifactPass does not send invitation emails. After deployment, send approved teammates the private hostname and the project setup command.</p>
+
+          <div class="command">
+            <code>pnpm dlx artifactpass --base-url https://artifacts.example.com</code>
+            <button class="copy-button" type="button" data-copy>Copy</button>
+          </div>
+        </section>
+
+        <section id="operate">
+          <h2>Review, deploy, and operate it</h2>
+          <p>Before deployment, ArtifactPass prints a review of the hostname, Cloudflare account, domain, sign-in method, publisher rules, link lifetimes, storage, metadata, and placement. Every editable item can be revisited before approval.</p>
+
+          <p>A successful deployment prints the private URL, teammate setup command, update command, and a local receipt. Keep that receipt. It lets the CLI resume and inspect the deployment without guessing which Cloudflare resources belong together.</p>
+          <p>Private deployments are version-pinned. They do not change when a new ArtifactPass package is published. Update deliberately by resuming the hostname with the current CLI:</p>
+
+          <div class="command">
+            <code>pnpm dlx artifactpass deploy --resume artifacts.example.com</code>
+            <button class="copy-button" type="button" data-copy>Copy</button>
+          </div>
+
+          <p>The update reuses the hostname, Access application, D1 database, R2 bucket, and stored artifacts. It reviews the plan, applies required migrations, and redeploys the Worker.</p>
+
+          <figure class="figure">
+            <div class="figure-frame">
+              <img src="assets/upload-selected-html.png" alt="ArtifactPass upload page with an HTML file selected and a one day lifetime chosen" width="1440" height="900">
+            </div>
+            <figcaption>The private hostname serves the same focused sharing application, while the marketing site and policies remain on artifactpass.com.</figcaption>
+          </figure>
+        </section>
+
+        <section class="faq" id="faq">
+          <h2>Common questions</h2>
+          <details>
+            <summary>Do I have to move my domain registration to Cloudflare?</summary>
+            <p>No. The registration can remain with its current registrar. You connect the DNS zone by changing the authoritative nameservers.</p>
+          </details>
+          <details>
+            <summary>Can I use a domain that already has a website and email?</summary>
+            <p>Yes. Preserve the existing DNS records during the Cloudflare import. ArtifactPass uses a dedicated hostname such as artifacts.example.com.</p>
+          </details>
+          <details>
+            <summary>Does adding someone to Access send an invitation?</summary>
+            <p>No. Share the private URL and setup command separately. The allow rule controls whether Cloudflare Access completes sign-in.</p>
+          </details>
+          <details>
+            <summary>Can I edit the allow list later?</summary>
+            <p>Yes. Resume the deployment and edit publisher access during review, or manage the corresponding Access policy in Cloudflare with care.</p>
+          </details>
+        </section>
+
+        <a class="next-guide" href="javascript-preview-security.html">
+          <span>Next practical guide</span>
+          <strong>Understand JavaScript previews</strong>
+        </a>
+      </article>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <span>ArtifactPass practical guide prototype</span>
+      <a href="https://artifactpass.com/guides/private-deployment">Open the live administrator guide</a>
+    </div>
+  </footer>
+  <script src="case-study.js"></script>
+</body>
+</html>
