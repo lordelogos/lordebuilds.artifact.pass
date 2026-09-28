@@ -8,7 +8,7 @@ import {
   homepageInteractionScript,
   publicStyles,
   themeInteractionScript,
-} from "../web/routes/public-homepage.tsx";
+} from "./public-homepage.tsx";
 import {
   PUBLIC_SITE_ORIGIN,
   guideInteractionScript,
@@ -17,7 +17,11 @@ import {
   renderRobotsTxt,
   renderSitemapXml,
   renderStaticPublicPage,
-} from "../web/routes/public-pages.tsx";
+} from "./public-pages.tsx";
+import {
+  practicalGuideMetadata,
+  practicalGuidePageNames,
+} from "./practical-guides.tsx";
 
 const contentHash = (content: string): string =>
   `'sha256-${createHash("sha256").update(content).digest("base64")}'`;
@@ -47,6 +51,7 @@ const staticHeaders = [
   "/guides/agent-setup",
   "/guides/private-deployment",
   "/guides/private-teammate",
+  ...practicalGuidePageNames.map((page) => practicalGuideMetadata(page).path),
   "/security",
   `/privacy`,
   `/terms`,
@@ -102,6 +107,10 @@ export const staticPublicAssets = (outputDirectory: string): Plugin => ({
       writeFile(resolve(outputDirectory, "guides", "agent-setup.html"), renderStaticPublicPage("agent-setup-guide")),
       writeFile(resolve(outputDirectory, "guides", "private-deployment.html"), renderStaticPublicPage("private-deployment-guide")),
       writeFile(resolve(outputDirectory, "guides", "private-teammate.html"), renderStaticPublicPage("private-teammate-guide")),
+      ...practicalGuidePageNames.map((page) => writeFile(
+        resolve(outputDirectory, `${practicalGuideMetadata(page).path.slice(1)}.html`),
+        renderStaticPublicPage(page),
+      )),
       writeFile(resolve(outputDirectory, "security.html"), renderStaticPublicPage("security")),
       writeFile(resolve(outputDirectory, "privacy.html"), renderStaticPublicPage("privacy")),
       writeFile(resolve(outputDirectory, "terms.html"), renderStaticPublicPage("terms")),

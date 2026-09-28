@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="title description">
+  <title id="title">Choose Connect a domain in Cloudflare</title>
+  <desc id="description">Cloudflare Add a site screen with Connect a domain highlighted and Transfer a domain marked as the wrong choice.</desc>
+  <rect width="1200" height="720" fill="#f7f7f8"/>
+  <text x="90" y="92" font-family="Arial, sans-serif" font-size="44" font-weight="700" fill="#111827">Add a site</text>
+  <text x="90" y="132" font-family="Arial, sans-serif" font-size="20" fill="#6b7280">Connect example.com without moving its registration.</text>
+  <rect x="80" y="180" width="1040" height="130" rx="18" fill="#fff7ed" stroke="#f97316" stroke-width="4"/>
+  <circle cx="135" cy="245" r="25" fill="#f97316"/><path d="M122 245h26M135 232v26" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+  <text x="180" y="235" font-family="Arial, sans-serif" font-size="28" font-weight="700" fill="#111827">Connect a domain</text>
+  <text x="180" y="270" font-family="Arial, sans-serif" font-size="20" fill="#4b5563">Correct. Keep the existing registrar and connect Cloudflare DNS.</text>
+  <rect x="80" y="338" width="1040" height="130" rx="18" fill="#fff" stroke="#d1d5db" stroke-width="2"/>
+  <circle cx="135" cy="403" r="25" fill="#e5e7eb"/><path d="M124 392l22 22M146 392l-22 22" stroke="#dc2626" stroke-width="4" stroke-linecap="round"/>
+  <text x="180" y="393" font-family="Arial, sans-serif" font-size="28" font-weight="700" fill="#111827">Transfer a domain</text>
+  <text x="180" y="428" font-family="Arial, sans-serif" font-size="20" fill="#4b5563">Do not choose this. ArtifactPass does not move registration or billing.</text>
+  <rect x="80" y="496" width="1040" height="130" rx="18" fill="#fff" stroke="#d1d5db" stroke-width="2"/>
+  <text x="120" y="548" font-family="Arial, sans-serif" font-size="19" fill="#6b7280">Domain name</text>
+  <rect x="120" y="566" width="920" height="46" rx="9" fill="#f3f4f6"/><text x="142" y="596" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="19" fill="#111827">example.com</text>
+  <text x="80" y="680" font-family="Arial, sans-serif" font-size="17" fill="#6b7280">Cloudflare may adjust labels or spacing over time.</text>
+</svg>

@@ -5,8 +5,8 @@ import { expect, test, type Route } from "@playwright/test";
 
 import { popupCancelledScript } from "../../apps/artifact-service/src/web/popup-cancel";
 import { popupCompleteScript } from "../../apps/artifact-service/src/web/popup-complete";
-import { homepageInteractionScript, publicStyles } from "../../apps/artifact-service/src/web/routes/public-homepage";
-import { publicPageHeaders } from "../../apps/artifact-service/src/web/routes/public-pages";
+import { homepageInteractionScript, publicStyles } from "../../apps/artifact-pages/src/public-homepage";
+import { publicPageHeaders } from "../../apps/artifact-pages/src/public-pages";
 
 const origin = "http://artifactpass.test";
 const serviceRoot = resolve(import.meta.dirname, "../../apps/artifact-service");

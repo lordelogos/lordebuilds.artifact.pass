@@ -11,7 +11,7 @@ import {
   renderRobotsTxt,
   renderSitemapXml,
   renderStaticPublicPage,
-} from "../src/web/routes/public-pages";
+} from "../../artifact-pages/src/public-pages";
 
 const requestFrom = (origin: string, path: string): Promise<Response> =>
   Promise.resolve(createArtifactApplication().fetch(

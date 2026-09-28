@@ -35,7 +35,7 @@ export const privateCloudflareContent = `<div class="summary">
 
           <figure class="figure">
             <div class="figure-frame">
-              <img src="../../../apps/artifact-service/public/guides/private-deployment/cloudflare-access-application.png" alt="Cloudflare Access applications page showing an ArtifactPass application and publisher policy" width="1735" height="907">
+              <img src="/guides/private-deployment/cloudflare-access-application.png" alt="Cloudflare Access applications page showing an ArtifactPass application and publisher policy" width="1735" height="907">
             </div>
             <figcaption>The Access application protects the private hostname's publishing routes. Artifact links keep their own temporary read access.</figcaption>
           </figure>

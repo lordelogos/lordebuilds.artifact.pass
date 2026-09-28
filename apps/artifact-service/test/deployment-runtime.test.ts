@@ -6,7 +6,7 @@ import pagesConfigSource from "../../artifact-pages/wrangler.jsonc?raw";
 import pagesViteConfigSource from "../../artifact-pages/vite.config.ts?raw";
 import productionConfigSource from "../wrangler.jsonc?raw";
 import serviceViteConfigSource from "../vite.config.ts?raw";
-import { pagesFunctionRoutes } from "../src/build/static-public-assets";
+import { pagesFunctionRoutes } from "../../artifact-pages/src/static-public-assets";
 import packageMetadata from "../../../package.json" with { type: "json" };
 
 vi.mock("@cloudflare/vite-plugin", () => ({
@@ -133,6 +133,10 @@ describe("deployment runtime", () => {
     expect(pagesViteConfigSource).toContain("staticPublicAssets(outputDirectory)");
     expect(pagesViteConfigSource).toContain('"homepage-validation"');
     expect(pagesViteConfigSource).toContain('new URL("./dist"');
+    expect(pagesViteConfigSource).toContain('new URL("./public"');
+    expect(pagesViteConfigSource).toContain('from "./src/static-public-assets.ts"');
+    expect(pagesViteConfigSource).not.toContain("../artifact-service/public");
+    expect(pagesViteConfigSource).not.toContain("../artifact-service/src/build/static-public-assets.ts");
     expect(serviceViteConfigSource).not.toContain("staticPublicAssets");
     expect(serviceViteConfigSource).not.toContain("homepage-validation");
   });
