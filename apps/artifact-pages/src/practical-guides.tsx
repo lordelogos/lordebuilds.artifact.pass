@@ -171,7 +171,6 @@ const htmlAttribute = (value: string): string => value
 const articleBody = (guide: PracticalGuideMetadata): string => {
   return guide.source
     .replaceAll('src="assets/', 'src="/guides/practical/')
-    .replaceAll('src="../../../apps/artifact-service/public/guides/private-deployment/', 'src="/guides/private-deployment/')
     .replace(
       /<div class="command">\s*<code>([\s\S]*?)<\/code>\s*<button class="copy-button" type="button" data-copy>Copy<\/button>\s*<\/div>/gu,
       (_value, command: string) => `<div class="guide-command practical-command"><code data-guide-command="">${command}</code><button type="button" data-copy-command="" aria-label="Copy command: ${htmlAttribute(command)}">Copy</button><span class="visually-hidden" data-copy-status="" aria-live="polite"></span></div>`,

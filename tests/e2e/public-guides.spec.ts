@@ -214,9 +214,9 @@ test("uses only approved documentation namespaces in guides and generated assets
   }
 
   for (const directory of [
-    "apps/artifact-service/public/guides/agent-setup",
-    "apps/artifact-service/public/guides/private-deployment",
-    "apps/artifact-service/public/guides/private-teammate",
+    "apps/artifact-pages/public/guides/agent-setup",
+    "apps/artifact-pages/public/guides/private-deployment",
+    "apps/artifact-pages/public/guides/private-teammate",
     "apps/artifact-pages/dist/guides",
   ]) {
     values.push(...await readMatchingFiles(resolve(directory)));
@@ -237,10 +237,10 @@ test("uses only approved documentation namespaces in guides and generated assets
 });
 
 test("keeps guide illustrations free of decorative terminal and status icons", async () => {
-  const runCommand = await readFile(resolve("apps/artifact-service/public/guides/agent-setup/run-command.svg"), "utf8");
-  const shareResult = await readFile(resolve("apps/artifact-service/public/guides/agent-setup/share-result.svg"), "utf8");
-  const startDeployment = await readFile(resolve("apps/artifact-service/public/guides/private-deployment/start-deployment.svg"), "utf8");
-  const connectAgent = await readFile(resolve("apps/artifact-service/public/guides/agent-setup/connect-agent.svg"), "utf8");
+  const runCommand = await readFile(resolve("apps/artifact-pages/public/guides/agent-setup/run-command.svg"), "utf8");
+  const shareResult = await readFile(resolve("apps/artifact-pages/public/guides/agent-setup/share-result.svg"), "utf8");
+  const startDeployment = await readFile(resolve("apps/artifact-pages/public/guides/private-deployment/start-deployment.svg"), "utf8");
+  const connectAgent = await readFile(resolve("apps/artifact-pages/public/guides/agent-setup/connect-agent.svg"), "utf8");
 
   expect(runCommand).not.toContain("<circle");
   expect(runCommand).not.toContain("◇");

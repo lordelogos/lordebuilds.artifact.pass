@@ -1,0 +1,122 @@
+import { PlusSignIcon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
+
+import { ArtifactPassIcon, GitHubIcon, ThemeIcon } from "./brand-icons.tsx";
+
+export type PublicTheme = "dark" | "light";
+
+export const readPublicTheme = (): PublicTheme => {
+  if (typeof window === "undefined") return "dark";
+  const requested = new URLSearchParams(window.location.search).get("theme");
+  if (requested === "dark" || requested === "light") return requested;
+  const stored = window.localStorage.getItem("artifactpass-theme");
+  return stored === "light" ? "light" : "dark";
+};
+
+export const applyPublicTheme = (theme: PublicTheme): void => {
+  document.documentElement.dataset.theme = theme;
+  window.localStorage.setItem("artifactpass-theme", theme);
+  document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.setAttribute(
+    "content",
+    theme === "light" ? "#f3f3f0" : "#0b0c0e",
+  );
+};
+
+export interface PublicNavigationProps {
+  readonly homeHref?: string;
+  readonly guidesHref?: string;
+  readonly howHref?: string;
+  readonly installHref?: string;
+  readonly onThemeToggle?: () => void;
+  readonly theme?: PublicTheme;
+}
+
+export const PublicNavigation = ({
+  homeHref = "/",
+  guidesHref = "/guides",
+  howHref = "/#how",
+  installHref = "/#install",
+  onThemeToggle,
+  theme,
+}: PublicNavigationProps) => {
+  const isLight = theme === "light";
+  const targetTheme = isLight ? "dark" : "light";
+
+  return (
+    <header className="site-header">
+      <a className="brand" href={homeHref}>
+        <ArtifactPassIcon className="brand-mark" aria-hidden="true" focusable="false" />
+        ArtifactPass
+      </a>
+      <div className="header-actions">
+        <a
+          className="header-action header-action--how"
+          href={howHref}
+          aria-label="How ArtifactPass works"
+        >
+          <span className="header-action-label">How it works</span>
+        </a>
+        <span className="header-divider header-divider--how" aria-hidden="true" />
+        <a
+          className="header-action header-action--guides"
+          href={guidesHref}
+          aria-label="ArtifactPass setup guides"
+        >
+          <span className="header-action-label">Guides</span>
+        </a>
+        <span className="header-divider" aria-hidden="true" />
+        <a
+          className="header-action header-action--github"
+          href="https://github.com/lordelogos/lordebuilds.artifact.pass"
+          aria-label="View ArtifactPass on GitHub"
+          title="GitHub"
+        >
+          <GitHubIcon aria-hidden="true" focusable="false" />
+          <span className="header-action-label">GitHub</span>
+        </a>
+        <span className="header-divider" aria-hidden="true" />
+        <button
+          className="theme-toggle"
+          id="theme-toggle"
+          type="button"
+          aria-label={`Switch to ${targetTheme} mode`}
+          aria-pressed={!isLight}
+          title={`Switch to ${targetTheme} mode`}
+          onClick={onThemeToggle}
+        >
+          <ThemeIcon className="theme-symbol" aria-hidden="true" focusable="false" />
+        </button>
+        <span className="header-divider" aria-hidden="true" />
+        <a className="header-action header-action--primary" href={installHref} aria-label="Set up ArtifactPass" title="Set up">
+          <HugeiconsIcon icon={PlusSignIcon} aria-hidden="true" />
+          <span className="header-action-label">Set up</span>
+        </a>
+      </div>
+    </header>
+  );
+};
+
+export interface PublicFooterProps {
+  readonly guidesHref?: string;
+  readonly privacyHref?: string;
+  readonly termsHref?: string;
+}
+
+export const PublicFooter = ({
+  guidesHref = "/guides",
+  privacyHref = "/privacy",
+  termsHref = "/terms",
+}: PublicFooterProps) => (
+  <footer className="page-footer">
+    <span>ArtifactPass</span>
+    <span className="footer-links">
+      <a href="/how-it-works">How it works</a>
+      <a href={guidesHref}>Guides</a>
+      <a href="/for-ai-agents">For AI agents</a>
+      <a href="/private-deployments">Private deployments</a>
+      <a href="/security">Security</a>
+      <a href={privacyHref}>Privacy</a>
+      <a href={termsHref}>Terms</a>
+    </span>
+  </footer>
+);

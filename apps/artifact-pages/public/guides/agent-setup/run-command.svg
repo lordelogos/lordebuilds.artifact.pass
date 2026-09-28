@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="title description">
+  <title id="title">Run ArtifactPass setup and choose an agent</title>
+  <desc id="description">A dark terminal showing pnpm dlx artifactpass followed by supported AI agent choices.</desc>
+  <rect width="1200" height="720" fill="#0b0c0e"/>
+  <rect x="44" y="44" width="1112" height="632" rx="24" fill="#121418" stroke="#34373d" stroke-width="2"/>
+  <text x="86" y="91" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" fill="#797d82">Terminal · ~/your-project</text>
+  <text x="86" y="148" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="24" fill="#efefec">pnpm dlx artifactpass</text>
+  <text x="86" y="214" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="22" font-weight="700" fill="#efefec">Which agent are you setting up?</text>
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="20" fill="#b8babd">
+    <text x="86" y="264">1. Codex</text><text x="86" y="304">2. Claude Code</text>
+    <text x="86" y="344">3. Gemini CLI</text><text x="86" y="384">4. Kimi Code</text>
+    <text x="540" y="264">5. Cursor</text><text x="540" y="304">6. VS Code / GitHub Copilot</text>
+    <text x="540" y="344">7. Antigravity</text><text x="540" y="384">8. Other MCP client</text>
+  </g>
+  <rect x="86" y="442" width="1028" height="1" fill="#34373d"/>
+  <text x="86" y="492" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" fill="#797d82">Setup scope</text>
+  <text x="86" y="534" font-family="Arial, sans-serif" font-size="22" fill="#efefec">Only this project will receive the selected agent configuration.</text>
+  <text x="86" y="575" font-family="Arial, sans-serif" font-size="18" fill="#b8babd">Run the command again from another project to install ArtifactPass there.</text>
+  <rect x="86" y="616" width="6" height="26" fill="#efefec"/>
+</svg>
