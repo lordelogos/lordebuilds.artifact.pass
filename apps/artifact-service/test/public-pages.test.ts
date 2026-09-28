@@ -25,10 +25,15 @@ describe("public site", () => {
     ["how-it-works", "How ArtifactPass Works", "temporary link"],
     ["for-ai-agents", "Artifact Sharing for AI Agents", "MCP-compatible"],
     ["private-deployments", "Private ArtifactPass Deployments", "Cloudflare account"],
-    ["guides", "ArtifactPass Setup Guides", "Choose the setup path"],
-    ["agent-setup-guide", "Set Up ArtifactPass for an AI Agent", "project-specific"],
+    ["guides", "ArtifactPass Setup Guides", "Set up ArtifactPass, then use it well"],
+    ["agent-setup-guide", "Set Up ArtifactPass for an AI Agent", "approves projects explicitly"],
     ["private-deployment-guide", "Private ArtifactPass Deployment Guide", "artifacts.example.com"],
     ["private-teammate-guide", "Join a Private ArtifactPass Deployment", "publisher access"],
+    ["agent-sharing-guide", "Share Files From AI Agents", "finished file"],
+    ["temporary-sharing-guide", "Create an Expiring File Link", "1 hour"],
+    ["private-cloudflare-guide", "Private Artifact Sharing on Cloudflare", "Cloudflare account"],
+    ["interactive-html-guide", "Share an Interactive HTML Prototype", "self-contained HTML"],
+    ["javascript-preview-guide", "Preview HTML With JavaScript Safely Disabled", "recipient enables it"],
     ["security", "ArtifactPass Security", "bearer link"],
     ["privacy", "Privacy", "Google and GitHub"],
     ["terms", "Terms", "temporary bearer link"],
@@ -59,6 +64,11 @@ describe("public site", () => {
     expect(sitemap).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/guides/agent-setup</loc>`);
     expect(sitemap).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/guides/private-deployment</loc>`);
     expect(sitemap).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/guides/private-teammate</loc>`);
+    expect(sitemap).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/guides/share-files-from-ai-agents</loc>`);
+    expect(sitemap).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/guides/temporary-file-sharing</loc>`);
+    expect(sitemap).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/guides/private-file-sharing-cloudflare</loc>`);
+    expect(sitemap).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/guides/share-interactive-html</loc>`);
+    expect(sitemap).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/guides/safe-javascript-preview</loc>`);
     expect(sitemap).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/security</loc>`);
     expect(sitemap).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/privacy</loc>`);
     expect(sitemap).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/terms</loc>`);
@@ -119,15 +129,74 @@ describe("public site", () => {
       ["agent-setup-guide", "/guides/agent-setup"],
       ["private-deployment-guide", "/guides/private-deployment"],
       ["private-teammate-guide", "/guides/private-teammate"],
+      ["agent-sharing-guide", "/guides/share-files-from-ai-agents"],
+      ["temporary-sharing-guide", "/guides/temporary-file-sharing"],
+      ["private-cloudflare-guide", "/guides/private-file-sharing-cloudflare"],
+      ["interactive-html-guide", "/guides/share-interactive-html"],
+      ["javascript-preview-guide", "/guides/safe-javascript-preview"],
       ["security", "/security"],
     ] as const) {
       const markup = renderStaticPublicPage(page);
 
       expect(markup).toContain(`rel="canonical" href="${PUBLIC_SITE_ORIGIN}${path}"`);
       expect(markup).toContain('type="application/ld+json"');
-      expect(markup).toMatch(/"@type":"(?:WebPage|HowTo)"/u);
+      expect(markup).toMatch(/"@type":"(?:WebPage|HowTo|Article)"/u);
       expect(markup).toContain('"@type":"BreadcrumbList"');
     }
+  });
+
+  it("publishes practical guides as image-led articles with unique search intent", () => {
+    const guides = renderStaticPublicPage("guides");
+    const practicalPages = [
+      ["agent-sharing-guide", "/guides/share-files-from-ai-agents", "share files from ai agents"],
+      ["temporary-sharing-guide", "/guides/temporary-file-sharing", "temporary file sharing"],
+      ["private-cloudflare-guide", "/guides/private-file-sharing-cloudflare", "private file sharing on cloudflare"],
+      ["interactive-html-guide", "/guides/share-interactive-html", "share interactive html"],
+      ["javascript-preview-guide", "/guides/safe-javascript-preview", "safe html preview"],
+    ] as const;
+
+    expect(guides).toContain("Set up ArtifactPass");
+    expect(guides).toContain("Use ArtifactPass");
+
+    for (const [page, path, intent] of practicalPages) {
+      const markup = renderStaticPublicPage(page);
+      expect(guides).toContain(`href="${path}"`);
+      expect(markup.toLowerCase()).toContain(intent);
+      expect(markup).toContain('"@type":"Article"');
+      expect(markup).toContain('property="og:type" content="article"');
+      expect(markup).toContain('property="og:image" content="https://artifactpass.com/guides/');
+      expect(markup).toContain('name="twitter:card" content="summary_large_image"');
+      expect(markup).toContain('class="practical-series"');
+      expect(markup).toContain('aria-label="On this guide"');
+      expect(markup).toContain('href="/guides"');
+      for (const match of markup.matchAll(/<a href="(#[^"]+)">/gu)) {
+        const anchor = match[1];
+        if (anchor !== undefined) expect(markup).toContain(`id="${anchor.slice(1)}"`);
+      }
+    }
+  });
+
+  it("keeps setup instructions in the canonical setup guides", () => {
+    const agentSharing = renderStaticPublicPage("agent-sharing-guide");
+    const interactiveHtml = renderStaticPublicPage("interactive-html-guide");
+    const privateCloudflare = renderStaticPublicPage("private-cloudflare-guide");
+
+    expect(agentSharing).toContain('href="/guides/agent-setup"');
+    expect(agentSharing.match(/href="\/guides\/agent-setup"/gu)).toHaveLength(1);
+    expect(agentSharing).not.toContain("Set up ArtifactPass in the project");
+    expect(agentSharing).not.toContain("pnpm dlx artifactpass configure");
+    expect(agentSharing).not.toContain("pnpm dlx artifactpass doctor");
+    expect(interactiveHtml).toContain('href="/guides/agent-setup"');
+    expect(interactiveHtml.match(/href="\/guides\/agent-setup"/gu)).toHaveLength(1);
+    expect(interactiveHtml).not.toContain("pnpm dlx artifactpass</code>");
+
+    expect(privateCloudflare).toContain('href="/guides/private-deployment"');
+    expect(privateCloudflare).toContain('href="/guides/private-teammate"');
+    expect(privateCloudflare.match(/href="\/guides\/private-deployment"/gu)).toHaveLength(1);
+    expect(privateCloudflare.match(/href="\/guides\/private-teammate"/gu)).toHaveLength(1);
+    expect(privateCloudflare).not.toContain("pnpm dlx artifactpass deploy --new");
+    expect(privateCloudflare).not.toContain("pnpm dlx artifactpass deploy --resume");
+    expect(privateCloudflare).not.toContain("Connect the domain to Cloudflare DNS");
   });
 
   it("publishes image-led setup guides with complete user paths", () => {
@@ -148,6 +217,8 @@ describe("public site", () => {
     expect(agentSetup).toContain('/guides/agent-setup/run-command.svg');
     expect(agentSetup).toContain('/guides/agent-setup/connect-agent.svg');
     expect(agentSetup).toContain("If the browser does not open");
+    expect(agentSetup).toContain("prints the MCP configuration file and skills directory");
+    expect(agentSetup).toContain("limits local file access to the project roots you explicitly set up");
     expect(agentSetup).not.toContain("prints the approval URL as well as trying to open it");
 
     expect(privateDeployment).toContain('"@type":"HowTo"');
@@ -165,6 +236,7 @@ describe("public site", () => {
     expect(privateDeployment).toContain("Approved company email domains:");
     expect(privateDeployment).toContain("Specific email addresses:");
     expect(privateDeployment).toContain("Existing company login");
+    expect(privateDeployment).toContain("Check DNSSEC before changing nameservers");
     expect(privateDeployment).toContain("does not create a separate ArtifactPass email-address allow list");
     expect(privateDeployment).toMatch(/administrator[^.]*outside[^.]*domain[^.]*specific-address/iu);
     expect(privateDeployment).toContain("example.com");
@@ -177,6 +249,8 @@ describe("public site", () => {
     expect(privateTeammate).toContain('"@type":"HowTo"');
     expect(privateTeammate).toContain("Email verification code");
     expect(privateTeammate).toContain("Existing company login");
+    expect(privateTeammate).toContain("Cloudflare intentionally shows the same");
+    expect(privateTeammate).toContain("prints their paths for you to register manually");
     expect(privateTeammate).toContain("pnpm dlx artifactpass --base-url https://artifacts.example.com");
     expect(privateTeammate).toContain('/guides/private-teammate/teammate-setup.svg');
 

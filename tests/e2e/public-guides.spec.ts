@@ -8,6 +8,11 @@ const guideRoutes = [
   "/guides/agent-setup",
   "/guides/private-deployment",
   "/guides/private-teammate",
+  "/guides/share-files-from-ai-agents",
+  "/guides/temporary-file-sharing",
+  "/guides/private-file-sharing-cloudflare",
+  "/guides/share-interactive-html",
+  "/guides/safe-javascript-preview",
 ] as const;
 
 const commandButton = (page: Page) => page.locator(".guide-command").filter({
@@ -97,6 +102,19 @@ test("moves through the complete setup-guide journey without dead ends", async (
   const teammateNavigation = page.getByRole("navigation", { name: "Guide navigation" });
   await expect(teammateNavigation.locator('a[href="/guides/private-deployment"]')).toBeVisible();
   await teammateNavigation.locator('a[href="/guides"]').click();
+  await expect(page).toHaveURL(/\/guides$/u);
+});
+
+test("moves through the practical guide series without leaving the guide hub", async ({ page }) => {
+  await page.goto("/guides");
+  await page.getByRole("link", { name: /Share files from AI agents/u }).click();
+  await expect(page).toHaveURL(/\/guides\/share-files-from-ai-agents$/u);
+
+  const series = page.getByRole("navigation", { name: "Practical guide series" });
+  await expect(series.getByRole("link", { name: "AI agent sharing" })).toHaveAttribute("aria-current", "page");
+  await series.getByRole("link", { name: "Temporary links" }).click();
+  await expect(page).toHaveURL(/\/guides\/temporary-file-sharing$/u);
+  await page.getByRole("link", { name: "All guides" }).first().click();
   await expect(page).toHaveURL(/\/guides$/u);
 });
 
