@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="description" content="How to share exact Markdown, HTML, and PDF files from Codex, Claude Code, Gemini CLI, and other MCP-compatible agents.">
+  <title>Share files directly from AI agents | ArtifactPass</title>
+  <link rel="stylesheet" href="case-study.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="https://artifactpass.com">ArtifactPass</a>
+      <nav class="header-nav" aria-label="Primary navigation">
+        <a href="https://artifactpass.com/guides">Setup guides</a>
+        <a href="https://github.com/lordelogos/lordebuilds.artifact.pass">GitHub</a>
+        <a class="primary-link" href="https://artifactpass.com/upload">Share a file</a>
+      </nav>
+    </div>
+  </header>
+  <nav class="series-bar" aria-label="Article series">
+    <div class="series-inner">
+      <span class="series-label">Practical guides</span>
+      <a href="share-interactive-html-prototype.html">Interactive HTML</a>
+      <a aria-current="page" href="share-files-from-ai-agents.html">AI agent sharing</a>
+      <a href="deploy-private-artifactpass-cloudflare.html">Private deployment</a>
+      <a href="javascript-preview-security.html">JavaScript previews</a>
+      <a href="share-temporary-files.html">Temporary file links</a>
+    </div>
+  </nav>
+
+  <main class="page-shell">
+    <header class="hero">
+      <p class="eyebrow">Agent workflows</p>
+      <h1>Share exact files from Codex, Claude, Gemini, and other agents</h1>
+      <p class="deck">Let an agent publish a finished Markdown, HTML, or PDF file without flattening it into chat.</p>
+    </header>
+
+    <div class="article-grid">
+      <nav class="contents" aria-label="On this guide">
+        <h2>On this guide</h2>
+        <ol>
+          <li><a href="#why">Why chat is not enough</a></li>
+          <li><a href="#setup">Set up one project</a></li>
+          <li><a href="#connect">Connect safely</a></li>
+          <li><a href="#publish">Publish a file</a></li>
+          <li><a href="#handoff">Complete the handoff</a></li>
+          <li><a href="#faq">Questions</a></li>
+        </ol>
+      </nav>
+
+      <article class="article">
+        <div class="summary">
+          <strong>The problem</strong>
+          <p>Chat can truncate a finished file, change its formatting, or turn HTML into an escaped code block. The recipient cannot easily verify that they received the original artifact.</p>
+        </div>
+
+        <section id="why">
+          <h2>Give the finished file a proper handoff</h2>
+          <p>ArtifactPass lets the agent publish one completed file and return a temporary link. The recipient sees the filename, file type, size, preview, source when supported, and remaining lifetime.</p>
+
+          <div class="comparison">
+            <table>
+              <thead><tr><th>Handoff</th><th>What arrives</th><th>Verification</th></tr></thead>
+              <tbody>
+                <tr><td>Paste into chat</td><td>A message representation</td><td>Hard to prove formatting and bytes stayed intact</td></tr>
+                <tr><td>Repository commit</td><td>A durable code change</td><td>Strong history, but too heavy for every review artifact</td></tr>
+                <tr><td>ArtifactPass link</td><td>The exact supported file</td><td>Preview, source, metadata, and explicit expiry in one viewer</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="setup">
+          <h2>Set up ArtifactPass in the project</h2>
+          <p>Open a terminal in the project where the agent should be allowed to publish. ArtifactPass setup is workspace-specific. It does not create one global file-sharing permission across every folder on the computer.</p>
+
+          <div class="command">
+            <code>cd /path/to/your-project</code>
+            <button class="copy-button" type="button" data-copy>Copy</button>
+          </div>
+          <div class="command">
+            <code>pnpm dlx artifactpass</code>
+            <button class="copy-button" type="button" data-copy>Copy</button>
+          </div>
+
+          <p>The installer asks which agent or editor this project uses. Named choices include Codex, Claude Code, Gemini CLI, Kimi Code, Cursor, VS Code with GitHub Copilot, and Antigravity. Those choices install the matching integration automatically. The generic MCP option prepares the configuration and skills, then prints their paths for manual registration.</p>
+          <p>Next, choose public ArtifactPass or enter the full URL for a private deployment supplied by an administrator. Setup installs the portable MCP server and agent skills. It does not upload a file and it does not sign the user in.</p>
+
+          <aside class="note">
+            <strong>Restart after setup</strong>
+            <p>Close the current agent session and open a new one in the same project. The new session loads the MCP server and skills. This restart is also needed after changing the project's deployment.</p>
+          </aside>
+        </section>
+
+        <section id="connect">
+          <h2>Connect the workspace on first use</h2>
+          <p>Ask the agent to share a file, or ask it to connect ArtifactPass. The connection flow opens an approval page in the browser. If the browser opens in the wrong profile or does not open, the agent also prints the approval URL so it can be opened manually.</p>
+          <p>Public ArtifactPass uses Google or GitHub sign-in. A private deployment uses the Cloudflare Access method chosen by its administrator. The agent and browser show the same short approval code. Confirm that they match before approving.</p>
+
+          <figure class="figure">
+            <div class="figure-frame figure-frame--card">
+              <img src="assets/agent-approval.png" alt="ArtifactPass approval page showing the example deployment, Codex agent, project workspace, scope, and matching code" width="606" height="590">
+            </div>
+            <figcaption>Before approval, check the deployment, agent, workspace, scope, and matching code.</figcaption>
+          </figure>
+
+          <div class="facts" aria-label="Connection boundaries">
+            <div class="fact"><strong>Scoped origin</strong><span>The connection belongs to the public service or the selected private deployment.</span></div>
+            <div class="fact"><strong>Scoped project</strong><span>Approved roots limit which local files the bridge may read.</span></div>
+            <div class="fact"><strong>Revocable access</strong><span>The agent token can be disconnected without changing existing artifact links.</span></div>
+            <div class="fact"><strong>Secret storage</strong><span>Reusable credentials live in the operating system credential store, not project JSON.</span></div>
+          </div>
+        </section>
+
+        <section id="publish">
+          <h2>Ask the agent to publish a finished file</h2>
+          <p>Name the file and the lifetime. Public ArtifactPass supports 1 hour, 1 day, and 7 days. The agent resolves the file inside the approved workspace, validates the supported type and size, uploads it, then returns the share link.</p>
+
+          <div class="command">
+            <code>Share ./report.md for 1 day.</code>
+            <button class="copy-button" type="button" data-copy>Copy</button>
+          </div>
+
+          <p>Good prompts are simple because the capability is intentionally narrow. Use one file per share. If a draft is still changing, finish it first. The ArtifactPass link is a handoff, not a collaborative editing surface.</p>
+
+          <figure class="figure">
+            <div class="figure-frame">
+              <img src="assets/upload-success.png" alt="ArtifactPass confirmation page showing that a temporary link is live" width="1440" height="900">
+            </div>
+            <figcaption>The finished publish returns one temporary URL with a visible cutoff.</figcaption>
+          </figure>
+        </section>
+
+        <section id="handoff">
+          <h2>Complete a person or agent handoff</h2>
+          <h3>Agent to person</h3>
+          <p>Open the returned URL in any browser. The recipient does not need an account. Send the link only to the intended reviewers because anyone holding it can open the artifact until it expires.</p>
+
+          <figure class="figure">
+            <div class="figure-frame">
+              <img src="assets/viewer-markdown.png" alt="ArtifactPass viewer displaying a shared Markdown release note" width="1440" height="900">
+            </div>
+            <figcaption>The recipient gets a readable preview, the filename, remaining lifetime, source, and download in one place.</figcaption>
+          </figure>
+
+          <h3>Agent to agent</h3>
+          <p>Give the ArtifactPass link to another connected agent and ask it to read the artifact. The receiving agent retrieves the supported source instead of reconstructing the document from a pasted response.</p>
+
+          <h3>Person to agent</h3>
+          <p>A person can create a link from the browser upload page, then give that URL to a connected agent. This is useful when the file begins outside an agent workspace.</p>
+
+          <h3>Change or inspect the setup</h3>
+          <p>Use the configuration command to switch between public and private deployments. Use the doctor command to inspect the installation.</p>
+          <div class="command">
+            <code>pnpm dlx artifactpass configure</code>
+            <button class="copy-button" type="button" data-copy>Copy</button>
+          </div>
+          <div class="command">
+            <code>pnpm dlx artifactpass doctor</code>
+            <button class="copy-button" type="button" data-copy>Copy</button>
+          </div>
+        </section>
+
+        <section id="boundaries">
+          <h2>What this workflow does not replace</h2>
+          <p>Use Git for durable code history, a drive for permanent storage, and a collaboration tool for ongoing editing. ArtifactPass is for a finished artifact that needs to move cleanly between contexts for a limited time.</p>
+          <p>Expiry stops the ArtifactPass URL, but it cannot delete a downloaded copy. Agent access is also separate from link access. Disconnecting an agent stops future publishing; it does not retract a link that is already live.</p>
+        </section>
+
+        <section class="faq" id="faq">
+          <h2>Common questions</h2>
+          <details>
+            <summary>Does setup install ArtifactPass globally?</summary>
+            <p>No. Setup applies to the current project so file approval and agent configuration stay scoped to the workspace where the command ran.</p>
+          </details>
+          <details>
+            <summary>Does every recipient need ArtifactPass installed?</summary>
+            <p>No. A person can open a live link in a normal browser. Installation is needed only when an agent should publish or read artifacts directly.</p>
+          </details>
+          <details>
+            <summary>What file types are supported?</summary>
+            <p>ArtifactPass supports Markdown, HTML, and PDF. The viewer and agent-readable representation depend on the file type and its security checks.</p>
+          </details>
+          <details>
+            <summary>Can I use another MCP-compatible client?</summary>
+            <p>Yes. Choose Other MCP client during setup. ArtifactPass prints the MCP configuration and skills location for manual registration.</p>
+          </details>
+        </section>
+
+        <a class="next-guide" href="deploy-private-artifactpass-cloudflare.html">
+          <span>Next practical guide</span>
+          <strong>Deploy a private ArtifactPass on Cloudflare</strong>
+        </a>
+      </article>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <span>ArtifactPass practical guide prototype</span>
+      <a href="https://artifactpass.com/guides/agent-setup">Open the live setup guide</a>
+    </div>
+  </footer>
+  <script src="case-study.js"></script>
+</body>
+</html>

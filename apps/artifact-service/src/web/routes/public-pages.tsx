@@ -13,6 +13,14 @@ import {
   publicStyles,
   themeInteractionScript,
 } from "./public-homepage.tsx";
+import {
+  isPracticalGuidePage,
+  PracticalGuidePage,
+  practicalGuideMetadata,
+  practicalGuidePageNames,
+  practicalGuides,
+  type PracticalGuidePageName,
+} from "./practical-guides.tsx";
 
 export type PublicPage =
   | "home"
@@ -23,6 +31,7 @@ export type PublicPage =
   | "agent-setup-guide"
   | "private-deployment-guide"
   | "private-teammate-guide"
+  | PracticalGuidePageName
   | "security"
   | "privacy"
   | "terms";
@@ -45,6 +54,7 @@ const pagePath = (page: PublicPage): "/" | `/${string}` => {
   if (page === "agent-setup-guide") return "/guides/agent-setup";
   if (page === "private-deployment-guide") return "/guides/private-deployment";
   if (page === "private-teammate-guide") return "/guides/private-teammate";
+  if (isPracticalGuidePage(page)) return practicalGuideMetadata(page).path;
   if (page === "security") return "/security";
   if (page === "privacy") return "/privacy";
   if (page === "terms") return "/terms";
@@ -73,6 +83,7 @@ const pageDescription = (page: PublicPage): string => {
   if (page === "private-teammate-guide") {
     return "Join a private ArtifactPass deployment from one project, complete publisher access, and verify browser and agent sharing.";
   }
+  if (isPracticalGuidePage(page)) return practicalGuideMetadata(page).description;
   if (page === "security") {
     return "Learn how ArtifactPass protects temporary files, share links, agent credentials, HTML previews, and private deployments.";
   }
@@ -152,7 +163,23 @@ const guideSteps = (page: "agent-setup-guide" | "private-deployment-guide" | "pr
 const secondaryPageStructuredData = (page: Exclude<PublicPage, "home">): string => JSON.stringify({
   "@context": "https://schema.org",
   "@graph": [
-    page === "agent-setup-guide" || page === "private-deployment-guide" || page === "private-teammate-guide" ? {
+    isPracticalGuidePage(page) ? {
+      "@type": "Article",
+      "@id": `${publicSiteUrl(pagePath(page))}#article`,
+      url: publicSiteUrl(pagePath(page)),
+      headline: practicalGuideMetadata(page).headline,
+      description: practicalGuideMetadata(page).description,
+      image: publicSiteUrl(practicalGuideMetadata(page).image),
+      datePublished: "2026-09-27",
+      dateModified: "2026-09-27",
+      author: {
+        "@type": "Organization",
+        name: "ArtifactPass",
+        url: PUBLIC_SITE_ORIGIN,
+      },
+      publisher: { "@id": `${PUBLIC_SITE_ORIGIN}/#website` },
+      isPartOf: { "@id": `${PUBLIC_SITE_ORIGIN}/#website` },
+    } : page === "agent-setup-guide" || page === "private-deployment-guide" || page === "private-teammate-guide" ? {
       "@type": "HowTo",
       "@id": `${publicSiteUrl(pagePath(page))}#webpage`,
       url: publicSiteUrl(pagePath(page)),
@@ -236,11 +263,11 @@ const ForAiAgentsPage = () => (
         <li><strong>Keep the handoff scoped:</strong> use a workspace connection that expires and can be revoked.</li>
       </ul>
       <h2>Works across MCP-compatible clients</h2>
-      <p>The setup command asks which agent or editor you use, then writes the project-level configuration that client expects. ArtifactPass supports named flows for Codex, Claude Code, Gemini CLI, Kimi Code, Cursor, VS Code with GitHub Copilot, Antigravity, and a generic MCP client option.</p>
+      <p>The setup command asks which agent or editor you use, approves the current project root, and installs the integration that client expects. ArtifactPass supports named flows for Codex, Claude Code, Gemini CLI, Kimi Code, Cursor, VS Code with GitHub Copilot, and Antigravity. The generic MCP option prints configuration and skills paths for manual registration.</p>
       <h2>Why use a link instead of pasting?</h2>
       <p>The recipient gets the exact file, its filename, media type, size, and remaining lifetime. HTML stays HTML, Markdown stays Markdown, and PDF layout remains intact. That makes reviews and multi-agent handoffs easier to verify.</p>
       <h2>Install for the current project</h2>
-      <p>Run <code>pnpm dlx artifactpass</code> inside the project where you want the integration. The CLI connects that workspace to the hosted service and installs the portable MCP and agent skill configuration for the client you select.</p>
+      <p>Run <code>pnpm dlx artifactpass</code> inside the project you want ArtifactPass to access. The CLI approves that project root and installs the integration expected by the client you select. Codex and Claude Code install their plugin at the agent’s user level, but ArtifactPass does not approve other project roots unless you set them up explicitly.</p>
       <p>Follow the <a href="/guides/agent-setup">illustrated agent setup guide</a>, see <a href="/how-it-works">the full sharing flow</a>, inspect the <a href={repositoryUrl}>open-source repository</a>, or <a href="/upload">share a file from the browser</a>.</p>
     </div>
   </section>
@@ -315,25 +342,55 @@ document.querySelectorAll("[data-copy-command]").forEach((button)=>{
 const GuidesPage = () => (
   <section className="document guide-hub">
     <p className="eyebrow">ArtifactPass guides</p>
-    <h1>Choose the setup path that matches your role.</h1>
-    <p className="guide-deck">Set up an agent project, deploy a private ArtifactPass, or join a private deployment someone else manages.</p>
-    <div className="guide-cards">
-      <a className="guide-card" href="/guides/agent-setup">
-        <span>For any supported agent</span>
-        <strong>Set up ArtifactPass in a project</strong>
-        <p>Choose your MCP client, connect the workspace, and publish a first temporary artifact.</p>
-      </a>
-      <a className="guide-card" href="/guides/private-deployment">
-        <span>For administrators</span>
-        <strong>Deploy ArtifactPass on Cloudflare</strong>
-        <p>Connect a domain, choose sign-in and publisher access, set lifetimes, and deploy.</p>
-      </a>
-      <a className="guide-card" href="/guides/private-teammate">
-        <span>For teammates</span>
-        <strong>Join a private deployment</strong>
-        <p>Connect one project to a team deployment and complete Cloudflare Access sign-in.</p>
-      </a>
-    </div>
+    <h1>Set up ArtifactPass, then use it well.</h1>
+    <p className="guide-deck">Start with the setup path for your role. Then use the practical guides to hand finished work between people and AI agents without flattening it into chat or leaving permanent links behind.</p>
+
+    <section className="guide-section" aria-labelledby="setup-guides-heading">
+      <div className="guide-section-heading">
+        <div>
+          <p className="eyebrow">Installation and deployment</p>
+          <h2 id="setup-guides-heading">Set up ArtifactPass</h2>
+        </div>
+        <p>Connect one agent project, deploy into your Cloudflare account, or join a private deployment.</p>
+      </div>
+      <div className="guide-cards">
+        <a className="guide-card" href="/guides/agent-setup">
+          <span>For any supported agent</span>
+          <strong>Set up ArtifactPass in a project</strong>
+          <p>Choose your MCP client, connect the workspace, and publish a first temporary artifact.</p>
+        </a>
+        <a className="guide-card" href="/guides/private-deployment">
+          <span>For administrators</span>
+          <strong>Deploy ArtifactPass on Cloudflare</strong>
+          <p>Connect a domain, choose sign-in and publisher access, set lifetimes, and deploy.</p>
+        </a>
+        <a className="guide-card" href="/guides/private-teammate">
+          <span>For teammates</span>
+          <strong>Join a private deployment</strong>
+          <p>Connect one project to a team deployment and complete Cloudflare Access sign-in.</p>
+        </a>
+      </div>
+    </section>
+
+    <section className="guide-section" aria-labelledby="practical-guides-heading">
+      <div className="guide-section-heading">
+        <div>
+          <p className="eyebrow">Real handoff workflows</p>
+          <h2 id="practical-guides-heading">Use ArtifactPass</h2>
+        </div>
+        <p>Share exact work from agents and people, choose an expiry, keep private infrastructure in Cloudflare, and understand what runs in an HTML preview.</p>
+      </div>
+      <div className="guide-cards guide-cards--practical">
+        {practicalGuides().map((guide) => (
+          <a className="guide-card guide-card--practical" href={guide.path} key={guide.page}>
+            <span>{guide.category}</span>
+            <strong>{guide.headline}</strong>
+            <p>{guide.deck}</p>
+            <div className="guide-card-keyword">{guide.intent}</div>
+          </a>
+        ))}
+      </div>
+    </section>
   </section>
 );
 
@@ -425,12 +482,12 @@ const AgentSetupGuidePage = () => (
     </nav>
 
     <div className="prose guide-prose">
-      <p>ArtifactPass setup is project-specific. Run the command inside the project your agent may access. It does not install one global connection across every workspace on your computer.</p>
+      <p>ArtifactPass approves projects explicitly. Run the command inside the project your agent may access. Setup adds that project root to ArtifactPass instead of granting access to every workspace on your computer.</p>
 
       <section className="guide-step" id="step-1">
         <span className="guide-step-number">01</span>
         <h2>Open a terminal in the project</h2>
-        <p>Move into the project where you want the agent to share Markdown, HTML, or PDF files. ArtifactPass stores the agent registration for this project only.</p>
+        <p>Move into the project where you want the agent to share Markdown, HTML, or PDF files. Only project roots you set up are approved for local file access.</p>
         <GuideCommand>cd /path/to/your-project</GuideCommand>
       </section>
 
@@ -438,7 +495,7 @@ const AgentSetupGuidePage = () => (
         <span className="guide-step-number">02</span>
         <h2>Run the setup command</h2>
         <GuideCommand>pnpm dlx artifactpass</GuideCommand>
-        <p>The installer adds the portable MCP server and ArtifactPass skills. It does not sign you in and it does not upload any file.</p>
+        <p>The installer adds the portable MCP server and ArtifactPass skills. It does not sign you in and it does not upload any file. Codex and Claude Code install the ArtifactPass plugin at the agent’s user level, but ArtifactPass still limits local file access to the project roots you explicitly set up.</p>
         <GuideImage
           src="/guides/agent-setup/run-command.svg"
           alt="A terminal running pnpm dlx artifactpass and displaying the supported agent choices"
@@ -449,7 +506,7 @@ const AgentSetupGuidePage = () => (
       <section className="guide-step" id="step-3">
         <span className="guide-step-number">03</span>
         <h2>Choose the agent and deployment</h2>
-        <p>Select the agent you actually use in this project. The named choices include Codex, Claude Code, Gemini CLI, Kimi Code, Cursor, VS Code with GitHub Copilot, and Antigravity. Use the generic MCP option for another compatible client.</p>
+        <p>Select the agent you actually use in this project. The named choices include Codex, Claude Code, Gemini CLI, Kimi Code, Cursor, VS Code with GitHub Copilot, and Antigravity. Those choices install the matching integration automatically. Use <strong>Other MCP client</strong> for another compatible client; setup then prints the MCP configuration file and skills directory that you must add to that client manually.</p>
         <p>Choose <strong>Public</strong> to use <code>artifactpass.com</code>. Choose <strong>Private</strong> when a team administrator gave you a private deployment URL.</p>
         <GuideImage
           src="/guides/agent-setup/select-deployment.svg"
@@ -465,6 +522,7 @@ const AgentSetupGuidePage = () => (
         <span className="guide-step-number">04</span>
         <h2>Restart the agent session</h2>
         <p>Close the current agent session and open a new one in the same project. The new session loads the MCP server and skills that setup installed.</p>
+        <p>If you selected <strong>Other MCP client</strong>, add the printed MCP configuration and skills directory to that client before restarting it.</p>
         <p>You only need this restart after installing ArtifactPass or changing the deployment used by the project.</p>
       </section>
 
@@ -590,6 +648,9 @@ const PrivateDeploymentGuidePage = () => (
           height={806}
         />
         <p>Cloudflare assigns two nameservers. At the current registrar, replace the old authoritative nameservers with those exact two values. Do not unlock the domain and do not request a transfer authorization code.</p>
+        <GuideNote title="Check DNSSEC before changing nameservers">
+          <p>If the registrar shows DNSSEC or DS records, disable or remove them before changing nameservers. Cloudflare warns that signatures from the previous DNS provider can otherwise break resolution or prevent activation, and recommends waiting at least 24 hours after disabling DNSSEC before the nameserver change. Enable DNSSEC in Cloudflare only after the domain is Active.</p>
+        </GuideNote>
         <GuideImage
           src="/guides/private-deployment/change-nameservers.svg"
           alt="Two Cloudflare nameservers being copied to the current registrar for example.com"
@@ -638,7 +699,7 @@ const PrivateDeploymentGuidePage = () => (
                 " for quick reviews.",
                 " for normal same-session work.",
                 " for asynchronous review.",
-                " for week-long collaboration.",
+                " for a week-long review window.",
               ][index]}
             </li>
           ))}
@@ -723,7 +784,7 @@ const PrivateTeammateGuidePage = () => (
       <section className="guide-step" id="step-2">
         <span className="guide-step-number">02</span>
         <h2>Open the project your agent may access</h2>
-        <p>ArtifactPass setup is project-specific. Open a terminal in the workspace where the agent should publish files.</p>
+        <p>Open a terminal in the workspace where the agent should publish files. Setup approves that project root for ArtifactPass local file access instead of granting access to every workspace on your computer.</p>
         <GuideCommand>cd /path/to/your-project</GuideCommand>
       </section>
 
@@ -732,11 +793,11 @@ const PrivateTeammateGuidePage = () => (
         <h2>Run the private setup command</h2>
         <p>Use the complete HTTPS URL supplied by the administrator:</p>
         <GuideCommand>pnpm dlx artifactpass --base-url https://artifacts.example.com</GuideCommand>
-        <p>Choose the agent or editor used in this project. The installer supports Codex, Claude Code, Gemini CLI, Kimi Code, Cursor, VS Code with GitHub Copilot, Antigravity, and a generic MCP client.</p>
+        <p>Choose the agent or editor used in this project. Codex, Claude Code, Gemini CLI, Kimi Code, Cursor, VS Code with GitHub Copilot, and Antigravity receive their matching integration automatically. Codex and Claude Code install the ArtifactPass plugin at the agent’s user level, while ArtifactPass local file access remains limited to project roots you explicitly set up. <strong>Other MCP client</strong> prepares the MCP configuration and skills, then prints their paths for you to register manually in that client.</p>
         <GuideImage
           src="/guides/private-teammate/teammate-setup.svg"
           alt="A teammate running ArtifactPass setup for artifacts.example.com and choosing an MCP-compatible agent"
-          caption="The private URL selects the deployment. The agent choice installs the project-level configuration."
+          caption="The private URL selects the deployment. Setup installs the matching integration and approves the current project root."
         />
       </section>
 
@@ -744,6 +805,7 @@ const PrivateTeammateGuidePage = () => (
         <span className="guide-step-number">04</span>
         <h2>Restart the agent session</h2>
         <p>Close the current agent session and open a new one in the same project. The new session loads the MCP server and ArtifactPass skills.</p>
+        <p>If you selected <strong>Other MCP client</strong>, add the printed MCP configuration and skills directory to that client before restarting it.</p>
       </section>
 
       <section className="guide-step" id="step-5">
@@ -751,6 +813,9 @@ const PrivateTeammateGuidePage = () => (
         <h2>Connect and complete Cloudflare Access sign-in</h2>
         <p>Ask the agent to share a file, or say <strong>Connect ArtifactPass</strong>. ArtifactPass opens the approval page in your browser automatically. If the browser does not open, the agent shows the approval URL so you can open it yourself in the correct browser profile.</p>
         <p>With <strong>Email verification code</strong>, enter the allowed email and use the one-time code Cloudflare sends. With <strong>Existing company login</strong>, choose the team identity provider and finish its normal sign-in. Confirm the browser code matches the agent before approving.</p>
+        <GuideNote title="No code arrived?">
+          <p>Cloudflare intentionally shows the same “code sent” response for approved and unapproved addresses. It sends a code only when the address matches the Access policy. Confirm the exact address with the administrator before retrying.</p>
+        </GuideNote>
       </section>
 
       <section className="guide-step" id="step-6">
@@ -880,6 +945,7 @@ const pageContent = (page: PublicPage, url: URL, configuration: PublicPageConfig
   if (page === "agent-setup-guide") return <AgentSetupGuidePage />;
   if (page === "private-deployment-guide") return <PrivateDeploymentGuidePage />;
   if (page === "private-teammate-guide") return <PrivateTeammateGuidePage />;
+  if (isPracticalGuidePage(page)) return <PracticalGuidePage page={page} />;
   if (page === "security") return <SecurityPage />;
   if (page === "privacy") return <PrivacyPage staging={staging} />;
   if (page === "terms") return <TermsPage staging={staging} />;
@@ -900,10 +966,11 @@ const pageTitle = (page: PublicPage): string => {
   if (page === "agent-setup-guide") return "Set Up ArtifactPass for an AI Agent · Guide";
   if (page === "private-deployment-guide") return "Private ArtifactPass Deployment Guide · Cloudflare";
   if (page === "private-teammate-guide") return "Join a Private ArtifactPass Deployment · Teammate Guide";
+  if (isPracticalGuidePage(page)) return practicalGuideMetadata(page).title;
   if (page === "security") return "ArtifactPass Security · Temporary Links and Safe Previews";
   if (page === "privacy") return "Privacy · ArtifactPass";
   if (page === "terms") return "Terms · ArtifactPass";
-  return "ArtifactPass | Temporary File Sharing for People and AI Agents";
+  return "ArtifactPass | Temporary Artifact Sharing for People and AI Agents";
 };
 
 export const renderRobotsTxt = (requestUrl: string): string => {
@@ -922,6 +989,7 @@ export const renderSitemapXml = (): string => {
     "/guides/agent-setup",
     "/guides/private-deployment",
     "/guides/private-teammate",
+    ...practicalGuidePageNames.map((page) => practicalGuideMetadata(page).path),
     "/security",
     "/privacy",
     "/terms",
@@ -941,10 +1009,11 @@ ArtifactPass creates temporary links for Markdown, HTML, and PDF files so people
 - [How ArtifactPass works](${PUBLIC_SITE_ORIGIN}/how-it-works): The browser and agent sharing flow, from upload to expiry.
 - [Artifact sharing for AI agents](${PUBLIC_SITE_ORIGIN}/for-ai-agents): MCP, agent skills, supported clients, and exact-file handoffs.
 - [Private deployments](${PUBLIC_SITE_ORIGIN}/private-deployments): Run ArtifactPass in your own Cloudflare account and domain.
-- [Setup guides](${PUBLIC_SITE_ORIGIN}/guides): Choose the guide for an agent project, private-deployment administrator, or teammate.
+- [ArtifactPass guides](${PUBLIC_SITE_ORIGIN}/guides): Choose a setup path or learn a practical artifact-handoff workflow.
 - [Agent setup guide](${PUBLIC_SITE_ORIGIN}/guides/agent-setup): Install ArtifactPass in one project, connect an agent, and publish a first link.
 - [Private deployment administrator guide](${PUBLIC_SITE_ORIGIN}/guides/private-deployment): Deploy on Cloudflare, connect a domain, and configure publisher access and lifetimes.
 - [Private deployment teammate guide](${PUBLIC_SITE_ORIGIN}/guides/private-teammate): Connect one project to a private deployment and verify publishing.
+${practicalGuides().map((guide) => `- [${guide.headline}](${PUBLIC_SITE_ORIGIN}${guide.path}): ${guide.description}`).join("\n")}
 - [Security](${PUBLIC_SITE_ORIGIN}/security): Temporary links, storage, authentication, and isolated HTML previews.
 - [ArtifactPass repository](${repositoryUrl}): Install the CLI, MCP server, or agent skills and inspect the source.
 - [Privacy policy](${PUBLIC_SITE_ORIGIN}/privacy): How the hosted service handles identity, artifacts, and operational data.
@@ -1022,6 +1091,9 @@ const renderPage = (
   const title = pageTitle(page);
   const description = pageDescription(page);
   const canonicalUrl = `${PUBLIC_SITE_ORIGIN}${pagePath(page)}`;
+  const socialImage = isPracticalGuidePage(page)
+    ? `${PUBLIC_SITE_ORIGIN}${practicalGuideMetadata(page).image}`
+    : undefined;
   const markup = renderToStaticMarkup(
     <html lang="en">
       <head>
@@ -1034,14 +1106,17 @@ const renderPage = (
           name="robots"
           content={indexable ? "index, follow, max-image-preview:large" : "noindex, nofollow, noarchive"}
         />
-        <meta property="og:type" content="website" />
+        <meta property="og:type" content={isPracticalGuidePage(page) ? "article" : "website"} />
         <meta property="og:site_name" content="ArtifactPass" />
         <meta property="og:title" content={title} />
         <meta property="og:description" content={description} />
         <meta property="og:url" content={indexable ? canonicalUrl : url.origin + pagePath(page)} />
-        <meta name="twitter:card" content="summary" />
+        {socialImage !== undefined && <meta property="og:image" content={socialImage} />}
+        {socialImage !== undefined && <meta property="og:image:alt" content={`${practicalGuideMetadata(page as PracticalGuidePageName).headline} shown in ArtifactPass`} />}
+        <meta name="twitter:card" content={socialImage === undefined ? "summary" : "summary_large_image"} />
         <meta name="twitter:title" content={title} />
         <meta name="twitter:description" content={description} />
+        {socialImage !== undefined && <meta name="twitter:image" content={socialImage} />}
         {indexable && <link rel="canonical" href={canonicalUrl} />}
         {indexable && page === "home" && <link rel="ai-catalog" href="/.well-known/ai-catalog.json" />}
         {indexable && page === "home" && <link rel="ard" href="/.well-known/ard.json" />}
@@ -1069,7 +1144,7 @@ const renderPage = (
         </div>
         <script nonce={nonce} dangerouslySetInnerHTML={{ __html: themeInteractionScript }} />
         {page === "home" && <script nonce={nonce} dangerouslySetInnerHTML={{ __html: homepageInteractionScript }} />}
-        {(page === "agent-setup-guide" || page === "private-deployment-guide" || page === "private-teammate-guide") && (
+        {(page === "agent-setup-guide" || page === "private-deployment-guide" || page === "private-teammate-guide" || isPracticalGuidePage(page)) && (
           <script nonce={nonce} dangerouslySetInnerHTML={{ __html: guideInteractionScript }} />
         )}
       </body>

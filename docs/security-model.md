@@ -27,7 +27,7 @@ Production logs must exclude authorization headers, URL paths containing share t
 
 ## Expiry and deletion
 
-Authorization checks use `now < expires_at`; at the exact cutoff every representation is unreachable and non-cacheable. Cleanup records a retryable state, removes source and derived R2 objects, then deletes metadata. An R2 lifecycle removes orphaned `artifacts/` objects after two days.
+Authorization checks use `now < expires_at`; at the exact cutoff every representation is unreachable and non-cacheable. Cleanup records a retryable state, removes source and derived R2 objects, then deletes metadata. The R2 lifecycle is a fallback for orphaned `artifacts/` objects. It deletes them after the deployment's maximum allowed lifetime plus at least one full day, rounded up to a whole-day boundary. The public service therefore uses an 8-day R2 lifecycle for its 7-day maximum link lifetime.
 
 ## Known limits
 
