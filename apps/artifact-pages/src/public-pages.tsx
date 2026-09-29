@@ -5,7 +5,7 @@ import { PUBLIC_ALLOWED_EXPIRY_SECONDS } from "artifact-protocol";
 import packageMetadata from "../../../package.json" with { type: "json" };
 import { PublicFooter, PublicNavigation } from "./public-chrome.tsx";
 import { expiryOptionsForHumans, formatDuration } from "./expiry-options.ts";
-import { PUBLIC_SITE_ORIGIN, publicSiteUrl } from "./public-site.ts";
+import { PUBLIC_SITE_ORIGIN, PUBLIC_SITE_PATHS, publicSiteUrl } from "./public-site.ts";
 import {
   HomePage,
   homepageBootScript,
@@ -17,10 +17,10 @@ import {
   isPracticalGuidePage,
   PracticalGuidePage,
   practicalGuideMetadata,
-  practicalGuidePageNames,
   practicalGuides,
   type PracticalGuidePageName,
 } from "./practical-guides.tsx";
+import { seoAnalyticsScript } from "./seo-analytics.ts";
 
 export type PublicPage =
   | "home"
@@ -868,7 +868,7 @@ const PrivacyPage = ({ staging }: { readonly staging: boolean }) => (
   <section className="document">
     <p className="eyebrow">Public service policy</p>
     <h1>Privacy</h1>
-    <p className="updated">Effective 11 September 2026</p>
+    <p className="updated">Effective 29 September 2026</p>
     {staging && <EnvironmentNotice />}
     <div className="prose">
       <p>This policy explains how the hosted ArtifactPass service processes information when you sign in, connect an agent workspace, upload a document, or open a temporary artifact link. It does not govern private deployments operated by another organization.</p>
@@ -878,11 +878,12 @@ const PrivacyPage = ({ staging }: { readonly staging: boolean }) => (
         <li><strong>Artifacts:</strong> the exact file you submit, its filename, media type, size, integrity metadata, and selected expiry.</li>
         <li><strong>Authorization:</strong> one-way hashes of browser sessions, device approvals, agent tokens, and temporary share capabilities.</li>
         <li><strong>Operations:</strong> rate-limit records and request information needed to deliver, secure, and diagnose the service. Cloudflare may process IP addresses, TLS, browser, and request metadata as part of its infrastructure and security services.</li>
+        <li><strong>Public-site analytics:</strong> anonymous counts of public page views and selected actions, the public pathname, and coarse referral or campaign labels. ArtifactPass does not place analytics cookies, create visitor profiles, record full referrer URLs, or collect artifact links, filenames, or contents through this measurement.</li>
       </ul>
       <h2>Google and GitHub sign-in</h2>
       <p>Google scopes are limited to <code>openid</code> and <code>email</code>. GitHub scopes are limited to <code>read:user</code> and <code>user:email</code>. ArtifactPass uses the provider access token only during the sign-in callback to retrieve your account identifier and verified email address. It does not retain the provider access token and never receives your provider password.</p>
       <h2>How information is used</h2>
-      <p>ArtifactPass uses this information only to authenticate you, approve a scoped workspace connection, publish the file you selected, deliver its temporary link, enforce expiry, prevent abuse, and operate the service. We do not sell your personal information, run advertising profiles, or use artifact contents to train machine-learning models.</p>
+      <p>ArtifactPass uses this information only to authenticate you, approve a scoped workspace connection, publish the file you selected, deliver its temporary link, enforce expiry, prevent abuse, operate the service, and understand which public documentation and setup paths are useful. We do not sell your personal information, run advertising profiles, or use artifact contents to train machine-learning models.</p>
       <h2>Temporary sharing</h2>
       <p>A share URL is a bearer capability. Anyone who receives it can view and download the artifact until its stated expiry. Recipients may keep copies they download, so expiry cannot recall a file after it has left ArtifactPass.</p>
       <h2>Retention</h2>
@@ -891,6 +892,7 @@ const PrivacyPage = ({ staging }: { readonly staging: boolean }) => (
         <li>Browser sessions expire after seven days.</li>
         <li>Agent publishing connections expire after 30 days unless revoked earlier.</li>
         <li>OAuth transactions, device codes, and most rate-limit records expire after approximately ten minutes.</li>
+        <li>Anonymous public-site analytics are retained in Cloudflare Analytics Engine for up to three months.</li>
       </ul>
       <h2>Service providers and disclosure</h2>
       <p>ArtifactPass runs on Cloudflare Workers, D1, and R2. Google and GitHub provide optional sign-in. Information may also be disclosed when required by law, to protect the service or its users, or during a legitimate transfer of the service with equivalent privacy obligations.</p>
@@ -980,20 +982,7 @@ export const renderRobotsTxt = (requestUrl: string): string => {
 };
 
 export const renderSitemapXml = (): string => {
-  const urls = ([
-    "/",
-    "/how-it-works",
-    "/for-ai-agents",
-    "/private-deployments",
-    "/guides",
-    "/guides/agent-setup",
-    "/guides/private-deployment",
-    "/guides/private-teammate",
-    ...practicalGuidePageNames.map((page) => practicalGuideMetadata(page).path),
-    "/security",
-    "/privacy",
-    "/terms",
-  ] as const)
+  const urls = PUBLIC_SITE_PATHS
     .map((path) => `  <url><loc>${PUBLIC_SITE_ORIGIN}${path}</loc></url>`)
     .join("\n");
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`;
@@ -1147,6 +1136,7 @@ const renderPage = (
         {(page === "agent-setup-guide" || page === "private-deployment-guide" || page === "private-teammate-guide" || isPracticalGuidePage(page)) && (
           <script nonce={nonce} dangerouslySetInnerHTML={{ __html: guideInteractionScript }} />
         )}
+        {indexable && <script nonce={nonce} dangerouslySetInnerHTML={{ __html: seoAnalyticsScript }} />}
       </body>
     </html>,
   );

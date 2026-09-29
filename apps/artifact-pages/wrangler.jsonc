@@ -8,5 +8,11 @@
       "binding": "ARTIFACT_APPLICATION",
       "service": "lordebuilds-artifacts-share"
     }
+  ],
+  "analytics_engine_datasets": [
+    {
+      "binding": "SEO_ANALYTICS",
+      "dataset": "artifactpass_seo_events"
+    }
   ]
 }
