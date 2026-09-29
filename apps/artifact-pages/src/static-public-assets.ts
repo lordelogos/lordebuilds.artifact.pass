@@ -22,6 +22,8 @@ import {
   practicalGuideMetadata,
   practicalGuidePageNames,
 } from "./practical-guides.tsx";
+import { PUBLIC_SITE_PATHS } from "./public-site.ts";
+import { seoAnalyticsScript } from "./seo-analytics.ts";
 
 const contentHash = (content: string): string =>
   `'sha256-${createHash("sha256").update(content).digest("base64")}'`;
@@ -34,6 +36,7 @@ const staticContentSecurityPolicy = [
     themeInteractionScript,
     homepageInteractionScript,
     guideInteractionScript,
+    seoAnalyticsScript,
   ].map(contentHash).join(" ")}`,
   "connect-src 'self' https://cloudflareinsights.com",
   "img-src 'self'",
@@ -42,20 +45,7 @@ const staticContentSecurityPolicy = [
   "form-action 'self'",
 ].join("; ");
 
-const staticHeaders = [
-  "/",
-  "/how-it-works",
-  "/for-ai-agents",
-  "/private-deployments",
-  "/guides",
-  "/guides/agent-setup",
-  "/guides/private-deployment",
-  "/guides/private-teammate",
-  ...practicalGuidePageNames.map((page) => practicalGuideMetadata(page).path),
-  "/security",
-  `/privacy`,
-  `/terms`,
-].map((path) => [
+const staticHeaders = PUBLIC_SITE_PATHS.map((path) => [
   path,
   "  Cache-Control: public, max-age=0, must-revalidate",
   "  Cross-Origin-Opener-Policy: same-origin-allow-popups",
@@ -85,6 +75,7 @@ export const pagesFunctionRoutes = {
     "/connect/*",
     "/api/*",
     "/a/*",
+    "/seo-events",
   ],
   exclude: [],
 } as const;

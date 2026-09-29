@@ -138,6 +138,50 @@ test("keyboard copy succeeds, announces, retains focus, and resets", async ({ pa
   await expect(button.locator("xpath=following-sibling::*[@data-copy-status]")).toHaveText("");
 });
 
+test("records an anonymous public visit and setup intent with campaign context", async ({ page }) => {
+  const events: Array<Record<string, unknown>> = [];
+  const guideHtml = await readFile(
+    resolve("apps/artifact-pages/dist/guides/agent-setup.html"),
+    "utf8",
+  );
+
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "webdriver", { configurable: true, value: false });
+  });
+
+  await page.route("https://artifactpass.com/**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "text/html", body: guideHtml });
+  });
+  await page.route("https://artifactpass.com/seo-events", async (route) => {
+    events.push(JSON.parse(route.request().postData() ?? "{}") as Record<string, unknown>);
+    await route.fulfill({ status: 204 });
+  });
+
+  await page.goto(
+    "https://artifactpass.com/guides/agent-setup?utm_source=linkedin&utm_medium=organic-social&utm_campaign=agent-handoffs",
+  );
+  await expect.poll(() => events.some((event) => event.event === "page_view")).toBe(true);
+  await commandButton(page).click();
+  await expect.poll(() => events.some((event) => event.event === "setup_command_copy")).toBe(true);
+
+  expect(events).toEqual(expect.arrayContaining([
+    {
+      event: "page_view",
+      page: "/guides/agent-setup",
+      source: "linkedin",
+      medium: "organic-social",
+      campaign: "agent-handoffs",
+    },
+    {
+      event: "setup_command_copy",
+      page: "/guides/agent-setup",
+      source: "linkedin",
+      medium: "organic-social",
+      campaign: "agent-handoffs",
+    },
+  ]));
+});
+
 test("Clipboard rejection selects the exact command and announces the fallback", async ({ page }) => {
   await page.addInitScript(() => {
     Object.defineProperty(navigator, "clipboard", {
