@@ -9,10 +9,11 @@
       "service": "lordebuilds-artifacts-share"
     }
   ],
-  "analytics_engine_datasets": [
+  "d1_databases": [
     {
       "binding": "SEO_ANALYTICS",
-      "dataset": "artifactpass_seo_events"
+      "database_name": "artifactpass-seo-measurement",
+      "database_id": "3d0d72e9-897d-4e24-b414-9b3ba7acfc2d"
     }
   ]
 }

@@ -6,6 +6,7 @@
   "scripts": {
     "build": "vite build",
     "deploy": "wrangler pages deploy dist",
+    "seo:database:setup": "wrangler d1 execute artifactpass-seo-measurement --remote --file migrations/0001-seo-event-daily.sql",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

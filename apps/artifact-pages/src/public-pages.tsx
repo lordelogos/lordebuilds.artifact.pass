@@ -892,7 +892,7 @@ const PrivacyPage = ({ staging }: { readonly staging: boolean }) => (
         <li>Browser sessions expire after seven days.</li>
         <li>Agent publishing connections expire after 30 days unless revoked earlier.</li>
         <li>OAuth transactions, device codes, and most rate-limit records expire after approximately ten minutes.</li>
-        <li>Anonymous public-site analytics are retained in Cloudflare Analytics Engine for up to three months.</li>
+        <li>Anonymous public-site analytics are stored as daily aggregate counters in Cloudflare D1 and pruned after 90 days.</li>
       </ul>
       <h2>Service providers and disclosure</h2>
       <p>ArtifactPass runs on Cloudflare Workers, D1, and R2. Google and GitHub provide optional sign-in. Information may also be disclosed when required by law, to protect the service or its users, or during a legitimate transfer of the service with equivalent privacy obligations.</p>

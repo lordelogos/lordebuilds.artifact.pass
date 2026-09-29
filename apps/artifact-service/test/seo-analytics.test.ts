@@ -30,6 +30,21 @@ const analyticsRequest = (body: unknown, overrides: RequestInit = {}) => new Req
   },
 );
 
+const createAnalyticsDatabase = () => {
+  const statements: Array<{ query: string; values: Array<string | number> }> = [];
+  const prepare = vi.fn((query: string) => {
+    const statement = {
+      bind: vi.fn((...values: Array<string | number>) => {
+        statements.push({ query, values });
+        return statement;
+      }),
+    };
+    return statement;
+  });
+  const batch = vi.fn(async () => []);
+  return { database: { prepare, batch }, batch, statements };
+};
+
 describe("public SEO analytics", () => {
   it("renders anonymous tracking only on the canonical static site", () => {
     const canonicalMarkup = renderStaticPublicPage("home");
@@ -52,11 +67,11 @@ describe("public SEO analytics", () => {
     expect(privacyMarkup).toContain("Public-site analytics:");
     expect(privacyMarkup).toContain("does not place analytics cookies");
     expect(privacyMarkup).toContain("collect artifact links, filenames, or contents");
-    expect(privacyMarkup).toContain("up to three months");
+    expect(privacyMarkup).toContain("pruned after 90 days");
   });
 
   it("records only an allowlisted public event and coarse campaign fields", async () => {
-    const writeDataPoint = vi.fn();
+    const { database, batch, statements } = createAnalyticsDatabase();
     const response = await handleSeoEventRequest(
       analyticsRequest({
         event: "setup_command_copy",
@@ -65,21 +80,20 @@ describe("public SEO analytics", () => {
         medium: "organic-social",
         campaign: "agent-handoffs",
       }),
-      { writeDataPoint },
+      database,
     );
 
     expect(response.status).toBe(204);
-    expect(writeDataPoint).toHaveBeenCalledWith({
-      indexes: ["setup_command_copy"],
-      blobs: [
-        "setup_command_copy",
-        "/guides/agent-setup",
-        "linkedin",
-        "organic-social",
-        "agent-handoffs",
-      ],
-      doubles: [1],
-    });
+    expect(batch).toHaveBeenCalledOnce();
+    expect(statements[0]?.query).toContain("INSERT INTO seo_event_daily");
+    expect(statements[0]?.values.slice(1)).toEqual([
+      "setup_command_copy",
+      "/guides/agent-setup",
+      "linkedin",
+      "organic-social",
+      "agent-handoffs",
+    ]);
+    expect(statements[1]?.query).toContain("DELETE FROM seo_event_daily");
   });
 
   it.each([
@@ -91,15 +105,15 @@ describe("public SEO analytics", () => {
     ["identifier-like campaign value", { event: "page_view", page: "/", campaign: "92bfc550-2c8f-4e51-a9e1-8007cad223f4" }],
     ["null payload", null],
   ])("rejects %s", async (_name, body) => {
-    const writeDataPoint = vi.fn();
-    const response = await handleSeoEventRequest(analyticsRequest(body), { writeDataPoint });
+    const { database, batch } = createAnalyticsDatabase();
+    const response = await handleSeoEventRequest(analyticsRequest(body), database);
 
     expect(response.status).toBe(400);
-    expect(writeDataPoint).not.toHaveBeenCalled();
+    expect(batch).not.toHaveBeenCalled();
   });
 
   it("rejects a body over the endpoint limit without a Content-Length header", async () => {
-    const writeDataPoint = vi.fn();
+    const { database, batch } = createAnalyticsDatabase();
     const request = new Request("https://artifactpass.com/seo-events", {
       method: "POST",
       headers: { Origin: "https://artifactpass.com" },
@@ -107,28 +121,28 @@ describe("public SEO analytics", () => {
     });
     request.headers.delete("Content-Length");
 
-    const response = await handleSeoEventRequest(request, { writeDataPoint });
+    const response = await handleSeoEventRequest(request, database);
 
     expect(response.status).toBe(400);
-    expect(writeDataPoint).not.toHaveBeenCalled();
+    expect(batch).not.toHaveBeenCalled();
   });
 
   it("rejects cross-origin submissions", async () => {
-    const writeDataPoint = vi.fn();
+    const { database, batch } = createAnalyticsDatabase();
     const response = await handleSeoEventRequest(
       analyticsRequest(
         { event: "page_view", page: "/" },
         { headers: { "Content-Type": "application/json", Origin: "https://example.com" } },
       ),
-      { writeDataPoint },
+      database,
     );
 
     expect(response.status).toBe(403);
-    expect(writeDataPoint).not.toHaveBeenCalled();
+    expect(batch).not.toHaveBeenCalled();
   });
 
   it("rejects browser submissions that fetch metadata marks as cross-site", async () => {
-    const writeDataPoint = vi.fn();
+    const { database, batch } = createAnalyticsDatabase();
     const response = await handleSeoEventRequest(
       analyticsRequest(
         { event: "page_view", page: "/" },
@@ -140,15 +154,15 @@ describe("public SEO analytics", () => {
           },
         },
       ),
-      { writeDataPoint },
+      database,
     );
 
     expect(response.status).toBe(403);
-    expect(writeDataPoint).not.toHaveBeenCalled();
+    expect(batch).not.toHaveBeenCalled();
   });
 
   it("throttles repeated valid events from one edge client", async () => {
-    const writeDataPoint = vi.fn();
+    const { database, batch } = createAnalyticsDatabase();
     const responses = [];
     for (let index = 0; index < 61; index += 1) {
       responses.push(await handleSeoEventRequest(
@@ -162,13 +176,13 @@ describe("public SEO analytics", () => {
             },
           },
         ),
-        { writeDataPoint },
+        database,
       ));
     }
 
     expect(responses.slice(0, 60).every((response) => response.status === 204)).toBe(true);
     expect(responses[60]?.status).toBe(429);
     expect(responses[60]?.headers.get("Retry-After")).toBe("60");
-    expect(writeDataPoint).toHaveBeenCalledTimes(60);
+    expect(batch).toHaveBeenCalledTimes(60);
   });
 });

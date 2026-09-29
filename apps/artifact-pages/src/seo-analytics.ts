@@ -44,12 +44,13 @@ const RATE_LIMIT_MAX_CLIENTS = 4_096;
 let rateLimitWindowStartedAt = 0;
 const rateLimitCounts = new Map<string, number>();
 
-export interface SeoAnalyticsDataset {
-  writeDataPoint(point: {
-    indexes: string[];
-    blobs: string[];
-    doubles: number[];
-  }): void;
+interface SeoPreparedStatement {
+  bind(...values: Array<string | number>): SeoPreparedStatement;
+}
+
+export interface SeoAnalyticsDatabase {
+  prepare(query: string): SeoPreparedStatement;
+  batch(statements: SeoPreparedStatement[]): Promise<unknown[]>;
 }
 
 const badRequest = () => new Response(null, {
@@ -110,7 +111,7 @@ const consumeRateLimit = (request: Request): boolean => {
 
 export const handleSeoEventRequest = async (
   request: Request,
-  dataset: SeoAnalyticsDataset | undefined,
+  database: SeoAnalyticsDatabase | undefined,
 ): Promise<Response> => {
   if (request.method !== "POST") {
     return new Response(null, {
@@ -162,18 +163,32 @@ export const handleSeoEventRequest = async (
     || campaign === undefined
   ) return badRequest();
 
-  if (dataset === undefined) {
+  if (database === undefined) {
     return new Response(null, {
       status: 503,
       headers: { "Cache-Control": "no-store" },
     });
   }
 
-  dataset.writeDataPoint({
-    indexes: [event],
-    blobs: [event, page, source, medium, campaign],
-    doubles: [1],
-  });
+  const day = new Date().toISOString().slice(0, 10);
+  const retentionCutoff = new Date(Date.now() - (90 * 24 * 60 * 60 * 1_000))
+    .toISOString()
+    .slice(0, 10);
+  await database.batch([
+    database.prepare(`INSERT INTO seo_event_daily (
+      day, event, page, source, medium, campaign, count
+    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1)
+    ON CONFLICT (day, event, page, source, medium, campaign)
+    DO UPDATE SET count = count + 1`).bind(
+      day,
+      event,
+      page,
+      source,
+      medium,
+      campaign,
+    ),
+    database.prepare("DELETE FROM seo_event_daily WHERE day < ?1").bind(retentionCutoff),
+  ]);
 
   return new Response(null, {
     status: 204,
