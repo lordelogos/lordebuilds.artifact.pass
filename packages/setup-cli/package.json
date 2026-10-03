@@ -1,6 +1,6 @@
 {
   "name": "artifactpass",
-  "version": "0.1.10",
+  "version": "0.1.11-rc.1",
   "description": "Install and connect ArtifactPass for compatible AI agent systems.",
   "homepage": "https://artifactpass.com",
   "keywords": [
