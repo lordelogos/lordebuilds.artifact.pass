@@ -45,6 +45,7 @@ export {
   type LocalBridgeSettings,
   type CompatibleLocalBridgeSettings,
 } from "./config/local-config";
+export { containsCanonicalPath } from "./config/workspace-access";
 export {
   FilePublicationJournal,
   MemoryPublicationJournal,

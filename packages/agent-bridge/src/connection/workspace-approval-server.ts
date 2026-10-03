@@ -91,7 +91,11 @@ export const startWorkspaceApprovalServer = async (
       respond(response, 403, "ArtifactPass rejected an invalid approval origin.");
       return;
     }
-    if (!(request.headers["content-type"] ?? "").startsWith("application/x-www-form-urlencoded")) {
+    const mediaType = (request.headers["content-type"] ?? "")
+      .split(";", 1)[0]
+      ?.trim()
+      .toLowerCase();
+    if (mediaType !== "application/x-www-form-urlencoded") {
       respond(response, 415, "Unsupported content type");
       return;
     }

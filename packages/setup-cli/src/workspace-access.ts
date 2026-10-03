@@ -1,6 +1,7 @@
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { resolve } from "node:path";
 
 import {
+  containsCanonicalPath,
   setActiveLocalBridgeProfile,
   upsertLocalBridgeProfile,
   type LocalBridgeSettings,
@@ -18,11 +19,6 @@ export interface RemovedWorkspaceAccess {
   readonly removed: WorkspaceAccessEntry;
   readonly remaining_covering_access: readonly WorkspaceAccessEntry[];
 }
-
-const containsPath = (root: string, candidate: string): boolean => {
-  const path = relative(root, candidate);
-  return path === "" || (path !== ".." && !path.startsWith(`..${sep}`) && !isAbsolute(path));
-};
 
 export const listWorkspaceAccess = (
   settings: LocalBridgeSettings,
@@ -96,6 +92,6 @@ export const removeWorkspaceAccess = (
     }
   }
   const remainingCoveringAccess = listWorkspaceAccess(next).filter((entry) =>
-    entry.workspace_root !== workspaceRoot && containsPath(entry.workspace_root, workspaceRoot));
+    entry.workspace_root !== workspaceRoot && containsCanonicalPath(entry.workspace_root, workspaceRoot));
   return { settings: next, removed, remaining_covering_access: remainingCoveringAccess };
 };

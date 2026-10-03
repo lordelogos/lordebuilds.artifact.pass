@@ -12,7 +12,6 @@ import {
   redactSensitiveText,
   selectLocalBridgeProfile,
   updateLocalBridgeSettings,
-  writeLocalBridgeSettings,
   type LocalBridgeSettings,
 } from "agent-bridge";
 

@@ -50,7 +50,14 @@ export const withConfigFileLock = async <T>(
   while (handle === undefined) {
     try {
       handle = await open(lockPath, "wx", 0o600);
-      await handle.writeFile(JSON.stringify({ pid: process.pid, token, created_at: Date.now() }));
+      try {
+        await handle.writeFile(JSON.stringify({ pid: process.pid, token, created_at: Date.now() }));
+      } catch (error) {
+        await handle.close().catch(() => undefined);
+        handle = undefined;
+        await unlink(lockPath).catch(() => undefined);
+        throw error;
+      }
     } catch (error) {
       await handle?.close().catch(() => undefined);
       handle = undefined;
@@ -63,17 +70,32 @@ export const withConfigFileLock = async <T>(
     }
   }
 
+  let actionFailed = false;
+  let actionError: unknown;
+  let result: T | undefined;
   try {
-    return await action();
-  } finally {
+    result = await action();
+  } catch (error) {
+    actionFailed = true;
+    actionError = error;
+  }
+  let cleanupError: unknown;
+  try {
     await handle.close();
-    try {
-      const owner = JSON.parse(await readFile(lockPath, "utf8")) as { readonly token?: unknown };
-      if (owner.token === token) await unlink(lockPath);
-    } catch (error) {
-      if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+  } catch (error) {
+    cleanupError = error;
+  }
+  try {
+    const owner = JSON.parse(await readFile(lockPath, "utf8")) as { readonly token?: unknown };
+    if (owner.token === token) await unlink(lockPath);
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) {
+      cleanupError ??= error;
     }
   }
+  if (actionFailed) throw actionError;
+  if (cleanupError !== undefined) throw cleanupError;
+  return result as T;
 };
 
 export const writeConfigFileAtomically = async (

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
@@ -280,6 +280,51 @@ describe("workspace approval through MCP", () => {
     }
   });
 
+  it("requires a new approval when the project folder identity changes", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifactpass-workspace-swap-"));
+    temporaryRoots.push(root);
+    const configHome = resolve(root, "config-home");
+    const configPath = resolve(configHome, "artifactpass", "config.json");
+    const workspace = resolve(root, "project");
+    const movedWorkspace = resolve(root, "original-project");
+    await mkdir(workspace);
+    const server = createBridgeServer(
+      createBridgeConfigurationSource({ XDG_CONFIG_HOME: configHome }, root),
+      { openWorkspaceApprovalBrowser: vi.fn().mockResolvedValue(undefined) },
+    );
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: "artifactpass-workspace-swap-test", version: "0.0.0" });
+
+    try {
+      await server.connect(serverTransport);
+      await client.connect(clientTransport);
+      const started = await client.callTool({
+        name: "connect_artifactpass",
+        arguments: { workspace_path: workspace },
+      });
+      const approvalUrl = String((started.structuredContent as { approval_url?: unknown }).approval_url);
+      const html = await (await fetch(approvalUrl)).text();
+      const token = hiddenValue(html, "token");
+      await rename(workspace, movedWorkspace);
+      await mkdir(workspace);
+
+      const rejected = await fetch(new URL("/workspace-approval", approvalUrl), {
+        method: "POST",
+        headers: {
+          "content-type": "application/x-www-form-urlencoded",
+          origin: new URL(approvalUrl).origin,
+        },
+        body: new URLSearchParams({ action: "approve", token, origin: "https://artifactpass.com" }),
+      });
+      expect(rejected.status).toBe(409);
+      expect(await rejected.text()).toContain("project folder changed");
+      await expect(readFile(configPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
   it("keeps approval scoped against replay, cross-origin posts, and unsafe folder text", async () => {
     const root = await mkdtemp(resolve(tmpdir(), "artifactpass-workspace-safety-"));
     temporaryRoots.push(root);
@@ -315,6 +360,16 @@ describe("workspace approval through MCP", () => {
       expect(html).toContain("&lt;img src=x onerror=alert(1)&gt;");
       expect(html).not.toContain("<img src=x onerror=alert(1)>");
       const token = hiddenValue(html, "token");
+
+      const invalidContentType = await fetch(new URL("/workspace-approval", approvalUrl), {
+        method: "POST",
+        headers: {
+          "content-type": "application/x-www-form-urlencoded-malicious",
+          origin: new URL(approvalUrl).origin,
+        },
+        body: new URLSearchParams({ action: "approve", token, origin: "https://artifactpass.com" }),
+      });
+      expect(invalidContentType.status).toBe(415);
 
       const rejected = await fetch(new URL("/workspace-approval", approvalUrl), {
         method: "POST",

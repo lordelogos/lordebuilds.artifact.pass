@@ -1,3 +1,5 @@
+import { stat } from "node:fs/promises";
+
 import { openBrowser, type BrowserOpener } from "./open-browser";
 import {
   startWorkspaceApprovalServer,
@@ -49,14 +51,40 @@ export const createWorkspaceApprovalController = (
     state: WorkspaceApprovalState;
   }>();
 
+  const rememberFailedAttempt = (
+    key: string,
+    state: WorkspaceApprovalState,
+  ): void => {
+    attempts.delete(key);
+    attempts.set(key, { state });
+    const failedKeys = [...attempts.entries()]
+      .filter(([, attempt]) => attempt.state.status === "failed")
+      .map(([attemptKey]) => attemptKey);
+    for (const expiredKey of failedKeys.slice(0, -32)) attempts.delete(expiredKey);
+  };
+
   const connect = async (request: WorkspaceApprovalRequest): Promise<WorkspaceApprovalState> => {
     const key = keyFor(request);
     const existing = attempts.get(key);
     if (existing?.state.status === "connecting") return existing.state;
     attempts.delete(key);
+    const initialWorkspace = await stat(request.workspaceRoot);
+    if (!initialWorkspace.isDirectory()) {
+      throw new Error("ArtifactPass workspace_root must name a directory");
+    }
     const server = await startWorkspaceApprovalServer({
       ...request,
-      approve: async (origin) => options.approve(request, origin),
+      approve: async (origin) => {
+        const currentWorkspace = await stat(request.workspaceRoot);
+        if (
+          !currentWorkspace.isDirectory() ||
+          currentWorkspace.dev !== initialWorkspace.dev ||
+          currentWorkspace.ino !== initialWorkspace.ino
+        ) {
+          throw new Error("The project folder changed while approval was open. Start approval again.");
+        }
+        await options.approve(request, origin);
+      },
       ...(options.timeoutMilliseconds === undefined
         ? {}
         : { timeoutMilliseconds: options.timeoutMilliseconds }),
@@ -91,16 +119,14 @@ export const createWorkspaceApprovalController = (
         : result.status === "expired"
           ? "workspace_approval_expired"
           : "workspace_approval_failed";
-      attempts.set(key, {
-        state: {
-          ...state,
-          status: "failed",
-          error_code: errorCode,
-          message: result.status === "failed" ? result.message : (
-            result.status === "cancelled" ? "Project approval was cancelled." : "Project approval expired."
-          ),
-          next_action: "Call connect_artifactpass again to start a new approval.",
-        },
+      rememberFailedAttempt(key, {
+        ...state,
+        status: "failed",
+        error_code: errorCode,
+        message: result.status === "failed" ? result.message : (
+          result.status === "cancelled" ? "Project approval was cancelled." : "Project approval expired."
+        ),
+        next_action: "Call connect_artifactpass again to start a new approval.",
       });
     });
     return state;

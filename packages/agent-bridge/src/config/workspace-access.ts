@@ -1,5 +1,6 @@
 import { realpath, stat } from "node:fs/promises";
-import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { homedir } from "node:os";
+import { dirname, isAbsolute, parse, relative, resolve, sep } from "node:path";
 
 import type { LocalBridgeSettings } from "./local-config";
 
@@ -10,6 +11,21 @@ export const containsCanonicalPath = (root: string, candidate: string): boolean 
 
 export const canonicalExistingPath = async (path: string): Promise<string> =>
   realpath(resolve(path));
+
+const canonicalExistingRoot = async (path: string): Promise<string | undefined> => {
+  try {
+    return await canonicalExistingPath(path);
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      (error.code === "ENOENT" || error.code === "ENOTDIR")
+    ) {
+      return undefined;
+    }
+    throw error;
+  }
+};
 
 export const proposedWorkspaceRoot = async (
   path: string,
@@ -24,6 +40,10 @@ export const proposedWorkspaceRoot = async (
   if (!(await stat(root)).isDirectory()) {
     throw new Error("ArtifactPass workspace_root must name a directory");
   }
+  const home = await canonicalExistingPath(homedir());
+  if (root === parse(root).root || root === home) {
+    throw new Error("ArtifactPass workspace_root must be a project folder, not a filesystem or home directory");
+  }
   if (!containsCanonicalPath(root, candidate)) {
     throw new Error("ArtifactPass workspace_root must contain workspace_path");
   }
@@ -35,7 +55,8 @@ export const approvedRootForPath = async (
   roots: readonly string[],
 ): Promise<string | undefined> => {
   const candidate = await canonicalExistingPath(path);
-  const resolvedRoots = await Promise.all(roots.map(canonicalExistingPath));
+  const resolvedRoots = (await Promise.all(roots.map(canonicalExistingRoot)))
+    .filter((root): root is string => root !== undefined);
   return resolvedRoots
     .filter((root) => containsCanonicalPath(root, candidate))
     .sort((left, right) => right.length - left.length || left.localeCompare(right))[0];
@@ -54,12 +75,13 @@ export const matchLocalWorkspaceProfile = async (
   const candidate = await canonicalExistingPath(path);
   const bindings = await Promise.all(Object.entries(settings.workspace_profiles ?? {}).map(
     async ([root, profileName]) => ({
-      root: await canonicalExistingPath(root),
+      root: await canonicalExistingRoot(root),
       profileName,
     }),
   ));
   const binding = bindings
-    .filter(({ root }) => containsCanonicalPath(root, candidate))
+    .filter((entry): entry is { readonly root: string; readonly profileName: string } =>
+      entry.root !== undefined && containsCanonicalPath(entry.root, candidate))
     .sort((left, right) => right.root.length - left.root.length || left.root.localeCompare(right.root))[0];
   if (binding !== undefined) {
     return { profileName: binding.profileName, workspaceRoot: binding.root, ambiguous: false };
@@ -68,7 +90,8 @@ export const matchLocalWorkspaceProfile = async (
   const candidates = (await Promise.all(Object.entries(settings.profiles).map(
     async ([profileName, profile]) => ({
       profileName,
-      roots: await Promise.all(profile.workspace_roots.map(canonicalExistingPath)),
+      roots: (await Promise.all(profile.workspace_roots.map(canonicalExistingRoot)))
+        .filter((root): root is string => root !== undefined),
     }),
   )))
     .flatMap(({ profileName, roots }) => roots

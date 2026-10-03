@@ -3,7 +3,7 @@ export interface WorkspaceApprovalPageOptions {
   readonly proposedOrigin: string;
   readonly availableOrigins: readonly string[];
   readonly token: string;
-  readonly state?: "review" | "saving" | "approved" | "cancelled" | "failed";
+  readonly state?: "review" | "approved" | "cancelled" | "failed";
   readonly message?: string;
 }
 

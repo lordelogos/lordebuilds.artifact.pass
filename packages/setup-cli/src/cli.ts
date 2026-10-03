@@ -7,7 +7,6 @@ import {
   redactSensitiveText,
   setActiveLocalBridgeProfile,
   updateLocalBridgeSettings,
-  writeLocalBridgeSettings,
 } from "agent-bridge";
 
 import { runDeployCommand } from "./commands/deploy";
