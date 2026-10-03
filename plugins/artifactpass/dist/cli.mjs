@@ -94425,17 +94425,20 @@ var createBridgeConfigurationSource = (environment = process.env, processWorkspa
     resolveWorkspacePath: async (path, workspaceRoot) => {
       const proposal = await proposedWorkspaceRoot(path, workspaceRoot);
       const state = localState();
-      const fixedByEnvironment = explicitDeployment || compatibleEnvironmentValue(
+      const baseUrlEnvironment = compatibleEnvironmentValue(
+        environment,
+        "ARTIFACTPASS_BASE_URL",
+        "ARTIFACT_SHARE_BASE_URL"
+      );
+      const rootsEnvironment = compatibleEnvironmentValue(
         environment,
         "ARTIFACTPASS_WORKSPACE_ROOTS",
         "ARTIFACT_SHARE_WORKSPACE_ROOTS"
-      ) !== void 0;
+      );
+      const fixedByEnvironment = explicitDeployment || rootsEnvironment !== void 0;
       if (fixedByEnvironment) {
         const configuration = configurationFor(environment, proposal.candidate, state);
-        const approvedRoot = await approvedRootForPath(
-          proposal.candidate,
-          configuration.workspaceRoots
-        );
+        const approvedRoot = baseUrlEnvironment !== void 0 && rootsEnvironment === void 0 ? void 0 : await approvedRootForPath(proposal.candidate, configuration.workspaceRoots);
         return approvedRoot === void 0 ? {
           status: "workspace_required",
           workspaceRoot: proposal.root,

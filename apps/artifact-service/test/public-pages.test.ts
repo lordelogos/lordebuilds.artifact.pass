@@ -26,7 +26,7 @@ describe("public site", () => {
     ["for-ai-agents", "Artifact Sharing for AI Agents", "MCP-compatible"],
     ["private-deployments", "Private ArtifactPass Deployments", "Cloudflare account"],
     ["guides", "ArtifactPass Setup Guides", "Set up ArtifactPass, then use it well"],
-    ["agent-setup-guide", "Set Up ArtifactPass for an AI Agent", "approves projects explicitly"],
+    ["agent-setup-guide", "Set Up ArtifactPass for an AI Agent", "approve exact project folders"],
     ["private-deployment-guide", "Private ArtifactPass Deployment Guide", "artifacts.example.com"],
     ["private-teammate-guide", "Join a Private ArtifactPass Deployment", "publisher access"],
     ["agent-sharing-guide", "Share Files From AI Agents", "finished file"],
@@ -216,9 +216,9 @@ describe("public site", () => {
     expect(agentSetup).toContain(guideInteractionScript);
     expect(agentSetup).toContain('/guides/agent-setup/run-command.svg');
     expect(agentSetup).toContain('/guides/agent-setup/connect-agent.svg');
-    expect(agentSetup).toContain("If the browser does not open");
+    expect(agentSetup).toContain("always includes the local approval URL");
     expect(agentSetup).toContain("prints the MCP configuration file and skills directory");
-    expect(agentSetup).toContain("limits local file access to the project roots you explicitly set up");
+    expect(agentSetup).toContain("limits local file access to project roots you explicitly approve");
     expect(agentSetup).not.toContain("prints the approval URL as well as trying to open it");
 
     expect(privateDeployment).toContain('"@type":"HowTo"');

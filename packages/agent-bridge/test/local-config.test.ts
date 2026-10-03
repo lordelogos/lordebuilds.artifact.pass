@@ -244,6 +244,35 @@ describe("local bridge config", () => {
     }, root)).not.toThrow();
   });
 
+  it("does not treat an explicit deployment URL as filesystem approval", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifactpass-explicit-deployment-test-"));
+    const project = resolve(root, "project");
+    await mkdir(project);
+    const canonicalProject = await realpath(project);
+    const withoutRoots = createBridgeConfigurationSource({
+      XDG_CONFIG_HOME: resolve(root, "empty-config"),
+      ARTIFACTPASS_BASE_URL: "http://127.0.0.1:8787",
+      ARTIFACTPASS_OPEN_DEVELOPMENT: "1",
+    }, root);
+    await expect(withoutRoots.resolveWorkspacePath(project, project)).resolves.toMatchObject({
+      status: "workspace_required",
+      workspaceRoot: canonicalProject,
+      proposedOrigin: "http://127.0.0.1:8787",
+      deploymentFixed: true,
+    });
+
+    const withRoots = createBridgeConfigurationSource({
+      XDG_CONFIG_HOME: resolve(root, "empty-config"),
+      ARTIFACTPASS_BASE_URL: "http://127.0.0.1:8787",
+      ARTIFACTPASS_OPEN_DEVELOPMENT: "1",
+      ARTIFACTPASS_WORKSPACE_ROOTS: project,
+    }, root);
+    await expect(withRoots.resolveWorkspacePath(project, project)).resolves.toMatchObject({
+      status: "approved",
+      workspaceRoot: canonicalProject,
+    });
+  });
+
   it("rejects an inherited property as the active profile", async () => {
     const root = await mkdtemp(resolve(tmpdir(), "artifact-share-profile-key-test-"));
     const path = resolve(root, "config.json");

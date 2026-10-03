@@ -799,17 +799,22 @@ export const createBridgeConfigurationSource = (
     resolveWorkspacePath: async (path, workspaceRoot) => {
       const proposal = await proposedWorkspaceRoot(path, workspaceRoot);
       const state = localState();
-      const fixedByEnvironment = explicitDeployment || compatibleEnvironmentValue(
+      const baseUrlEnvironment = compatibleEnvironmentValue(
+        environment,
+        "ARTIFACTPASS_BASE_URL",
+        "ARTIFACT_SHARE_BASE_URL",
+      );
+      const rootsEnvironment = compatibleEnvironmentValue(
         environment,
         "ARTIFACTPASS_WORKSPACE_ROOTS",
         "ARTIFACT_SHARE_WORKSPACE_ROOTS",
-      ) !== undefined;
+      );
+      const fixedByEnvironment = explicitDeployment || rootsEnvironment !== undefined;
       if (fixedByEnvironment) {
         const configuration = configurationFor(environment, proposal.candidate, state);
-        const approvedRoot = await approvedRootForPath(
-          proposal.candidate,
-          configuration.workspaceRoots,
-        );
+        const approvedRoot = baseUrlEnvironment !== undefined && rootsEnvironment === undefined
+          ? undefined
+          : await approvedRootForPath(proposal.candidate, configuration.workspaceRoots);
         return approvedRoot === undefined
           ? {
               status: "workspace_required" as const,
