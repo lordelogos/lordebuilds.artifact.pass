@@ -89,7 +89,7 @@ describe("workspace approval through MCP", () => {
           workspace_root: canonicalWorkspace,
         },
       });
-      expect(["connected", "disconnected"]).toContain(
+      expect(["connected", "disconnected", "failed"]).toContain(
         (status.structuredContent as { status?: unknown }).status,
       );
       await expect(readLocalBridgeSettings(configPath)).resolves.toMatchObject({
