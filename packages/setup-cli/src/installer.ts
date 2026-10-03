@@ -7,9 +7,11 @@ import { dirname, join, parse, resolve } from "node:path";
 import {
   ARTIFACTPASS_MCP_TOOL_NAMES,
   defaultLocalConfigPath,
+  mutateLocalBridgeSettings,
   readLocalBridgeSettings,
   redactSensitiveText,
   selectLocalBridgeProfile,
+  updateLocalBridgeSettings,
   writeLocalBridgeSettings,
   type LocalBridgeSettings,
 } from "agent-bridge";
@@ -25,7 +27,10 @@ import {
   type PortableIntegration,
 } from "./portable-integration";
 import { runProcess, type ProcessRunner } from "./process";
-import { applyWorkspaceConfiguration } from "./workspace-configuration";
+import {
+  applyWorkspaceConfiguration,
+  rollbackWorkspaceConfiguration,
+} from "./workspace-configuration";
 
 export const installReceiptVersion = 3 as const;
 
@@ -330,9 +335,12 @@ export const renderInstallReceipt = (receipt: ArtifactpassInstallReceipt): strin
     ? `Manual host registration required. MCP: ${receipt.portable_bundle.mcp_config ?? "unavailable"}; skills: ${receipt.portable_bundle.skills_directory ?? "unavailable"}.`
     : `Installed for ${receipt.adapters.join(" and ")}.`;
   const connection = receipt.credential === "none"
-    ? `ArtifactPass is installed for ${receipt.profile} and is not connected. Open it in your agent and choose Connect ArtifactPass when you want to publish.`
-    : `ArtifactPass is connected to ${receipt.origin} for ${receipt.profile}.`;
-  return `${connection} ${registration} Start a new agent session before using it.`;
+    ? `ArtifactPass is installed but not connected. Open it in your agent and choose Connect ArtifactPass when you want to publish.`
+    : `ArtifactPass is connected to ${receipt.origin} for profile ${receipt.profile}.`;
+  const projectAccess = receipt.workspace_roots.length === 1
+    ? `This project can publish: ${receipt.workspace_roots[0]}.`
+    : `Approved projects: ${receipt.workspace_roots.join(", ")}.`;
+  return `${connection} ${registration} ${projectAccess} The integration is reusable; another project will ask for its own approval inside the agent. Start a new agent session once to load this installation. Later project approvals do not require reinstalling or restarting.`;
 };
 
 const leafErrorMessages = (error: unknown, seen = new Set<unknown>()): readonly string[] => {
@@ -476,11 +484,11 @@ export const runArtifactpassInstall = async (
         },
       });
     } else {
-      await writeLocalBridgeSettings(configPath, applyWorkspaceConfiguration(previousSettings, {
-        baseUrl: origin,
-        profileName,
-        workspaceRoot,
-      }, input.openDevelopment === true));
+      await updateLocalBridgeSettings(configPath, (current) => applyWorkspaceConfiguration(current, {
+          baseUrl: origin,
+          profileName,
+          workspaceRoot,
+        }, input.openDevelopment === true));
       const runner = dependencies.runner ?? runProcess;
       const hosts = input.installKnownHostAdapters === false
         ? []
@@ -593,10 +601,11 @@ export const runArtifactpassInstall = async (
         .catch(() => rollbackFailures.push("portable-bundle"));
     }
     if (configSnapshot !== undefined) {
-      const restore = configSnapshot.existed && configSnapshot.bytes !== undefined
-        ? writeFile(configPath, configSnapshot.bytes, { mode: 0o600 })
-        : rm(configPath, { force: true });
-      await restore.catch(() => rollbackFailures.push("configuration"));
+      await mutateLocalBridgeSettings(configPath, (current) => rollbackWorkspaceConfiguration(
+        current,
+        previousSettings,
+        { baseUrl: origin, profileName, workspaceRoot },
+      )).catch(() => rollbackFailures.push("configuration"));
     }
     if (connectResult?.credentialAction === "created" || connectResult?.credentialAction === "rotated") {
       rollbackFailures.push("credential-unverified");

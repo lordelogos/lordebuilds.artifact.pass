@@ -30,6 +30,7 @@ export {
   defaultLocalConfigPath,
   localBridgeProfileNameForWorkspace,
   legacyLocalConfigPath,
+  mutateLocalBridgeSettings,
   publicationStatePathForProfile,
   readCompatibleLocalBridgeSettingsSync,
   readLocalBridgeSettings,

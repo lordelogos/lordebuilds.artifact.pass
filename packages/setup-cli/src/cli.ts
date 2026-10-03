@@ -6,6 +6,7 @@ import {
   readLocalBridgeSettings,
   redactSensitiveText,
   setActiveLocalBridgeProfile,
+  updateLocalBridgeSettings,
   writeLocalBridgeSettings,
 } from "agent-bridge";
 
@@ -66,6 +67,7 @@ import {
   applyWorkspaceConfiguration,
   resolveWorkspaceConfiguration,
 } from "./workspace-configuration";
+import { listWorkspaceAccess, removeWorkspaceAccess } from "./workspace-access";
 import {
   createNonInteractiveTerminalPrompt,
   createTerminalPrompt,
@@ -132,6 +134,8 @@ Commands:
   connect [base-url] [--profile <name>] [--workspace-root <path>] [--open-development]
   profile list
   profile use <name>
+  workspace list
+  workspace remove <path> [--profile <name>]
   disconnect [--profile <name>]
   doctor
 
@@ -246,12 +250,12 @@ const main = async (): Promise<void> => {
     const unexpected = firstUnknownOption(args, WORKSPACE_VALUE_OPTIONS, configureBooleanOptions);
     if (unexpected !== undefined) throw new Error(`Unknown configure option: ${unexpected}`);
     const configuration = await resolveCliWorkspaceConfiguration(args, true);
-    const updated = applyWorkspaceConfiguration(
-      configuration.settings,
-      configuration.resolved,
-      configuration.openDevelopment,
-    );
-    await writeLocalBridgeSettings(defaultLocalConfigPath(), updated);
+    await updateLocalBridgeSettings(defaultLocalConfigPath(), (current) =>
+      applyWorkspaceConfiguration(
+        current,
+        configuration.resolved,
+        configuration.openDevelopment,
+      ));
     if (jsonOutputRequested) {
       print({
         profile: configuration.resolved.profileName,
@@ -260,7 +264,7 @@ const main = async (): Promise<void> => {
         connection_status: "not-checked",
       });
     } else {
-      const message = `ArtifactPass now uses ${configuration.resolved.baseUrl} for ${configuration.resolved.workspaceRoot}. Start a new agent session; if this deployment is not connected, connect from the agent when you first use it.`;
+      const message = `ArtifactPass now uses ${configuration.resolved.baseUrl} for ${configuration.resolved.workspaceRoot}. Running agent sessions pick up this project access on their next ArtifactPass tool call. If this deployment is not connected, connect from the agent when you first use it.`;
       print(message);
       configuration.prompt?.outro?.("Configuration saved");
     }
@@ -645,12 +649,48 @@ const main = async (): Promise<void> => {
       return;
     }
     if (args[0] === "use" && args.length === 2) {
-      const next = setActiveLocalBridgeProfile(config, args[1] ?? "");
-      await writeLocalBridgeSettings(configPath, next);
-      print({ active_profile: next.active_profile, next: "Start a new agent session so the bridge reloads." });
+      const next = await updateLocalBridgeSettings(configPath, (current) => {
+        if (current === null) throw new Error("ArtifactPass has no saved profiles");
+        return setActiveLocalBridgeProfile(current, args[1] ?? "");
+      });
+      print({ active_profile: next.active_profile, next: "Running agent sessions reload saved ArtifactPass configuration on their next tool call." });
       return;
     }
     throw new Error("Use `profile list` or `profile use <name>`");
+  }
+  if (command === "workspace") {
+    await migrateDefaultLocalState();
+    const configPath = defaultLocalConfigPath();
+    if (args[0] === "list" && args.length === 1) {
+      const config = await readLocalBridgeSettings(configPath);
+      print({ workspaces: listWorkspaceAccess(config) });
+      return;
+    }
+    if (args[0] === "remove") {
+      const workspaceRoot = optionalPositional(args.slice(1), 0);
+      if (workspaceRoot === undefined) {
+        throw new Error("workspace remove requires an exact stored path");
+      }
+      if (optionalPositional(args.slice(1), 1) !== undefined) {
+        throw new Error("workspace remove accepts one path");
+      }
+      const profile = optionalValue(args, "--profile");
+      let result: ReturnType<typeof removeWorkspaceAccess> | undefined;
+      const removed = await updateLocalBridgeSettings(configPath, (current) => {
+        if (current === null) throw new Error("ArtifactPass has no saved workspace grants");
+        result = removeWorkspaceAccess(current, workspaceRoot, profile);
+        return result.settings;
+      });
+      if (result === undefined) throw new Error("ArtifactPass did not remove the workspace grant");
+      print({
+        removed: result.removed,
+        remaining_covering_access: result.remaining_covering_access,
+        workspace_count: listWorkspaceAccess(removed).length,
+        credential_changed: false,
+      });
+      return;
+    }
+    throw new Error("Use `workspace list` or `workspace remove <path> [--profile <name>]`");
   }
   if (command === "disconnect") {
     await migrateDefaultLocalState();

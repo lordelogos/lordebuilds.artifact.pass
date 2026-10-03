@@ -58,7 +58,7 @@ export const renderWorkspaceApprovalPage = (
 export const workspaceApprovalPageHeaders = (): Readonly<Record<string, string>> => ({
   "content-type": "text/html; charset=utf-8",
   "cache-control": "no-store",
-  "referrer-policy": "no-referrer",
+  "referrer-policy": "same-origin",
   "x-content-type-options": "nosniff",
   "x-frame-options": "DENY",
   "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",

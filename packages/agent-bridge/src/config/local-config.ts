@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
@@ -59,7 +59,6 @@ const validateProfile = (value: unknown): LocalBridgeProfileSettings => {
   }
   if (
     !Array.isArray(candidate.workspace_roots) ||
-    candidate.workspace_roots.length === 0 ||
     !candidate.workspace_roots.every((root) => typeof root === "string" && resolve(root) === root)
   ) {
     throw new Error("ArtifactPass config requires absolute workspace roots");
@@ -375,12 +374,12 @@ export const writeLocalBridgeSettings = async (
   await withConfigFileLock(path, async () => writeConfigFileAtomically(path, contents));
 };
 
-export const updateLocalBridgeSettings = async (
+export const mutateLocalBridgeSettings = async (
   path: string,
   mutation: (
     settings: LocalBridgeSettings | null,
-  ) => LocalBridgeSettings | Promise<LocalBridgeSettings>,
-): Promise<LocalBridgeSettings> => {
+  ) => LocalBridgeSettings | null | Promise<LocalBridgeSettings | null>,
+): Promise<LocalBridgeSettings | null> => {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   return withConfigFileLock(path, async () => {
     const current = await readLocalBridgeSettings(path).catch((error: unknown) => {
@@ -388,7 +387,22 @@ export const updateLocalBridgeSettings = async (
       throw error;
     });
     const next = await mutation(current);
+    if (next === null) {
+      await rm(path, { force: true });
+      return null;
+    }
     await writeConfigFileAtomically(path, serializeSettings(next));
     return next;
   });
+};
+
+export const updateLocalBridgeSettings = async (
+  path: string,
+  mutation: (
+    settings: LocalBridgeSettings | null,
+  ) => LocalBridgeSettings | Promise<LocalBridgeSettings>,
+): Promise<LocalBridgeSettings> => {
+  const next = await mutateLocalBridgeSettings(path, mutation);
+  if (next === null) throw new Error("ArtifactPass configuration mutation returned no settings");
+  return next;
 };
