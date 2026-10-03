@@ -15,19 +15,23 @@ The publisher signs in. A recipient opening the temporary link in a browser does
 
 ## Install
 
-From the workspace the agent may share, run:
+Install from the first workspace the agent may share:
 
 ```sh
 pnpm dlx artifactpass
 ```
 
-Choose the agent used in this workspace, then choose public ArtifactPass or a private deployment. Setup installs or repairs the portable bundle, registers the selected agent, negotiates the MCP tools, verifies both skills, and writes a private install receipt. It does not open a browser or authenticate.
+Choose the agent used in this workspace, then choose public ArtifactPass or a private deployment. Setup installs or repairs the reusable portable bundle, registers the selected agent, approves the current project root, negotiates the MCP tools, verifies both skills, and writes a private install receipt. It does not open a browser or authenticate.
+
+The integration and project access are separate. Codex and Claude Code load the installed integration at the user level. Other hosts retain their supported registration shape. In any host where ArtifactPass is already loaded, a new project needs only the in-agent folder approval described below, not another installation.
 
 The agent question belongs only to workspace installation. `pnpm dlx artifactpass deploy` creates or updates Cloudflare infrastructure and never asks which agent you use.
 
 ## Connect inside the agent
 
-Start a new agent session once after installation. ArtifactPass appears as installed but disconnected. Ask the agent to share an artifact or say **Connect ArtifactPass**. The plugin opens the public approval page. Sign in with Google or GitHub, confirm the displayed code, and approve it. The plugin becomes connected and can continue publishing in the same session. No terminal connection command or post-login restart is required.
+Start a new agent session once after installation. Ask the agent to share an artifact. If the project is not approved, ArtifactPass opens a local page showing the canonical folder and publishing destination. Use the printed approval URL in any browser profile, review both values, then choose **Allow project** or **Cancel**. Approval grants access only to supported files in that folder and its subfolders.
+
+After project approval, ArtifactPass reuses a valid credential for that destination. If sign-in is still required, the agent opens the existing deployment approval flow. Public ArtifactPass uses Google or GitHub; a private deployment uses its configured Cloudflare Access login. The agent then resumes the original share request with the same file, expiry, and PDF source in the same session. No terminal command, reinstall, or post-approval restart is required.
 
 ## Change a workspace deployment
 
@@ -37,7 +41,7 @@ An existing installation is reconfigurable. From the workspace you want to chang
 pnpm dlx artifactpass configure
 ```
 
-Choose public ArtifactPass or enter the private deployment URL. The choice is bound to the current workspace. Other workspaces keep their own deployment, profile, and credential. Start a new agent session so its MCP process loads the changed workspace configuration. It remains disconnected until the agent invokes **Connect ArtifactPass**.
+Choose public ArtifactPass or enter the private deployment URL. The choice is bound to the current workspace. Other workspaces keep their own deployment and project access. Running bridges reload the saved configuration on their next ArtifactPass tool call. It remains disconnected until the agent invokes **Connect ArtifactPass**.
 
 For automation, make the same change without prompts:
 
@@ -63,7 +67,7 @@ pnpm dlx artifactpass profile use local
 pnpm dlx artifactpass profile use production
 ```
 
-Workspace configuration preserves every other profile. `ARTIFACTPASS_PROFILE=<name>` remains an explicit one-process override. Restart an agent session after installing the plugin or changing that workspace's deployment.
+Workspace configuration preserves every other profile. `ARTIFACTPASS_PROFILE=<name>` remains an explicit one-process override. Restart an agent session only after first installing or upgrading the plugin binary, not after approving, removing, or changing a project grant.
 
 The MCP tool descriptions include the active profile and origin, so every compatible agent host can verify its target before acting. Browser approval changes the running bridge from disconnected to connected without a restart.
 
@@ -95,8 +99,12 @@ For PDFs, `auto` returns signed canonical source only for a controlled PDF. Huma
 
 ```sh
 pnpm dlx artifactpass doctor
+pnpm dlx artifactpass workspace list
+pnpm dlx artifactpass workspace remove /absolute/path/to/project
 pnpm dlx artifactpass disconnect --profile production
 ```
+
+`workspace list` shows each exact approved root, profile, and destination. `workspace remove` removes only the exact stored root and leaves the deployment credential available to other approved projects. If a parent grant still covers the folder, the result reports that remaining access. Use `--profile <name>` when the same root is stored for more than one profile.
 
 Disconnect first revokes that profile's server-side token, then removes only that profile's local keychain entry. It preserves every non-secret profile so a failed revocation cannot silently leave an active credential while reporting local success.
 

@@ -15,6 +15,8 @@ Anything marked **Conditional** appears only when the CLI needs that information
 | `pnpm dlx artifactpass disconnect` | Revoke the selected agent connection | No questions |
 | `pnpm dlx artifactpass profile list` | List saved deployment profiles | No questions |
 | `pnpm dlx artifactpass profile use <name>` | Change the active fallback profile | No questions |
+| `pnpm dlx artifactpass workspace list` | List exact project grants and destinations | No questions |
+| `pnpm dlx artifactpass workspace remove <path>` | Remove one exact project grant | No questions |
 | `pnpm dlx artifactpass doctor` | Check local installation requirements | No questions |
 | `pnpm dlx artifactpass deploy` | Create or update a private deployment | Full guided Cloudflare flow |
 | `pnpm dlx artifactpass deploy --status` | List locally recorded private deployments | No questions |
@@ -104,7 +106,7 @@ Installation:
 
 1. Installs the shared ArtifactPass plugin, MCP server, and Agent Skills.
 2. Registers supported agent configuration for the selected agent.
-3. Binds the selected deployment to the current project.
+3. Binds the selected deployment to the current project. The installed integration remains reusable in other projects.
 4. Verifies the MCP handshake, tools, and skills.
 5. Writes an installation receipt.
 
@@ -115,20 +117,23 @@ Installation does not sign the agent in. The user starts a new agent session and
 For a supported agent:
 
 ```text
-ArtifactPass is installed for <profile> and is not connected.
+ArtifactPass is installed but not connected.
 Open it in your agent and choose Connect ArtifactPass when you want to publish.
 Installed for <agent>.
-Start a new agent session before using it.
+This project can publish: <project path>.
+The integration is reusable; another project will ask for its own approval inside the agent.
+Start a new agent session once to load this installation.
 ```
 
 For `Other MCP client`:
 
 ```text
-ArtifactPass is installed for <profile> and is not connected.
+ArtifactPass is installed but not connected.
 Open it in your agent and choose Connect ArtifactPass when you want to publish.
 Manual host registration required.
 MCP: <configuration path>; skills: <skills directory>.
-Start a new agent session before using it.
+This project can publish: <project path>.
+Start a new agent session once after registering the printed paths.
 ```
 
 ### Flags that remove questions
@@ -183,8 +188,8 @@ Private deployment URL
 
 ```text
 ArtifactPass now uses <deployment URL> for <project path>.
-Start a new agent session; if this deployment is not connected,
-connect from the agent when you first use it.
+Running agent sessions pick up this project access on their next
+ArtifactPass tool call. Connect from the agent if needed.
 ```
 
 Questions are skipped when `--base-url` or `--profile` is supplied:
@@ -255,7 +260,21 @@ pnpm dlx artifactpass profile list
 pnpm dlx artifactpass profile use <name>
 ```
 
-**No questions.** `profile list` prints saved profiles and their deployment URLs. `profile use` changes the active fallback profile and tells the user to start a new agent session.
+**No questions.** `profile list` prints saved profiles and their deployment URLs. `profile use` changes the active fallback profile. Running bridges reload saved configuration on the next ArtifactPass tool call.
+
+## Manage project access
+
+Commands:
+
+```sh
+pnpm dlx artifactpass workspace list
+pnpm dlx artifactpass workspace remove /absolute/path/to/project
+pnpm dlx artifactpass workspace remove /absolute/path/to/project --profile company
+```
+
+**No questions.** `workspace list` prints exact stored roots with their profile and deployment origin. `workspace remove` accepts only an exact stored root. It removes the matching root and direct binding without revoking the deployment credential used by other projects.
+
+When the same exact root belongs to multiple profiles, removal requires `--profile`. When a broader parent root still covers the removed project, the command reports that remaining access instead of claiming the folder is fully denied. Environment-managed roots cannot be removed from the local config command.
 
 ## Check the local installation
 

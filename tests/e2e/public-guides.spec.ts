@@ -86,7 +86,7 @@ test("renders every real Cloudflare screenshot in the private deployment guide",
 
 test("moves through the complete setup-guide journey without dead ends", async ({ page }) => {
   await page.goto("/guides");
-  await page.getByRole("link", { name: /Set up ArtifactPass in a project/u }).click();
+  await page.getByRole("link", { name: /Install ArtifactPass and approve projects/u }).click();
   await expect(page).toHaveURL(/\/guides\/agent-setup$/u);
 
   const agentNavigation = page.getByRole("navigation", { name: "Guide navigation" });

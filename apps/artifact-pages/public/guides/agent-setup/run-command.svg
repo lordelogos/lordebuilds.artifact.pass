@@ -13,8 +13,8 @@
     <text x="540" y="344">7. Antigravity</text><text x="540" y="384">8. Other MCP client</text>
   </g>
   <rect x="86" y="442" width="1028" height="1" fill="#34373d"/>
-  <text x="86" y="492" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" fill="#797d82">Setup scope</text>
-  <text x="86" y="534" font-family="Arial, sans-serif" font-size="22" fill="#efefec">Only this project will receive the selected agent configuration.</text>
-  <text x="86" y="575" font-family="Arial, sans-serif" font-size="18" fill="#b8babd">Run the command again from another project to install ArtifactPass there.</text>
+  <text x="86" y="492" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" fill="#797d82">Installation and project access</text>
+  <text x="86" y="534" font-family="Arial, sans-serif" font-size="22" fill="#efefec">The integration is reusable. This project receives an exact local grant.</text>
+  <text x="86" y="575" font-family="Arial, sans-serif" font-size="18" fill="#b8babd">Another project asks for approval inside the agent. No reinstall is needed.</text>
   <rect x="86" y="616" width="6" height="26" fill="#efefec"/>
 </svg>
