@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { delimiter, isAbsolute, resolve } from "node:path";
 
 import { McpServer } from "@modelcontextprotocol/server";
@@ -18,18 +19,28 @@ import {
   type ConnectionController,
 } from "./connection/connection-controller";
 import {
+  bindLocalBridgeWorkspace,
   defaultLocalConfigPath,
   legacyLocalConfigPath,
   publicationStatePathForProfile,
   readCompatibleLocalBridgeSettingsSync,
+  setActiveLocalBridgeProfile,
   selectLocalBridgeProfile,
+  updateLocalBridgeSettings,
+  upsertLocalBridgeProfile,
   validateProfileName,
 } from "./config/local-config";
 import {
   approvedRootForPath,
+  canonicalExistingPath,
   matchLocalWorkspaceProfile,
   proposedWorkspaceRoot,
 } from "./config/workspace-access";
+import {
+  createWorkspaceApprovalController,
+  type WorkspaceApprovalRequest,
+} from "./connection/workspace-approval-controller";
+import type { BrowserOpener } from "./connection/open-browser";
 import { assertDeploymentOrigin } from "./http/safe-fetch";
 import {
   createRedactingLogger,
@@ -78,6 +89,7 @@ export interface BridgeConfigurationSource {
   defaultConfiguration(): BridgeConfiguration;
   forWorkspacePath(path: string): BridgeConfiguration;
   resolveWorkspacePath(path: string, workspaceRoot?: string): Promise<BridgeWorkspaceResolution>;
+  approveWorkspace?(request: WorkspaceApprovalRequest, origin: string): Promise<void>;
   forShareUrl(url: string): BridgeConfiguration;
   runtimeKey(configuration: BridgeConfiguration): string;
 }
@@ -92,8 +104,14 @@ export type BridgeWorkspaceResolution =
       readonly status: "workspace_required";
       readonly workspaceRoot: string;
       readonly proposedOrigin: string;
+      readonly availableOrigins: readonly string[];
       readonly deploymentFixed: boolean;
     };
+
+export interface BridgeServerOptions {
+  readonly openWorkspaceApprovalBrowser?: BrowserOpener;
+  readonly workspaceApprovalTimeoutMilliseconds?: number;
+}
 
 const resolvePdfProvenance = async (
   configuration: BridgeConfiguration,
@@ -214,6 +232,7 @@ const fixedConfigurationSource = (
           status: "workspace_required",
           workspaceRoot: proposal.root,
           proposedOrigin: configuration.baseUrl.origin,
+          availableOrigins: [configuration.baseUrl.origin],
           deploymentFixed: true,
         }
       : { status: "approved", configuration, workspaceRoot: approvedRoot };
@@ -224,6 +243,7 @@ const fixedConfigurationSource = (
 
 export const createBridgeServer = (
   configurationOrSource: BridgeConfiguration | BridgeConfigurationSource,
+  options: BridgeServerOptions = {},
 ): McpServer => {
   const dynamic = isConfigurationSource(configurationOrSource);
   const source = dynamic
@@ -239,6 +259,22 @@ export const createBridgeServer = (
     ? ` Default deployment: profile ${defaultConfiguration.profileName ?? "environment"} at ${defaultConfiguration.baseUrl.origin}. ArtifactPass selects a more specific configured deployment from workspace_path or the artifact/link being used.`
     : ` Configured deployment: profile ${defaultConfiguration.profileName ?? "environment"} at ${defaultConfiguration.baseUrl.origin} (${defaultConfiguration.openDevelopment === true ? "open local development" : "authentication required for publishing"}).`;
   const runtimes = new Map<string, BridgeResources>();
+  const workspaceApprovalController = source.approveWorkspace === undefined
+    ? undefined
+    : createWorkspaceApprovalController({
+        approve: source.approveWorkspace,
+        ...(options.openWorkspaceApprovalBrowser === undefined
+          ? {}
+          : { openBrowser: options.openWorkspaceApprovalBrowser }),
+        ...(options.workspaceApprovalTimeoutMilliseconds === undefined
+          ? {}
+          : { timeoutMilliseconds: options.workspaceApprovalTimeoutMilliseconds }),
+      });
+  const closeMcpServer = server.close.bind(server);
+  server.close = async () => {
+    await workspaceApprovalController?.close();
+    await closeMcpServer();
+  };
   const runtimeFor = (configuration: BridgeConfiguration): BridgeRuntime => {
     const key = source.runtimeKey(configuration);
     const existing = runtimes.get(key);
@@ -298,6 +334,21 @@ export const createBridgeServer = (
     };
   };
 
+  const approvalRequestFor = (
+    resolution: Extract<BridgeWorkspaceResolution, { status: "workspace_required" }>,
+  ): WorkspaceApprovalRequest => ({
+    workspaceRoot: resolution.workspaceRoot,
+    proposedOrigin: resolution.proposedOrigin,
+    availableOrigins: resolution.availableOrigins,
+  });
+
+  const workspaceApprovalResult = (
+    state: NonNullable<ReturnType<NonNullable<typeof workspaceApprovalController>["status"]>>,
+  ) => ({
+    content: [{ type: "text" as const, text: JSON.stringify(state) }],
+    structuredContent: state,
+  });
+
   server.registerTool("connection_status", {
     title: "ArtifactPass Connection Status",
     description: "Report whether ArtifactPass publishing is disconnected, connecting, connected, or failed for this workspace." + connectionContext,
@@ -312,7 +363,12 @@ export const createBridgeServer = (
   }, async ({ workspace_path: workspacePath, workspace_root: workspaceRoot }) => {
     try {
       const resolution = await source.resolveWorkspacePath(workspacePath, workspaceRoot);
-      if (resolution.status === "workspace_required") return workspaceRequiredResult(resolution);
+      if (resolution.status === "workspace_required") {
+        const pending = workspaceApprovalController?.status(approvalRequestFor(resolution));
+        return pending === undefined
+          ? workspaceRequiredResult(resolution)
+          : workspaceApprovalResult(pending);
+      }
       const runtime = runtimeFor(resolution.configuration);
       return connectionResult(await runtime.connectionController.status(), resolution.workspaceRoot);
     } catch (error) {
@@ -334,7 +390,14 @@ export const createBridgeServer = (
   }, async ({ workspace_path: workspacePath, workspace_root: workspaceRoot }) => {
     try {
       const resolution = await source.resolveWorkspacePath(workspacePath, workspaceRoot);
-      if (resolution.status === "workspace_required") return workspaceRequiredResult(resolution);
+      if (resolution.status === "workspace_required") {
+        if (workspaceApprovalController === undefined || resolution.deploymentFixed) {
+          return workspaceRequiredResult(resolution);
+        }
+        return workspaceApprovalResult(
+          await workspaceApprovalController.connect(approvalRequestFor(resolution)),
+        );
+      }
       const runtime = runtimeFor(resolution.configuration);
       return connectionResult(await runtime.connectionController.connect(), resolution.workspaceRoot);
     } catch (error) {
@@ -677,6 +740,49 @@ export const createBridgeConfigurationSource = (
     );
   }
 
+  const configPath = (): string => localState()?.path ?? (
+    environment.ARTIFACTPASS_CONFIG_PATH === undefined &&
+    environment.ARTIFACT_SHARE_CONFIG_PATH !== undefined
+      ? legacyLocalConfigPath(environment)
+      : defaultLocalConfigPath(environment)
+  );
+  const availableOrigins = (state: CompatibleLocalState | undefined): string[] => [
+    ...new Set([
+      "https://artifactpass.com",
+      ...Object.values(state?.settings.profiles ?? {}).map((profile) => {
+        try {
+          return new URL(profile.base_url).origin;
+        } catch {
+          return profile.base_url;
+        }
+      }),
+    ]),
+  ].sort((left, right) => left.localeCompare(right));
+  const profileNameForOrigin = (
+    settings: CompatibleLocalState["settings"] | null,
+    origin: string,
+  ): string => {
+    const existing = Object.entries(settings?.profiles ?? {})
+      .filter(([, profile]) => {
+        try {
+          return new URL(profile.base_url).origin === origin;
+        } catch {
+          return false;
+        }
+      })
+      .map(([name]) => name)
+      .sort((left, right) => left.localeCompare(right))[0];
+    if (existing !== undefined) return existing;
+    if (origin === "https://artifactpass.com") return "production";
+    const host = new URL(origin).hostname
+      .toLowerCase()
+      .replaceAll(/[^a-z0-9]+/gu, "-")
+      .replaceAll(/^-|-$/gu, "")
+      .slice(0, 16) || "deployment";
+    const hash = createHash("sha256").update(origin).digest("hex").slice(0, 8);
+    return validateProfileName(`org-${host}-${hash}`);
+  };
+
   return {
     defaultConfiguration,
     forWorkspacePath: (path) => {
@@ -709,6 +815,7 @@ export const createBridgeConfigurationSource = (
               status: "workspace_required" as const,
               workspaceRoot: proposal.root,
               proposedOrigin: configuration.baseUrl.origin,
+              availableOrigins: [configuration.baseUrl.origin],
               deploymentFixed: true,
             }
           : { status: "approved" as const, configuration, workspaceRoot: approvedRoot };
@@ -731,8 +838,78 @@ export const createBridgeConfigurationSource = (
         status: "workspace_required" as const,
         workspaceRoot: proposal.root,
         proposedOrigin: "https://artifactpass.com",
+        availableOrigins: availableOrigins(state),
         deploymentFixed: false,
       };
+    },
+    approveWorkspace: async (request, originValue) => {
+      if (explicitDeployment || compatibleEnvironmentValue(
+        environment,
+        "ARTIFACTPASS_WORKSPACE_ROOTS",
+        "ARTIFACT_SHARE_WORKSPACE_ROOTS",
+      ) !== undefined) {
+        throw new Error("This ArtifactPass workspace policy is managed by the agent environment.");
+      }
+      const workspaceRoot = await canonicalExistingPath(request.workspaceRoot);
+      if (workspaceRoot !== request.workspaceRoot) {
+        throw new Error("The project folder changed while approval was open. Start approval again.");
+      }
+      const enteredUrl = new URL(originValue);
+      const before = localState()?.settings ?? null;
+      const existingProfile = Object.values(before?.profiles ?? {}).find((profile) => {
+        try {
+          return new URL(profile.base_url).origin === enteredUrl.origin;
+        } catch {
+          return false;
+        }
+      });
+      const origin = assertDeploymentOrigin(enteredUrl, {
+        openDevelopment: existingProfile?.open_development === true,
+      }).origin;
+      await updateLocalBridgeSettings(configPath(), async (current) => {
+        if (current !== null) {
+          const currentMatch = await matchLocalWorkspaceProfile(current, workspaceRoot);
+          if (currentMatch.profileName !== undefined) {
+            const currentProfile = current.profiles[currentMatch.profileName];
+            if (currentProfile === undefined) {
+              throw new Error("The approved ArtifactPass deployment no longer exists.");
+            }
+            const currentOrigin = new URL(currentProfile.base_url).origin;
+            if (currentOrigin !== origin) {
+              throw new Error(
+                `This project was approved for ${currentOrigin} while this page was open. Start approval again to change it.`,
+              );
+            }
+            return current;
+          }
+        }
+        const profileName = profileNameForOrigin(current, origin);
+        const previousProfile = current?.profiles[profileName];
+        if (
+          previousProfile !== undefined &&
+          new URL(previousProfile.base_url).origin !== origin
+        ) {
+          throw new Error(`ArtifactPass profile ${profileName} already uses another deployment.`);
+        }
+        const nextProfile = {
+          ...previousProfile,
+          base_url: origin,
+          workspace_roots: [
+            ...new Set([...(previousProfile?.workspace_roots ?? []), workspaceRoot]),
+          ],
+          ...(previousProfile?.credential_namespace === undefined
+            ? { credential_namespace: "artifactpass" as const }
+            : {}),
+          ...(previousProfile?.credential_binding === undefined
+            ? { credential_binding: "origin" as const }
+            : {}),
+        };
+        let next = upsertLocalBridgeProfile(current, profileName, nextProfile);
+        if (current !== null && current.active_profile !== profileName) {
+          next = setActiveLocalBridgeProfile(next, current.active_profile);
+        }
+        return bindLocalBridgeWorkspace(next, workspaceRoot, profileName);
+      });
     },
     forShareUrl: (url) => {
       const state = localState();

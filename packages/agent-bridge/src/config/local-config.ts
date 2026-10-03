@@ -1,7 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+
+import { withConfigFileLock, writeConfigFileAtomically } from "./config-transaction";
 
 export interface LocalBridgeProfileSettings {
   readonly base_url: string;
@@ -286,6 +288,14 @@ const parseSettings = (contents: string): LocalBridgeSettings => {
   return validateSettings(JSON.parse(contents));
 };
 
+const serializeSettings = (
+  settings: LocalBridgeSettings | LegacyLocalBridgeSettings,
+): string => {
+  const contents = `${JSON.stringify(validateSettings(settings), null, 2)}\n`;
+  if (Buffer.byteLength(contents) > 16 * 1024) throw new Error("ArtifactPass config is too large");
+  return contents;
+};
+
 export const readLocalBridgeSettingsSync = (path: string): LocalBridgeSettings =>
   parseSettings(readFileSync(path, "utf8"));
 
@@ -360,9 +370,25 @@ export const writeLocalBridgeSettings = async (
   path: string,
   settings: LocalBridgeSettings | LegacyLocalBridgeSettings,
 ): Promise<void> => {
-  const validated = validateSettings(settings);
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  const temporary = `${path}.${process.pid}.tmp`;
-  await writeFile(temporary, `${JSON.stringify(validated, null, 2)}\n`, { mode: 0o600 });
-  await rename(temporary, path);
+  const contents = serializeSettings(settings);
+  await withConfigFileLock(path, async () => writeConfigFileAtomically(path, contents));
+};
+
+export const updateLocalBridgeSettings = async (
+  path: string,
+  mutation: (
+    settings: LocalBridgeSettings | null,
+  ) => LocalBridgeSettings | Promise<LocalBridgeSettings>,
+): Promise<LocalBridgeSettings> => {
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+  return withConfigFileLock(path, async () => {
+    const current = await readLocalBridgeSettings(path).catch((error: unknown) => {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") return null;
+      throw error;
+    });
+    const next = await mutation(current);
+    await writeConfigFileAtomically(path, serializeSettings(next));
+    return next;
+  });
 };

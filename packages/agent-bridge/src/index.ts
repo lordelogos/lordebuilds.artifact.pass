@@ -37,6 +37,7 @@ export {
   selectLocalBridgeProfile,
   setActiveLocalBridgeProfile,
   upsertLocalBridgeProfile,
+  updateLocalBridgeSettings,
   validateProfileName,
   writeLocalBridgeSettings,
   type LocalBridgeProfileSettings,
