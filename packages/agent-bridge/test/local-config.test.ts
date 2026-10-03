@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, resolve } from "node:path";
 
@@ -193,6 +193,37 @@ describe("local bridge config", () => {
     expect(configuration.profileName).toBe("production");
     expect(configuration.workspaceRoots).toEqual([pluginCache]);
     expect(configuration.workspaceRoots).not.toContain(unrelatedArtifact);
+  });
+
+  it("requires approval for an unbound workspace instead of inheriting the active profile", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifactpass-unbound-routing-test-"));
+    const path = resolve(root, "config.json");
+    const privateRoot = resolve(root, "private-company-project");
+    const newRoot = resolve(root, "new-personal-project");
+    await Promise.all([mkdir(privateRoot), mkdir(newRoot)]);
+    await writeLocalBridgeSettings(path, {
+      version: 2,
+      active_profile: "company",
+      workspace_profiles: { [privateRoot]: "company" },
+      profiles: {
+        company: {
+          base_url: "https://artifacts.company.example/",
+          workspace_roots: [privateRoot],
+        },
+      },
+    });
+
+    const source = createBridgeConfigurationSource(
+      { ARTIFACTPASS_CONFIG_PATH: path },
+      resolve(root, "plugin-cache"),
+    );
+    const canonicalNewRoot = await realpath(newRoot);
+    await expect(source.resolveWorkspacePath(newRoot, newRoot)).resolves.toMatchObject({
+      status: "workspace_required",
+      workspaceRoot: canonicalNewRoot,
+      proposedOrigin: "https://artifactpass.com",
+      deploymentFixed: false,
+    });
   });
 
   it("requires headless tokens to name their deployment", async () => {

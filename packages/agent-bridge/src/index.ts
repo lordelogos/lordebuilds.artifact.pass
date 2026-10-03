@@ -62,6 +62,7 @@ export {
   serveBridgeStdio,
   type BridgeConfiguration,
   type BridgeConfigurationSource,
+  type BridgeWorkspaceResolution,
 } from "./server";
 export {
   createConnectionController,
