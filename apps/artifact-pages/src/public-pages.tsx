@@ -75,7 +75,7 @@ const pageDescription = (page: PublicPage): string => {
     return "Choose the ArtifactPass setup guide for an AI agent, a private-deployment administrator, or a private-deployment teammate.";
   }
   if (page === "agent-setup-guide") {
-    return "Set up ArtifactPass in an AI agent project, connect the workspace, and publish a first temporary artifact link.";
+    return "Install ArtifactPass once, approve exact AI agent project folders, and publish a first temporary artifact link without reinstalling.";
   }
   if (page === "private-deployment-guide") {
     return "Deploy ArtifactPass in your Cloudflare account, connect a domain safely, and configure publisher access and link lifetimes.";
@@ -356,7 +356,7 @@ const GuidesPage = () => (
       <div className="guide-cards">
         <a className="guide-card" href="/guides/agent-setup">
           <span>For any supported agent</span>
-          <strong>Set up ArtifactPass in a project</strong>
+          <strong>Install ArtifactPass and approve projects</strong>
           <p>Choose your MCP client, connect the workspace, and publish a first temporary artifact.</p>
         </a>
         <a className="guide-card" href="/guides/private-deployment">
@@ -462,7 +462,7 @@ const AgentSetupGuidePage = () => (
     <GuideTrail current="Agent setup" position="1 of 3" />
     <p className="eyebrow">Setup guide</p>
     <h1>Set up ArtifactPass for an AI agent</h1>
-    <p className="guide-deck">Install ArtifactPass in one project, connect your agent, and publish a first temporary link.</p>
+    <p className="guide-deck">Install ArtifactPass once, approve exact project folders as you use them, and publish a first temporary link.</p>
     <div className="guide-meta">
       <span>About 5 minutes</span>
       <span>Node.js 24+</span>
@@ -476,13 +476,13 @@ const AgentSetupGuidePage = () => (
         <li><a href="#step-2">Run setup</a></li>
         <li><a href="#step-3">Choose the agent and deployment</a></li>
         <li><a href="#step-4">Restart the agent</a></li>
-        <li><a href="#step-5">Connect on first use</a></li>
+        <li><a href="#step-5">Approve and connect on first use</a></li>
         <li><a href="#step-6">Publish a test artifact</a></li>
       </ol>
     </nav>
 
     <div className="prose guide-prose">
-      <p>ArtifactPass approves projects explicitly. Run the command inside the project your agent may access. Setup adds that project root to ArtifactPass instead of granting access to every workspace on your computer.</p>
+      <p>ArtifactPass separates the reusable agent integration from local file access. Install it once, then approve each exact project and publishing destination when the agent first needs it. ArtifactPass never treats every workspace on your computer as approved.</p>
 
       <section className="guide-step" id="step-1">
         <span className="guide-step-number">01</span>
@@ -495,7 +495,7 @@ const AgentSetupGuidePage = () => (
         <span className="guide-step-number">02</span>
         <h2>Run the setup command</h2>
         <GuideCommand>pnpm dlx artifactpass</GuideCommand>
-        <p>The installer adds the portable MCP server and ArtifactPass skills. It does not sign you in and it does not upload any file. Codex and Claude Code install the ArtifactPass plugin at the agent’s user level, but ArtifactPass still limits local file access to the project roots you explicitly set up.</p>
+        <p>The installer adds the portable MCP server and ArtifactPass skills. It does not sign you in and it does not upload any file. Codex and Claude Code install the ArtifactPass plugin at the agent’s user level. Other clients retain their supported registration shape. In every client, ArtifactPass still limits local file access to project roots you explicitly approve.</p>
         <GuideImage
           src="/guides/agent-setup/run-command.svg"
           alt="A terminal running pnpm dlx artifactpass and displaying the supported agent choices"
@@ -523,18 +523,18 @@ const AgentSetupGuidePage = () => (
         <h2>Restart the agent session</h2>
         <p>Close the current agent session and open a new one in the same project. The new session loads the MCP server and skills that setup installed.</p>
         <p>If you selected <strong>Other MCP client</strong>, add the printed MCP configuration and skills directory to that client before restarting it.</p>
-        <p>You only need this restart after installing ArtifactPass or changing the deployment used by the project.</p>
+        <p>You need this restart only after installing or upgrading the integration. Approving another project or changing its saved destination takes effect in the running session on the next ArtifactPass tool call.</p>
       </section>
 
       <section className="guide-step" id="step-5">
         <span className="guide-step-number">05</span>
-        <h2>Connect ArtifactPass on first use</h2>
-        <p>Ask the agent to share a file, or say <strong>Connect ArtifactPass</strong>. ArtifactPass opens the approval page in your browser automatically. If the browser does not open, the agent shows the approval URL so you can open it yourself in the correct browser profile.</p>
-        <p>For public ArtifactPass, sign in with Google or GitHub. For a private deployment, complete the Cloudflare Access login configured by the administrator. Confirm that the browser code matches the code shown by the agent before approving.</p>
+        <h2>Approve the project and connect on first use</h2>
+        <p>Ask the agent to share a file. If this project is new, ArtifactPass opens a local approval page showing the canonical folder and the destination that will receive uploads. The agent always includes the local approval URL so you can open it in the correct browser profile. Review both values, then choose <strong>Allow project</strong> or <strong>Cancel</strong>.</p>
+        <p>ArtifactPass reuses an existing credential for that destination. If sign-in is required, public ArtifactPass opens Google or GitHub approval; a private deployment opens the Cloudflare Access login configured by its administrator. The agent waits for readiness and resumes the original share request in the same session.</p>
         <GuideImage
           src="/guides/agent-setup/connect-agent.svg"
-          alt="An agent asking to connect ArtifactPass and a browser approval page with a matching code"
-          caption="The agent and browser show the same approval code. Approve only a connection you started."
+          alt="An agent showing a manual ArtifactPass approval URL beside a local page that names the exact project folder and publishing destination"
+          caption="Review the exact folder and destination. The URL stays visible so you can choose the right browser profile."
         />
       </section>
 
@@ -556,6 +556,9 @@ const AgentSetupGuidePage = () => (
         <h2>ArtifactPass is connected to this project.</h2>
         <p>Change the deployment used by this project:</p>
         <GuideCommand>pnpm dlx artifactpass configure</GuideCommand>
+        <p>Review or remove project access:</p>
+        <GuideCommand>pnpm dlx artifactpass workspace list</GuideCommand>
+        <GuideCommand>pnpm dlx artifactpass workspace remove /path/to/your-project</GuideCommand>
         <p>Check the installation:</p>
         <GuideCommand>pnpm dlx artifactpass doctor</GuideCommand>
         <p><a href="/guides/private-deployment">Need your own Cloudflare deployment? Follow the private deployment guide.</a></p>
@@ -793,7 +796,7 @@ const PrivateTeammateGuidePage = () => (
         <h2>Run the private setup command</h2>
         <p>Use the complete HTTPS URL supplied by the administrator:</p>
         <GuideCommand>pnpm dlx artifactpass --base-url https://artifacts.example.com</GuideCommand>
-        <p>Choose the agent or editor used in this project. Codex, Claude Code, Gemini CLI, Kimi Code, Cursor, VS Code with GitHub Copilot, and Antigravity receive their matching integration automatically. Codex and Claude Code install the ArtifactPass plugin at the agent’s user level, while ArtifactPass local file access remains limited to project roots you explicitly set up. <strong>Other MCP client</strong> prepares the MCP configuration and skills, then prints their paths for you to register manually in that client.</p>
+        <p>Choose the agent or editor used in this project. Codex, Claude Code, Gemini CLI, Kimi Code, Cursor, VS Code with GitHub Copilot, and Antigravity receive their matching integration automatically. Codex and Claude Code install the ArtifactPass plugin at the agent’s user level, while ArtifactPass local file access remains limited to exact project roots you approve. <strong>Other MCP client</strong> prepares the MCP configuration and skills, then prints their paths for you to register manually in that client.</p>
         <GuideImage
           src="/guides/private-teammate/teammate-setup.svg"
           alt="A teammate running ArtifactPass setup for artifacts.example.com and choosing an MCP-compatible agent"
@@ -811,8 +814,8 @@ const PrivateTeammateGuidePage = () => (
       <section className="guide-step" id="step-5">
         <span className="guide-step-number">05</span>
         <h2>Connect and complete Cloudflare Access sign-in</h2>
-        <p>Ask the agent to share a file, or say <strong>Connect ArtifactPass</strong>. ArtifactPass opens the approval page in your browser automatically. If the browser does not open, the agent shows the approval URL so you can open it yourself in the correct browser profile.</p>
-        <p>With <strong>Email verification code</strong>, enter the allowed email and use the one-time code Cloudflare sends. With <strong>Existing company login</strong>, choose the team identity provider and finish its normal sign-in. Confirm the browser code matches the agent before approving.</p>
+        <p>Ask the agent to share a file. ArtifactPass first shows a local page with the exact folder and private destination. Allow that project, then complete Cloudflare Access sign-in if this deployment is not already connected. The agent includes every approval URL so you can open it in the correct browser profile.</p>
+        <p>With <strong>Email verification code</strong>, enter the allowed email and use the one-time code Cloudflare sends. With <strong>Existing company login</strong>, choose the team identity provider and finish its normal sign-in. The agent resumes the original share request after both project access and sign-in are ready.</p>
         <GuideNote title="No code arrived?">
           <p>Cloudflare intentionally shows the same “code sent” response for approved and unapproved addresses. It sends a code only when the address matches the Access policy. Confirm the exact address with the administrator before retrying.</p>
         </GuideNote>
@@ -999,7 +1002,7 @@ ArtifactPass creates temporary links for Markdown, HTML, and PDF files so people
 - [Artifact sharing for AI agents](${PUBLIC_SITE_ORIGIN}/for-ai-agents): MCP, agent skills, supported clients, and exact-file handoffs.
 - [Private deployments](${PUBLIC_SITE_ORIGIN}/private-deployments): Run ArtifactPass in your own Cloudflare account and domain.
 - [ArtifactPass guides](${PUBLIC_SITE_ORIGIN}/guides): Choose a setup path or learn a practical artifact-handoff workflow.
-- [Agent setup guide](${PUBLIC_SITE_ORIGIN}/guides/agent-setup): Install ArtifactPass in one project, connect an agent, and publish a first link.
+- [Agent setup guide](${PUBLIC_SITE_ORIGIN}/guides/agent-setup): Install ArtifactPass once, approve exact project folders, connect an agent, and publish a first link.
 - [Private deployment administrator guide](${PUBLIC_SITE_ORIGIN}/guides/private-deployment): Deploy on Cloudflare, connect a domain, and configure publisher access and lifetimes.
 - [Private deployment teammate guide](${PUBLIC_SITE_ORIGIN}/guides/private-teammate): Connect one project to a private deployment and verify publishing.
 ${practicalGuides().map((guide) => `- [${guide.headline}](${PUBLIC_SITE_ORIGIN}${guide.path}): ${guide.description}`).join("\n")}

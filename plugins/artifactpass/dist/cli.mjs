@@ -94,11 +94,11 @@ function __metadata(metadataKey, metadataValue) {
 }
 function __awaiter(thisArg, _arguments, P2, generator) {
   function adopt(value) {
-    return value instanceof P2 ? value : new P2(function(resolve4) {
-      resolve4(value);
+    return value instanceof P2 ? value : new P2(function(resolve5) {
+      resolve5(value);
     });
   }
-  return new (P2 || (P2 = Promise))(function(resolve4, reject) {
+  return new (P2 || (P2 = Promise))(function(resolve5, reject) {
     function fulfilled(value) {
       try {
         step(generator.next(value));
@@ -114,7 +114,7 @@ function __awaiter(thisArg, _arguments, P2, generator) {
       }
     }
     function step(result) {
-      result.done ? resolve4(result.value) : adopt(result.value).then(fulfilled, rejected);
+      result.done ? resolve5(result.value) : adopt(result.value).then(fulfilled, rejected);
     }
     step((generator = generator.apply(thisArg, _arguments || [])).next());
   });
@@ -292,14 +292,14 @@ function __asyncValues(o2) {
   }, i2);
   function verb(n2) {
     i2[n2] = o2[n2] && function(v2) {
-      return new Promise(function(resolve4, reject) {
-        v2 = o2[n2](v2), settle(resolve4, reject, v2.done, v2.value);
+      return new Promise(function(resolve5, reject) {
+        v2 = o2[n2](v2), settle(resolve5, reject, v2.done, v2.value);
       });
     };
   }
-  function settle(resolve4, reject, d2, v2) {
+  function settle(resolve5, reject, d2, v2) {
     Promise.resolve(v2).then(function(v3) {
-      resolve4({ value: v3, done: d2 });
+      resolve5({ value: v3, done: d2 });
     }, reject);
   }
 }
@@ -718,9 +718,9 @@ var require_async = __commonJS({
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.waitForTick = void 0;
     exports.waitForTick = function() {
-      return new Promise(function(resolve4) {
+      return new Promise(function(resolve5) {
         setTimeout(function() {
-          return resolve4();
+          return resolve5();
         }, 0);
       });
     };
@@ -9463,12 +9463,12 @@ var require_CustomFontSubsetEmbedder = __commonJS({
         };
         CustomFontSubsetEmbedder2.prototype.serializeFont = function() {
           var _this = this;
-          return new Promise(function(resolve4, reject) {
+          return new Promise(function(resolve5, reject) {
             var parts = [];
             _this.subset.encodeStream().on("data", function(bytes) {
               return parts.push(bytes);
             }).on("end", function() {
-              return resolve4(utils_1.mergeUint8Arrays(parts));
+              return resolve5(utils_1.mergeUint8Arrays(parts));
             }).on("error", function(err) {
               return reject(err);
             });
@@ -16670,7 +16670,7 @@ var require_svgPath = __commonJS({
       ["Z", 0],
       ["z", 0]
     ]);
-    var parse3 = function(path) {
+    var parse4 = function(path) {
       var cmd;
       var ret = [];
       var args = [];
@@ -16992,7 +16992,7 @@ var require_svgPath = __commonJS({
       return result;
     };
     exports.svgPathToOperators = function(path) {
-      return apply(parse3(path));
+      return apply(parse4(path));
     };
   }
 });
@@ -23621,7 +23621,7 @@ function compileCharString(e2, t2, n2, r2) {
     t2.add(E.curveTo, [e3, n3, r3, i3, a3, o3]);
   }
   let i2 = [], a2 = 0, o2 = 0, s2 = 0, c2 = null;
-  function parse3(e3) {
+  function parse4(e3) {
     let c3 = new DataView(e3.buffer, e3.byteOffset, e3.byteLength), l2 = 0;
     for (; l2 < e3.length; ) {
       let u2 = false, d2 = e3[l2++], f2, p2, m2, h2, g2, _2, v2, y2, b2;
@@ -23655,7 +23655,7 @@ function compileCharString(e2, t2, n2, r2) {
               t3.privateDict?.subrsIndex && (r3 = t3.privateDict.subrsIndex.objects), r3 && (y2 += getSubroutineBias(r3), b2 = r3[y2]);
             } else warn$1(`Invalid fd index for glyph index.`);
           } else b2 = n2.subrs[y2 + n2.subrsBias];
-          b2 && parse3(b2);
+          b2 && parse4(b2);
           break;
         case 11:
           return;
@@ -23722,7 +23722,7 @@ function compileCharString(e2, t2, n2, r2) {
           i2.push(c3.getInt16(l2)), l2 += 2;
           break;
         case 29:
-          y2 = i2.pop() + n2.gsubrsBias, b2 = n2.gsubrs[y2], b2 && parse3(b2);
+          y2 = i2.pop() + n2.gsubrsBias, b2 = n2.gsubrs[y2], b2 && parse4(b2);
           break;
         case 30:
           for (; i2.length > 0 && (f2 = a2, m2 = o2 + i2.shift(), p2 = f2 + i2.shift(), h2 = m2 + i2.shift(), a2 = p2 + i2.shift(), o2 = h2 + (i2.length === 1 ? i2.shift() : 0), bezierCurveTo(f2, m2, p2, h2, a2, o2), i2.length !== 0); ) f2 = a2 + i2.shift(), m2 = o2, p2 = f2 + i2.shift(), h2 = m2 + i2.shift(), o2 = h2 + i2.shift(), a2 = p2 + (i2.length === 1 ? i2.shift() : 0), bezierCurveTo(f2, m2, p2, h2, a2, o2);
@@ -23738,7 +23738,7 @@ function compileCharString(e2, t2, n2, r2) {
       u2 && (i2.length = 0);
     }
   }
-  parse3(e2);
+  parse4(e2);
 }
 function isHexDigit(e2) {
   return e2 >= 48 && e2 <= 57 || e2 >= 65 && e2 <= 70 || e2 >= 97 && e2 <= 102;
@@ -61657,7 +61657,7 @@ async function extractImages$1(data, pageNumber) {
     for (let i2 = 0; i2 < operatorList.fnArray.length; i2++) {
       if (operatorList.fnArray[i2] !== OPS.paintImageXObject) continue;
       const imageKey = operatorList.argsArray[i2][0];
-      const image = await new Promise((resolve4) => (imageKey.startsWith("g_") ? page.commonObjs : page.objs).get(imageKey, resolve4));
+      const image = await new Promise((resolve5) => (imageKey.startsWith("g_") ? page.commonObjs : page.objs).get(imageKey, resolve5));
       if (!image || !image.data || !image.width || !image.height) continue;
       const { width, height, data: data2 } = image;
       const calculatedChannels = data2.length / (width * height);
@@ -61702,8 +61702,8 @@ async function renderPageAsImage$1(data, pageNumber, options = {}) {
         const buffer = await canvas.encode("png");
         return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
       }
-      const blob = await new Promise((resolve4) => {
-        canvas.toBlob(resolve4);
+      const blob = await new Promise((resolve5) => {
+        canvas.toBlob(resolve5);
       });
       if (!blob) throw new Error("Failed to encode canvas to a PNG blob.");
       return await blob.arrayBuffer();
@@ -61904,7 +61904,8 @@ var init_dist = __esm({
 });
 
 // src/server.ts
-import { delimiter, isAbsolute as isAbsolute3, resolve as resolve3 } from "node:path";
+import { createHash as createHash3 } from "node:crypto";
+import { delimiter, isAbsolute as isAbsolute4, resolve as resolve4 } from "node:path";
 
 // ../../node_modules/.pnpm/@modelcontextprotocol+server@2.0.0/node_modules/@modelcontextprotocol/server/dist/chunk-Br0eD_fh.mjs
 var __create2 = Object.create;
@@ -80820,14 +80821,14 @@ function inputRequiredRoundsExceededMessage(method, maxRounds) {
   return `Multi-round-trip request '${method}' still required input after ${maxRounds} rounds (inputRequired.maxRounds)`;
 }
 function sleep(ms2, signal) {
-  return new Promise((resolve4, reject) => {
+  return new Promise((resolve5, reject) => {
     if (signal?.aborted) {
       reject(signal.reason instanceof SdkError ? signal.reason : new SdkError(SdkErrorCode.RequestTimeout, String(signal.reason)));
       return;
     }
     const timer = setTimeout(() => {
       signal?.removeEventListener("abort", onAbort);
-      resolve4();
+      resolve5();
     }, ms2);
     const onAbort = () => {
       clearTimeout(timer);
@@ -81621,7 +81622,7 @@ var Protocol = class {
     const flowStartedAt = Date.now();
     let onAbort;
     let cleanupMessageId;
-    return new Promise((resolve4, reject) => {
+    return new Promise((resolve5, reject) => {
       const earlyReject = (error51) => {
         reject(error51);
       };
@@ -81689,7 +81690,7 @@ var Protocol = class {
         }
         if (decoded.kind === "invalid") return reject(decoded.error);
         if (decoded.kind === "input_required") {
-          if (options?.allowInputRequired === true) return resolve4(manualInputRequiredValue(decoded));
+          if (options?.allowInputRequired === true) return resolve5(manualInputRequiredValue(decoded));
           const flow = {
             codec: codec2,
             request,
@@ -81701,11 +81702,11 @@ var Protocol = class {
               params
             }, resultSchema, legOptions)
           };
-          return resolve4(this._resolveNonCompleteResult(decoded, flow));
+          return resolve5(this._resolveNonCompleteResult(decoded, flow));
         }
         const result = decoded.result;
         validateStandardSchema(resultSchema, result).then((parseResult) => {
-          if (parseResult.success) resolve4(parseResult.data);
+          if (parseResult.success) resolve5(parseResult.data);
           else reject(new SdkError(SdkErrorCode.InvalidResult, `Invalid result for ${request.method}: ${parseResult.error}`));
         }, reject);
       });
@@ -81900,8 +81901,8 @@ var require_content_type = /* @__PURE__ */ __commonJSMin(((exports) => {
   var PARAM_REGEXP = /; *([!#$%&'*+.^_`|~0-9A-Za-z-]+) *= *("(?:[\u000b\u0020\u0021\u0023-\u005b\u005d-\u007e\u0080-\u00ff]|\\[\u000b\u0020-\u00ff])*"|[!#$%&'*+.^_`|~0-9A-Za-z-]+) */g;
   var QESC_REGEXP = /\\([\u000b\u0020-\u00ff])/g;
   var TYPE_REGEXP = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+\/[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
-  exports.parse = parse3;
-  function parse3(string4) {
+  exports.parse = parse4;
+  function parse4(string4) {
     if (!string4) throw new TypeError("argument string is required");
     var header = typeof string4 === "object" ? getcontenttype(string4) : string4;
     if (typeof header !== "string") throw new TypeError("argument string is required to be a string");
@@ -84617,7 +84618,7 @@ var require_compile = /* @__PURE__ */ __commonJSMin(((exports) => {
     ref = (0, resolve_1.resolveUrl)(this.opts.uriResolver, baseId, ref);
     const schOrFunc = root.refs[ref];
     if (schOrFunc) return schOrFunc;
-    let _sch = resolve4.call(this, root, ref);
+    let _sch = resolve5.call(this, root, ref);
     if (_sch === void 0) {
       const schema = (_a4 = root.localRefs) === null || _a4 === void 0 ? void 0 : _a4[ref];
       const { schemaId } = this.opts;
@@ -84643,7 +84644,7 @@ var require_compile = /* @__PURE__ */ __commonJSMin(((exports) => {
   function sameSchemaEnv(s1, s2) {
     return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
   }
-  function resolve4(root, ref) {
+  function resolve5(root, ref) {
     let sch;
     while (typeof (sch = this.refs[ref]) == "string") ref = sch;
     return sch || this.schemas[ref] || resolveSchema.call(this, root, ref);
@@ -85089,51 +85090,51 @@ var require_fast_uri = /* @__PURE__ */ __commonJSMin(((exports, module) => {
   const { normalizeIPv6, removeDotSegments, recomposeAuthority, normalizeComponentEncoding, isIPv4, nonSimpleDomain } = require_utils();
   const { SCHEMES, getSchemeHandler } = require_schemes();
   function normalize(uri, options) {
-    if (typeof uri === "string") uri = serialize(parse3(uri, options), options);
-    else if (typeof uri === "object") uri = parse3(serialize(uri, options), options);
+    if (typeof uri === "string") uri = serialize(parse4(uri, options), options);
+    else if (typeof uri === "object") uri = parse4(serialize(uri, options), options);
     return uri;
   }
-  function resolve4(baseURI, relativeURI, options) {
+  function resolve5(baseURI, relativeURI, options) {
     const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
-    const resolved = resolveComponent(parse3(baseURI, schemelessOptions), parse3(relativeURI, schemelessOptions), schemelessOptions, true);
+    const resolved = resolveComponent(parse4(baseURI, schemelessOptions), parse4(relativeURI, schemelessOptions), schemelessOptions, true);
     schemelessOptions.skipEscape = true;
     return serialize(resolved, schemelessOptions);
   }
-  function resolveComponent(base, relative3, options, skipNormalization) {
+  function resolveComponent(base, relative4, options, skipNormalization) {
     const target = {};
     if (!skipNormalization) {
-      base = parse3(serialize(base, options), options);
-      relative3 = parse3(serialize(relative3, options), options);
+      base = parse4(serialize(base, options), options);
+      relative4 = parse4(serialize(relative4, options), options);
     }
     options = options || {};
-    if (!options.tolerant && relative3.scheme) {
-      target.scheme = relative3.scheme;
-      target.userinfo = relative3.userinfo;
-      target.host = relative3.host;
-      target.port = relative3.port;
-      target.path = removeDotSegments(relative3.path || "");
-      target.query = relative3.query;
+    if (!options.tolerant && relative4.scheme) {
+      target.scheme = relative4.scheme;
+      target.userinfo = relative4.userinfo;
+      target.host = relative4.host;
+      target.port = relative4.port;
+      target.path = removeDotSegments(relative4.path || "");
+      target.query = relative4.query;
     } else {
-      if (relative3.userinfo !== void 0 || relative3.host !== void 0 || relative3.port !== void 0) {
-        target.userinfo = relative3.userinfo;
-        target.host = relative3.host;
-        target.port = relative3.port;
-        target.path = removeDotSegments(relative3.path || "");
-        target.query = relative3.query;
+      if (relative4.userinfo !== void 0 || relative4.host !== void 0 || relative4.port !== void 0) {
+        target.userinfo = relative4.userinfo;
+        target.host = relative4.host;
+        target.port = relative4.port;
+        target.path = removeDotSegments(relative4.path || "");
+        target.query = relative4.query;
       } else {
-        if (!relative3.path) {
+        if (!relative4.path) {
           target.path = base.path;
-          if (relative3.query !== void 0) target.query = relative3.query;
+          if (relative4.query !== void 0) target.query = relative4.query;
           else target.query = base.query;
         } else {
-          if (relative3.path[0] === "/") target.path = removeDotSegments(relative3.path);
+          if (relative4.path[0] === "/") target.path = removeDotSegments(relative4.path);
           else {
-            if ((base.userinfo !== void 0 || base.host !== void 0 || base.port !== void 0) && !base.path) target.path = "/" + relative3.path;
-            else if (!base.path) target.path = relative3.path;
-            else target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative3.path;
+            if ((base.userinfo !== void 0 || base.host !== void 0 || base.port !== void 0) && !base.path) target.path = "/" + relative4.path;
+            else if (!base.path) target.path = relative4.path;
+            else target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative4.path;
             target.path = removeDotSegments(target.path);
           }
-          target.query = relative3.query;
+          target.query = relative4.query;
         }
         target.userinfo = base.userinfo;
         target.host = base.host;
@@ -85141,13 +85142,13 @@ var require_fast_uri = /* @__PURE__ */ __commonJSMin(((exports, module) => {
       }
       target.scheme = base.scheme;
     }
-    target.fragment = relative3.fragment;
+    target.fragment = relative4.fragment;
     return target;
   }
   function equal(uriA, uriB, options) {
     if (typeof uriA === "string") {
       uriA = unescape(uriA);
-      uriA = serialize(normalizeComponentEncoding(parse3(uriA, options), true), {
+      uriA = serialize(normalizeComponentEncoding(parse4(uriA, options), true), {
         ...options,
         skipEscape: true
       });
@@ -85157,7 +85158,7 @@ var require_fast_uri = /* @__PURE__ */ __commonJSMin(((exports, module) => {
     });
     if (typeof uriB === "string") {
       uriB = unescape(uriB);
-      uriB = serialize(normalizeComponentEncoding(parse3(uriB, options), true), {
+      uriB = serialize(normalizeComponentEncoding(parse4(uriB, options), true), {
         ...options,
         skipEscape: true
       });
@@ -85210,7 +85211,7 @@ var require_fast_uri = /* @__PURE__ */ __commonJSMin(((exports, module) => {
     return uriTokens.join("");
   }
   const URI_PARSE = /^(?:([^#/:?]+):)?(?:\/\/((?:([^#/?@]*)@)?(\[[^#/?\]]+\]|[^#/:?]*)(?::(\d*))?))?([^#?]*)(?:\?([^#]*))?(?:#((?:.|[\n\r])*))?/u;
-  function parse3(uri, opts) {
+  function parse4(uri, opts) {
     const options = Object.assign({}, opts);
     const parsed = {
       scheme: void 0,
@@ -85267,11 +85268,11 @@ var require_fast_uri = /* @__PURE__ */ __commonJSMin(((exports, module) => {
   const fastUri = {
     SCHEMES,
     normalize,
-    resolve: resolve4,
+    resolve: resolve5,
     resolveComponent,
     equal,
     serialize,
-    parse: parse3
+    parse: parse4
   };
   module.exports = fastUri;
   module.exports.default = fastUri;
@@ -90640,7 +90641,7 @@ var StdioServerTransport = class {
   }
   send(message) {
     if (this._closed) return Promise.reject(/* @__PURE__ */ new Error("StdioServerTransport is closed"));
-    return new Promise((resolve4, reject) => {
+    return new Promise((resolve5, reject) => {
       const json2 = serializeMessage(message);
       let settled = false;
       const onError = (error51) => {
@@ -90655,14 +90656,14 @@ var StdioServerTransport = class {
         settled = true;
         this._stdout.off("error", onError);
         this._stdout.off("drain", onDrain);
-        resolve4();
+        resolve5();
       };
       this._stdout.once("error", onError);
       if (this._stdout.write(json2)) {
         if (settled) return;
         settled = true;
         this._stdout.off("error", onError);
-        resolve4();
+        resolve5();
       } else if (!settled) this._stdout.once("drain", onDrain);
     });
   }
@@ -90716,14 +90717,14 @@ var StdioConnectionChannel = class {
   */
   async whenRequestsAnswered(timeoutMs) {
     if (this._closed || this._pendingRequests.size === 0) return true;
-    return await new Promise((resolve4) => {
+    return await new Promise((resolve5) => {
       const waiter = () => {
         clearTimeout(timer);
-        resolve4(true);
+        resolve5(true);
       };
       const timer = setTimeout(() => {
         this._drainWaiters = this._drainWaiters.filter((pending) => pending !== waiter);
-        resolve4(false);
+        resolve5(false);
       }, timeoutMs);
       this._drainWaiters.push(waiter);
     });
@@ -91136,7 +91137,7 @@ var CredentialStoreCommandError = class extends Error {
   }
   status;
 };
-var defaultRunner = async (executable, args, options = {}) => new Promise((resolve4, reject) => {
+var defaultRunner = async (executable, args, options = {}) => new Promise((resolve5, reject) => {
   const child = spawn(executable, [...args], {
     stdio: ["pipe", "pipe", "pipe"],
     windowsHide: true
@@ -91157,7 +91158,7 @@ var defaultRunner = async (executable, args, options = {}) => new Promise((resol
   child.stderr.on("data", (chunk) => capture(stderr, chunk));
   child.once("error", reject);
   child.once("close", (code) => {
-    if (code === 0) resolve4({ stdout: Buffer.concat(stdout).toString("utf8") });
+    if (code === 0) resolve5({ stdout: Buffer.concat(stdout).toString("utf8") });
     else reject(new CredentialStoreCommandError(code));
   });
   child.stdin.end(options.input);
@@ -91576,8 +91577,8 @@ var isPublicIpv4 = (address) => {
   const [first = -1, second = -1, third = -1] = octets;
   return !(first === 0 || first === 10 || first === 127 || first >= 224 || first === 100 && second >= 64 && second <= 127 || first === 169 && second === 254 || first === 172 && second >= 16 && second <= 31 || first === 192 && second === 0 && third === 0 || first === 192 && second === 0 && third === 2 || first === 192 && second === 88 && third === 99 || first === 192 && second === 168 || first === 198 && (second === 18 || second === 19) || first === 198 && second === 51 && third === 100 || first === 203 && second === 0 && third === 113);
 };
-var resolveWithSignal = async (resolve4, signal, cancel) => {
-  if (signal === void 0 || signal === null) return resolve4();
+var resolveWithSignal = async (resolve42, signal, cancel) => {
+  if (signal === void 0 || signal === null) return resolve42();
   if (signal.aborted) throw signal.reason;
   return await new Promise((resolve5, reject) => {
     const onAbort = () => {
@@ -91585,14 +91586,14 @@ var resolveWithSignal = async (resolve4, signal, cancel) => {
       reject(signal.reason);
     };
     signal.addEventListener("abort", onAbort, { once: true });
-    resolve4().then(resolve5, reject).finally(() => signal.removeEventListener("abort", onAbort));
+    resolve42().then(resolve5, reject).finally(() => signal.removeEventListener("abort", onAbort));
   });
 };
 var responseThroughAddress = async (normalized, address, redirect, requestImplementation) => {
   if (!isPublicIpv4(address)) throw new Error("ArtifactPass DNS fallback rejected a non-public address");
   const url2 = new URL(normalized.url);
   const body = normalized.body === null ? void 0 : Buffer.from(await normalized.arrayBuffer());
-  return await new Promise((resolve4, reject) => {
+  return await new Promise((resolve5, reject) => {
     const lookup = ((_hostname, options, callback) => {
       if (typeof options === "object" && options.all) {
         callback(null, [{ address, family: 4 }]);
@@ -91628,7 +91629,7 @@ var responseThroughAddress = async (normalized, address, redirect, requestImplem
           else if (value !== void 0) headers.set(name, value);
         }
         const responseBody = status === 204 || status === 205 || status === 304 ? null : Buffer.concat(chunks);
-        resolve4(new Response(responseBody, { status, headers }));
+        resolve5(new Response(responseBody, { status, headers }));
       });
     });
     request.on("error", reject);
@@ -91646,9 +91647,9 @@ var fetchCloudflareDeploymentRoute = async (request, init = {}, dependencies = {
     if (url2.protocol !== "https:") throw error51;
     const resolver = dependencies.resolve4 === void 0 ? new Resolver() : void 0;
     resolver?.setServers(["1.1.1.1", "1.0.0.1"]);
-    const resolve4 = dependencies.resolve4 ?? (async (hostname3) => await resolver.resolve4(hostname3));
+    const resolve42 = dependencies.resolve4 ?? (async (hostname3) => await resolver.resolve4(hostname3));
     const addresses = await resolveWithSignal(
-      () => resolve4(url2.hostname),
+      () => resolve42(url2.hostname),
       fallbackRequest.signal,
       resolver === void 0 ? void 0 : () => resolver.cancel()
     );
@@ -91744,7 +91745,7 @@ var responseError = async (response) => {
 // src/connection/device-authorization.ts
 import { createHash, generateKeyPairSync, randomBytes } from "node:crypto";
 var base64Url = (value) => Buffer.from(value).toString("base64url");
-var wait = (milliseconds) => new Promise((resolve4) => setTimeout(resolve4, milliseconds));
+var wait = (milliseconds) => new Promise((resolve5) => setTimeout(resolve5, milliseconds));
 var createDeviceSigningCredential = () => {
   const pair = generateKeyPairSync("ed25519");
   const publicSpki = pair.publicKey.export({ format: "der", type: "spki" });
@@ -91843,14 +91844,14 @@ var startDeviceAuthorization = async (baseUrl, dependencies = {}) => {
 
 // src/connection/open-browser.ts
 import { spawn as spawn2 } from "node:child_process";
-var run = async (command, args) => new Promise((resolve4, reject) => {
+var run = async (command, args) => new Promise((resolve5, reject) => {
   const child = spawn2(command, [...args], {
     stdio: "ignore",
     windowsHide: true
   });
   child.once("error", reject);
   child.once("close", (code) => {
-    if (code === 0) resolve4();
+    if (code === 0) resolve5();
     else reject(new Error(`Could not open the browser (${code ?? "unknown"})`));
   });
 });
@@ -91998,8 +91999,111 @@ var createConnectionController = (options) => {
 
 // src/config/local-config.ts
 import { existsSync, readFileSync } from "node:fs";
+import { mkdir, readFile as readFile2, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+
+// src/config/config-transaction.ts
+import { randomUUID } from "node:crypto";
+import { open, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
+var lockRetryMilliseconds = 25;
+var lockTimeoutMilliseconds = 5e3;
+var staleLockMilliseconds = 3e4;
+var delay = async (milliseconds) => new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
+var processIsRunning = (pid) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error51) {
+    return !(error51 instanceof Error && "code" in error51 && error51.code === "ESRCH");
+  }
+};
+var removeAbandonedLock = async (lockPath) => {
+  let lockStat;
+  try {
+    lockStat = await stat(lockPath);
+  } catch (error51) {
+    if (error51 instanceof Error && "code" in error51 && error51.code === "ENOENT") return true;
+    throw error51;
+  }
+  if (Date.now() - lockStat.mtimeMs < staleLockMilliseconds) return false;
+  let owner = {};
+  try {
+    owner = JSON.parse(await readFile(lockPath, "utf8"));
+  } catch {
+  }
+  if (typeof owner.pid === "number" && processIsRunning(owner.pid)) return false;
+  await unlink(lockPath).catch((error51) => {
+    if (!(error51 instanceof Error && "code" in error51 && error51.code === "ENOENT")) throw error51;
+  });
+  return true;
+};
+var withConfigFileLock = async (path, action) => {
+  const lockPath = `${path}.lock`;
+  const token = randomUUID();
+  const startedAt = Date.now();
+  let handle;
+  while (handle === void 0) {
+    try {
+      handle = await open(lockPath, "wx", 384);
+      try {
+        await handle.writeFile(JSON.stringify({ pid: process.pid, token, created_at: Date.now() }));
+      } catch (error51) {
+        await handle.close().catch(() => void 0);
+        handle = void 0;
+        await unlink(lockPath).catch(() => void 0);
+        throw error51;
+      }
+    } catch (error51) {
+      await handle?.close().catch(() => void 0);
+      handle = void 0;
+      if (!(error51 instanceof Error && "code" in error51 && error51.code === "EEXIST")) throw error51;
+      if (await removeAbandonedLock(lockPath)) continue;
+      if (Date.now() - startedAt >= lockTimeoutMilliseconds) {
+        throw new Error("Timed out waiting for the ArtifactPass config lock");
+      }
+      await delay(lockRetryMilliseconds);
+    }
+  }
+  let actionFailed = false;
+  let actionError;
+  let result;
+  try {
+    result = await action();
+  } catch (error51) {
+    actionFailed = true;
+    actionError = error51;
+  }
+  let cleanupError;
+  try {
+    await handle.close();
+  } catch (error51) {
+    cleanupError = error51;
+  }
+  try {
+    const owner = JSON.parse(await readFile(lockPath, "utf8"));
+    if (owner.token === token) await unlink(lockPath);
+  } catch (error51) {
+    if (!(error51 instanceof Error && "code" in error51 && error51.code === "ENOENT")) {
+      cleanupError ??= error51;
+    }
+  }
+  if (actionFailed) throw actionError;
+  if (cleanupError !== void 0) throw cleanupError;
+  return result;
+};
+var writeConfigFileAtomically = async (path, contents) => {
+  const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporary, contents, { mode: 384 });
+    await rename(temporary, path);
+  } catch (error51) {
+    await unlink(temporary).catch(() => void 0);
+    throw error51;
+  }
+};
+
+// src/config/local-config.ts
 var profileNamePattern = /^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/u;
 var isRecord = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 var canonicalize = (value) => {
@@ -92023,7 +92127,7 @@ var validateProfile = (value) => {
   if (typeof candidate.base_url !== "string") {
     throw new Error("ArtifactPass profile requires a base URL");
   }
-  if (!Array.isArray(candidate.workspace_roots) || candidate.workspace_roots.length === 0 || !candidate.workspace_roots.every((root) => typeof root === "string" && resolve(root) === root)) {
+  if (!Array.isArray(candidate.workspace_roots) || !candidate.workspace_roots.every((root) => typeof root === "string" && resolve(root) === root)) {
     throw new Error("ArtifactPass config requires absolute workspace roots");
   }
   if (candidate.credential_namespace !== void 0 && candidate.credential_namespace !== "artifactpass") {
@@ -92125,7 +92229,32 @@ var selectLocalBridgeProfile = (settings, requestedProfile, currentWorkspace) =>
   if (profile === void 0) throw new Error(`Unknown ArtifactPass profile: ${name}`);
   return { name, settings: profile };
 };
+var bindLocalBridgeWorkspace = (settings, workspaceRootValue, profileNameValue) => {
+  const workspaceRoot = resolve(workspaceRootValue);
+  const profileName = validateProfileName(profileNameValue);
+  return validateSettings({
+    ...settings,
+    workspace_profiles: {
+      ...settings.workspace_profiles,
+      [workspaceRoot]: profileName
+    }
+  });
+};
 var publicationStatePathForProfile = (configPath, profileName) => `${configPath}.${validateProfileName(profileName)}.publication-state`;
+var upsertLocalBridgeProfile = (settings, nameValue, profileValue) => {
+  const name = validateProfileName(nameValue);
+  const profile = validateProfile(profileValue);
+  return validateSettings({
+    version: 2,
+    active_profile: name,
+    ...settings?.workspace_profiles === void 0 ? {} : { workspace_profiles: settings.workspace_profiles },
+    profiles: { ...settings?.profiles, [name]: profile }
+  });
+};
+var setActiveLocalBridgeProfile = (settings, nameValue) => validateSettings({
+  ...settings,
+  active_profile: validateProfileName(nameValue)
+});
 var defaultLocalConfigPath = (environment = process.env, platform = process.platform) => {
   const explicit = environment.ARTIFACTPASS_CONFIG_PATH;
   if (explicit !== void 0 && explicit.length > 0) return resolve(explicit);
@@ -92163,6 +92292,12 @@ var legacyLocalConfigPath = (environment = process.env, platform = process.platf
 var parseSettings = (contents) => {
   if (Buffer.byteLength(contents) > 16 * 1024) throw new Error("ArtifactPass config is too large");
   return validateSettings(JSON.parse(contents));
+};
+var serializeSettings = (settings) => {
+  const contents = `${JSON.stringify(validateSettings(settings), null, 2)}
+`;
+  if (Buffer.byteLength(contents) > 16 * 1024) throw new Error("ArtifactPass config is too large");
+  return contents;
 };
 var readLocalBridgeSettingsSync = (path) => parseSettings(readFileSync(path, "utf8"));
 var readCompatibleLocalBridgeSettingsSync = (environment = process.env, platform = process.platform) => {
@@ -92210,6 +92345,352 @@ var readCompatibleLocalBridgeSettingsSync = (environment = process.env, platform
     settings: readLocalBridgeSettingsSync(artifactpassPath)
   };
 };
+var readLocalBridgeSettings = async (path) => parseSettings(await readFile2(path, "utf8"));
+var mutateLocalBridgeSettings = async (path, mutation) => {
+  await mkdir(dirname(path), { recursive: true, mode: 448 });
+  return withConfigFileLock(path, async () => {
+    const current = await readLocalBridgeSettings(path).catch((error51) => {
+      if (error51 instanceof Error && "code" in error51 && error51.code === "ENOENT") return null;
+      throw error51;
+    });
+    const next = await mutation(current);
+    if (next === null) {
+      await rm(path, { force: true });
+      return null;
+    }
+    await writeConfigFileAtomically(path, serializeSettings(next));
+    return next;
+  });
+};
+var updateLocalBridgeSettings = async (path, mutation) => {
+  const next = await mutateLocalBridgeSettings(path, mutation);
+  if (next === null) throw new Error("ArtifactPass configuration mutation returned no settings");
+  return next;
+};
+
+// src/config/workspace-access.ts
+import { realpath, stat as stat2 } from "node:fs/promises";
+import { homedir as homedir2 } from "node:os";
+import { dirname as dirname2, isAbsolute as isAbsolute2, parse as parse3, relative as relative2, resolve as resolve2, sep as sep2 } from "node:path";
+var containsCanonicalPath = (root, candidate) => {
+  const path = relative2(root, candidate);
+  return path === "" || path !== ".." && !path.startsWith(`..${sep2}`) && !isAbsolute2(path);
+};
+var canonicalExistingPath = async (path) => realpath(resolve2(path));
+var canonicalExistingRoot = async (path) => {
+  try {
+    return await canonicalExistingPath(path);
+  } catch (error51) {
+    if (error51 instanceof Error && "code" in error51 && (error51.code === "ENOENT" || error51.code === "ENOTDIR")) {
+      return void 0;
+    }
+    throw error51;
+  }
+};
+var proposedWorkspaceRoot = async (path, requestedRoot) => {
+  if (!isAbsolute2(path)) throw new Error("ArtifactPass requires an absolute artifact or workspace path");
+  const candidate = await canonicalExistingPath(path);
+  const candidateStat = await stat2(candidate);
+  const root = requestedRoot === void 0 ? candidateStat.isDirectory() ? candidate : dirname2(candidate) : await canonicalExistingPath(requestedRoot);
+  if (!(await stat2(root)).isDirectory()) {
+    throw new Error("ArtifactPass workspace_root must name a directory");
+  }
+  const home = await canonicalExistingPath(homedir2());
+  if (root === parse3(root).root || root === home) {
+    throw new Error("ArtifactPass workspace_root must be a project folder, not a filesystem or home directory");
+  }
+  if (!containsCanonicalPath(root, candidate)) {
+    throw new Error("ArtifactPass workspace_root must contain workspace_path");
+  }
+  return { candidate, root };
+};
+var approvedRootForPath = async (path, roots) => {
+  const candidate = await canonicalExistingPath(path);
+  const resolvedRoots = (await Promise.all(roots.map(canonicalExistingRoot))).filter((root) => root !== void 0);
+  return resolvedRoots.filter((root) => containsCanonicalPath(root, candidate)).sort((left, right) => right.length - left.length || left.localeCompare(right))[0];
+};
+var matchLocalWorkspaceProfile = async (settings, path) => {
+  const candidate = await canonicalExistingPath(path);
+  const bindings = await Promise.all(Object.entries(settings.workspace_profiles ?? {}).map(
+    async ([root, profileName]) => ({
+      root: await canonicalExistingRoot(root),
+      profileName
+    })
+  ));
+  const binding = bindings.filter((entry) => entry.root !== void 0 && containsCanonicalPath(entry.root, candidate)).sort((left, right) => right.root.length - left.root.length || left.root.localeCompare(right.root))[0];
+  if (binding !== void 0) {
+    return { profileName: binding.profileName, workspaceRoot: binding.root, ambiguous: false };
+  }
+  const candidates = (await Promise.all(Object.entries(settings.profiles).map(
+    async ([profileName, profile]) => ({
+      profileName,
+      roots: (await Promise.all(profile.workspace_roots.map(canonicalExistingRoot))).filter((root) => root !== void 0)
+    })
+  ))).flatMap(({ profileName, roots }) => roots.filter((root) => containsCanonicalPath(root, candidate)).map((root) => ({ profileName, root }))).sort((left, right) => right.root.length - left.root.length || left.profileName.localeCompare(right.profileName));
+  const profileNames = [...new Set(candidates.map(({ profileName }) => profileName))];
+  if (profileNames.length !== 1) return { ambiguous: profileNames.length > 1 };
+  const selected = candidates.find(({ profileName }) => profileName === profileNames[0]);
+  return selected === void 0 ? { ambiguous: false } : { profileName: selected.profileName, workspaceRoot: selected.root, ambiguous: false };
+};
+
+// src/connection/workspace-approval-controller.ts
+import { stat as stat3 } from "node:fs/promises";
+
+// src/connection/workspace-approval-server.ts
+import { randomBytes as randomBytes2 } from "node:crypto";
+import { createServer } from "node:http";
+
+// src/connection/workspace-approval-page.ts
+var escapeHtml = (value) => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+var renderWorkspaceApprovalPage = (options) => {
+  const terminal = options.state === "approved" || options.state === "cancelled";
+  const title = options.state === "approved" ? "Project approved" : options.state === "cancelled" ? "Approval cancelled" : options.state === "failed" ? "Approval could not be saved" : "Allow ArtifactPass to publish from this project?";
+  const description = options.message ?? (options.state === "approved" ? "Return to your agent. ArtifactPass can continue the original request." : options.state === "cancelled" ? "No project access was granted. You can close this tab." : options.state === "failed" ? "Nothing changed. Review the folder and destination, then try saving again." : "Review the exact folder and publishing destination before allowing access.");
+  const originOptions = [.../* @__PURE__ */ new Set([options.proposedOrigin, ...options.availableOrigins])].map((origin) => `<option value="${escapeHtml(origin)}"></option>`).join("");
+  const form = terminal ? "" : `
+    <form method="post" action="/workspace-approval">
+      <input type="hidden" name="token" value="${escapeHtml(options.token)}">
+      <label for="origin">Publish to</label>
+      <input id="origin" name="origin" type="url" value="${escapeHtml(options.proposedOrigin)}" list="origins" required autocomplete="off" spellcheck="false">
+      <datalist id="origins">${originOptions}</datalist>
+      <p class="scope">This allows publishing supported files in this folder and its subfolders. ArtifactPass will still check every file before upload.</p>
+      <div class="actions">
+        <button type="submit" name="action" value="approve">Allow project</button>
+        <button class="secondary" type="submit" name="action" value="cancel">Cancel</button>
+      </div>
+    </form>`;
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${escapeHtml(title)} \xB7 ArtifactPass</title>
+<style>
+:root{color-scheme:light dark;font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f5f5f2;color:#171817}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px}.card{width:min(100%,620px);background:#fff;border:1px solid #d9dad5;border-radius:18px;padding:32px;box-shadow:0 18px 60px rgba(0,0,0,.08)}.brand{font-weight:700;margin-bottom:28px}h1{font-size:clamp(1.65rem,5vw,2.3rem);line-height:1.08;margin:0 0 12px}p{color:#60635e;line-height:1.55}.details{margin:26px 0}.details strong,label{display:block;font-size:.78rem;letter-spacing:.08em;text-transform:uppercase;color:#70736d;margin-bottom:8px}.path{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere;padding:14px;background:#f3f4f1;border-radius:10px;margin:0 0 22px;color:#292b28}input{width:100%;min-height:48px;border:1px solid #c8cac4;border-radius:10px;padding:0 13px;background:transparent;color:inherit;font:inherit}.scope{font-size:.92rem;margin:16px 0 24px}.actions{display:flex;gap:10px;flex-wrap:wrap}button{min-height:48px;border:1px solid #171817;border-radius:10px;padding:0 18px;background:#171817;color:#fff;font:600 1rem inherit;cursor:pointer}.secondary{background:transparent;color:#171817}@media(max-width:520px){.card{padding:24px}.actions{display:grid}button{width:100%}}@media(prefers-color-scheme:dark){:root{background:#0d0f0e;color:#f4f5f2}.card{background:#151715;border-color:#30332f}.path{background:#20231f;color:#f4f5f2}p,.details strong,label{color:#aeb2aa}input{border-color:#454943}.secondary{color:#f4f5f2;border-color:#777c73}}
+</style></head><body><main class="card"><div class="brand">ArtifactPass</div><h1>${escapeHtml(title)}</h1><p role="status">${escapeHtml(description)}</p><div class="details"><strong>Folder</strong><p class="path">${escapeHtml(options.workspaceRoot)}</p></div>${form}</main></body></html>`;
+};
+var workspaceApprovalPageHeaders = () => ({
+  "content-type": "text/html; charset=utf-8",
+  "cache-control": "no-store",
+  "referrer-policy": "same-origin",
+  "x-content-type-options": "nosniff",
+  "x-frame-options": "DENY",
+  "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
+});
+
+// src/connection/workspace-approval-server.ts
+var closeServer = async (server) => new Promise((resolveClose) => {
+  server.close(() => resolveClose());
+});
+var respond = (response, status, body, headers = { "content-type": "text/plain; charset=utf-8" }) => {
+  response.writeHead(status, headers).end(body);
+};
+var readForm = async (request) => {
+  let body = "";
+  for await (const chunk of request) {
+    body += String(chunk);
+    if (Buffer.byteLength(body) > 8 * 1024) throw new Error("Approval request is too large");
+  }
+  return new URLSearchParams(body);
+};
+var startWorkspaceApprovalServer = async (options) => {
+  const token = randomBytes2(32).toString("base64url");
+  const timeoutMilliseconds = options.timeoutMilliseconds ?? 10 * 6e4;
+  const expiresAt = Date.now() + timeoutMilliseconds;
+  let settled = false;
+  let settle;
+  const result = new Promise((resolveResult) => {
+    settle = resolveResult;
+  });
+  let expectedOrigin = "";
+  let expectedHost = "";
+  const server = createServer(async (request, response) => {
+    const requestUrl = new URL(request.url ?? "/", expectedOrigin);
+    if (request.headers.host !== expectedHost || requestUrl.pathname !== "/workspace-approval") {
+      respond(response, 404, "Not found");
+      return;
+    }
+    if (request.method === "GET") {
+      if (requestUrl.searchParams.get("token") !== token || settled) {
+        respond(response, 410, "This approval request is no longer available.");
+        return;
+      }
+      respond(response, 200, renderWorkspaceApprovalPage({
+        workspaceRoot: options.workspaceRoot,
+        proposedOrigin: options.proposedOrigin,
+        availableOrigins: options.availableOrigins,
+        token,
+        state: "review"
+      }), workspaceApprovalPageHeaders());
+      return;
+    }
+    if (request.method !== "POST") {
+      respond(response, 405, "Method not allowed", { allow: "GET, POST" });
+      return;
+    }
+    if (request.headers.origin !== expectedOrigin) {
+      respond(response, 403, "ArtifactPass rejected an invalid approval origin.");
+      return;
+    }
+    const mediaType = (request.headers["content-type"] ?? "").split(";", 1)[0]?.trim().toLowerCase();
+    if (mediaType !== "application/x-www-form-urlencoded") {
+      respond(response, 415, "Unsupported content type");
+      return;
+    }
+    if (settled) {
+      respond(response, 409, "This approval request was already completed.");
+      return;
+    }
+    try {
+      const form = await readForm(request);
+      if (form.get("token") !== token) {
+        respond(response, 403, "ArtifactPass rejected an invalid approval token.");
+        return;
+      }
+      const action = form.get("action");
+      if (action === "cancel") {
+        settled = true;
+        respond(response, 200, renderWorkspaceApprovalPage({
+          ...options,
+          token,
+          state: "cancelled"
+        }), workspaceApprovalPageHeaders());
+        settle?.({ status: "cancelled" });
+        setImmediate(() => void closeServer(server));
+        return;
+      }
+      if (action !== "approve") {
+        respond(response, 400, "Choose Allow project or Cancel.");
+        return;
+      }
+      const origin = form.get("origin")?.trim() ?? "";
+      await options.approve(origin);
+      settled = true;
+      respond(response, 200, renderWorkspaceApprovalPage({
+        ...options,
+        proposedOrigin: origin,
+        token,
+        state: "approved"
+      }), workspaceApprovalPageHeaders());
+      settle?.({ status: "approved", origin });
+      setImmediate(() => void closeServer(server));
+    } catch (error51) {
+      const message = error51 instanceof Error ? error51.message : "Project access could not be saved";
+      respond(response, 409, renderWorkspaceApprovalPage({
+        ...options,
+        token,
+        state: "failed",
+        message
+      }), workspaceApprovalPageHeaders());
+    }
+  });
+  await new Promise((resolveListen, rejectListen) => {
+    server.once("error", rejectListen);
+    server.listen(0, "127.0.0.1", resolveListen);
+  });
+  const address = server.address();
+  if (address === null || typeof address === "string") {
+    await closeServer(server);
+    throw new Error("ArtifactPass could not start workspace approval");
+  }
+  expectedOrigin = `http://127.0.0.1:${address.port}`;
+  expectedHost = `127.0.0.1:${address.port}`;
+  const approvalUrl = `${expectedOrigin}/workspace-approval?token=${encodeURIComponent(token)}`;
+  const timeout = setTimeout(() => {
+    if (settled) return;
+    settled = true;
+    settle?.({ status: "expired" });
+    void closeServer(server);
+  }, timeoutMilliseconds);
+  timeout.unref?.();
+  void result.finally(() => clearTimeout(timeout));
+  return {
+    approvalUrl,
+    expiresAt,
+    result,
+    close: async () => {
+      if (!settled) {
+        settled = true;
+        settle?.({ status: "failed", message: "Workspace approval was interrupted" });
+      }
+      clearTimeout(timeout);
+      await closeServer(server);
+    }
+  };
+};
+
+// src/connection/workspace-approval-controller.ts
+var keyFor = (request) => JSON.stringify([request.workspaceRoot, request.proposedOrigin]);
+var createWorkspaceApprovalController = (options) => {
+  const attempts = /* @__PURE__ */ new Map();
+  const rememberFailedAttempt = (key, state) => {
+    attempts.delete(key);
+    attempts.set(key, { state });
+    const failedKeys = [...attempts.entries()].filter(([, attempt]) => attempt.state.status === "failed").map(([attemptKey]) => attemptKey);
+    for (const expiredKey of failedKeys.slice(0, -32)) attempts.delete(expiredKey);
+  };
+  const connect = async (request) => {
+    const key = keyFor(request);
+    const existing = attempts.get(key);
+    if (existing?.state.status === "connecting") return existing.state;
+    attempts.delete(key);
+    const initialWorkspace = await stat3(request.workspaceRoot);
+    if (!initialWorkspace.isDirectory()) {
+      throw new Error("ArtifactPass workspace_root must name a directory");
+    }
+    const server = await startWorkspaceApprovalServer({
+      ...request,
+      approve: async (origin) => {
+        const currentWorkspace = await stat3(request.workspaceRoot);
+        if (!currentWorkspace.isDirectory() || currentWorkspace.dev !== initialWorkspace.dev || currentWorkspace.ino !== initialWorkspace.ino) {
+          throw new Error("The project folder changed while approval was open. Start approval again.");
+        }
+        await options.approve(request, origin);
+      },
+      ...options.timeoutMilliseconds === void 0 ? {} : { timeoutMilliseconds: options.timeoutMilliseconds }
+    });
+    let browserOpened = true;
+    try {
+      await (options.openBrowser ?? openBrowser)(server.approvalUrl);
+    } catch {
+      browserOpened = false;
+    }
+    const state = {
+      status: "connecting",
+      authentication_status: "unknown",
+      workspace_status: "required",
+      ready_to_publish: false,
+      workspace_root: request.workspaceRoot,
+      proposed_origin: request.proposedOrigin,
+      phase: "workspace_approval",
+      approval_url: server.approvalUrl,
+      browser_opened: browserOpened,
+      expires_at: server.expiresAt,
+      next_action: "Review the folder and destination in the browser. The approval link is included for manual opening."
+    };
+    attempts.set(key, { server, state });
+    void server.result.then((result) => {
+      if (result.status === "approved") {
+        attempts.delete(key);
+        return;
+      }
+      const errorCode2 = result.status === "cancelled" ? "workspace_approval_cancelled" : result.status === "expired" ? "workspace_approval_expired" : "workspace_approval_failed";
+      rememberFailedAttempt(key, {
+        ...state,
+        status: "failed",
+        error_code: errorCode2,
+        message: result.status === "failed" ? result.message : result.status === "cancelled" ? "Project approval was cancelled." : "Project approval expired.",
+        next_action: "Call connect_artifactpass again to start a new approval."
+      });
+    });
+    return state;
+  };
+  return {
+    status: (request) => attempts.get(keyFor(request))?.state,
+    connect,
+    close: async () => {
+      await Promise.all([...attempts.values()].flatMap((attempt) => attempt.server === void 0 ? [] : [attempt.server.close()]));
+      attempts.clear();
+    }
+  };
+};
 
 // src/logging/redacting-logger.ts
 var sensitiveKey = /(?:authorization|content|data|share_?url|token|secret|credential|password)/iu;
@@ -92242,8 +92723,8 @@ var createRedactingLogger = (write = (line) => process.stderr.write(`${line}
 
 // src/tools/publish-artifact.ts
 import { createHash as createHash2 } from "node:crypto";
-import { open as open2, realpath } from "node:fs/promises";
-import { basename, extname, isAbsolute as isAbsolute2, relative as relative2, resolve as resolve2, sep as sep2 } from "node:path";
+import { open as open3, realpath as realpath2 } from "node:fs/promises";
+import { basename, extname, isAbsolute as isAbsolute3, relative as relative3, resolve as resolve3, sep as sep3 } from "node:path";
 
 // ../representation-pipeline/src/pdf-text.ts
 var normalizePageText = (text) => text.replaceAll("\0", "").replace(/[ \t]+\n/gu, "\n").replace(/[ \t]{2,}/gu, " ").trim();
@@ -92566,9 +93047,9 @@ var findSensitivePath = (path) => {
 };
 
 // src/state/publication-journal.ts
-import { randomBytes as randomBytes2, randomUUID } from "node:crypto";
-import { chmod, mkdir, open, readFile } from "node:fs/promises";
-import { dirname as dirname2 } from "node:path";
+import { randomBytes as randomBytes3, randomUUID as randomUUID2 } from "node:crypto";
+import { chmod, mkdir as mkdir2, open as open2, readFile as readFile3 } from "node:fs/promises";
+import { dirname as dirname3 } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 var commitmentPattern = /^[a-f0-9]{64}$/u;
 var publisherPattern = /^[A-Za-z0-9_-]{16,128}$/u;
@@ -92596,8 +93077,8 @@ var pruneExpired = (entries, now) => {
     if (entry.expires_at <= now) entries.delete(commitment);
   }
 };
-var opaqueToken = () => randomBytes2(32).toString("base64url");
-var publisherId = () => `local_${randomBytes2(18).toString("base64url")}`;
+var opaqueToken = () => randomBytes3(32).toString("base64url");
+var publisherId = () => `local_${randomBytes3(18).toString("base64url")}`;
 var validateEntryMap = (value, legacy) => {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("ArtifactPass publication state is malformed");
@@ -92666,7 +93147,7 @@ var MemoryPublicationJournal = class {
     this.acknowledged.delete(payloadCommitment);
     const pending = this.pending.get(payloadCommitment);
     const entry = pending !== void 0 && now < pending.expires_at ? pending : {
-      attempt_id: randomUUID(),
+      attempt_id: randomUUID2(),
       share_token: opaqueToken(),
       updated_at: now,
       expires_at: expiresAt
@@ -92717,7 +93198,7 @@ var FilePublicationJournal = class _FilePublicationJournal {
   databasePromise;
   async readLegacyState() {
     try {
-      const source = await readFile(this.path, "utf8");
+      const source = await readFile3(this.path, "utf8");
       if (Buffer.byteLength(source) > 32 * 1024) {
         throw new Error("ArtifactPass publication state is too large");
       }
@@ -92729,9 +93210,9 @@ var FilePublicationJournal = class _FilePublicationJournal {
   }
   async initializeDatabase() {
     const databasePath = `${this.path}.sqlite3`;
-    await mkdir(dirname2(databasePath), { recursive: true, mode: 448 });
+    await mkdir2(dirname3(databasePath), { recursive: true, mode: 448 });
     const legacy = await this.readLegacyState();
-    const databaseFile = await open(databasePath, "a", 384);
+    const databaseFile = await open2(databasePath, "a", 384);
     await databaseFile.close();
     await chmod(databasePath, 384);
     const database = new DatabaseSync(databasePath, {
@@ -92846,7 +93327,7 @@ var FilePublicationJournal = class _FilePublicationJournal {
         };
       }
       const entry = {
-        attempt_id: randomUUID(),
+        attempt_id: randomUUID2(),
         share_token: opaqueToken(),
         updated_at: now,
         expires_at: expiresAt
@@ -93083,8 +93564,8 @@ var authorizePublishDependencies = (dependencies) => {
   return { ...dependencies, openDevelopment: false, token };
 };
 var nodeFileOperations = {
-  realpath,
-  open: async (path) => open2(path, "r")
+  realpath: realpath2,
+  open: async (path) => open3(path, "r")
 };
 var mimeByExtension = {
   ".htm": "text/html",
@@ -93099,13 +93580,13 @@ var assertUnchanged = (before, after) => {
   }
 };
 var isWithin = (root, candidate) => {
-  const path = relative2(root, candidate);
-  return path === "" || !path.startsWith(`..${sep2}`) && path !== ".." && !isAbsolute2(path);
+  const path = relative3(root, candidate);
+  return path === "" || !path.startsWith(`..${sep3}`) && path !== ".." && !isAbsolute3(path);
 };
 var resolveApprovedPath = async (candidate, roots, operations) => {
   if (roots.length === 0) throw new Error("At least one approved workspace root is required");
-  const resolvedCandidate = await operations.realpath(resolve2(candidate));
-  const resolvedRoots = await Promise.all(roots.map(async (root) => operations.realpath(resolve2(root))));
+  const resolvedCandidate = await operations.realpath(resolve3(candidate));
+  const resolvedRoots = await Promise.all(roots.map(async (root) => operations.realpath(resolve3(root))));
   if (!resolvedRoots.some((root) => isWithin(root, resolvedCandidate))) {
     throw new Error("Artifact path is outside the approved workspace roots");
   }
@@ -93329,12 +93810,23 @@ var opaqueCursorSchema = external_exports.string().regex(/^[A-Za-z0-9_-]{16,256}
 var connectionInputSchema = external_exports.object({
   workspace_path: external_exports.string().min(1).describe(
     "Absolute artifact or workspace path used to select the deployment configured for this workspace."
+  ),
+  workspace_root: external_exports.string().min(1).optional().describe(
+    "Optional absolute project root proposed for explicit workspace approval."
   )
 }).strict();
 var connectionOutputSchema = external_exports.object({
-  status: external_exports.enum(["disconnected", "connecting", "connected", "failed"]),
-  profile: external_exports.string().min(1),
-  origin: external_exports.string().url(),
+  status: external_exports.enum(["workspace_required", "disconnected", "connecting", "connected", "failed"]),
+  authentication_status: external_exports.enum(["unknown", "disconnected", "connecting", "connected", "failed"]),
+  workspace_status: external_exports.enum(["required", "approved"]),
+  ready_to_publish: external_exports.boolean(),
+  profile: external_exports.string().min(1).optional(),
+  origin: external_exports.string().url().optional(),
+  proposed_origin: external_exports.string().url().optional(),
+  workspace_root: external_exports.string().min(1),
+  phase: external_exports.enum(["workspace_approval", "authentication"]).optional(),
+  error_code: external_exports.string().min(1).optional(),
+  next_action: external_exports.string().min(1).optional(),
   expires_at: external_exports.number().int().positive().optional(),
   user_code: external_exports.string().min(1).optional(),
   approval_url: external_exports.string().url().optional(),
@@ -93343,6 +93835,9 @@ var connectionOutputSchema = external_exports.object({
 }).strict();
 var publishArtifactInputSchema = external_exports.object({
   path: external_exports.string().min(1).describe("Absolute or workspace-relative local file path"),
+  workspace_root: external_exports.string().min(1).optional().describe(
+    "Optional absolute project root proposed for explicit workspace approval."
+  ),
   canonical_source_path: external_exports.string().min(1).optional().describe(
     "Optional UTF-8 source used to generate a PDF. When configured, ArtifactPass verifies it against the PDF and signs the agent-readable representation."
   ),
@@ -93350,11 +93845,24 @@ var publishArtifactInputSchema = external_exports.object({
     `Deployment expiry preset in seconds. Defaults to one hour (3600). Public ArtifactPass accepts ${PUBLIC_ALLOWED_EXPIRY_SECONDS.join(", ")}; a rejection reports the deployment's allowed values.`
   )
 });
-var publishArtifactOutputSchema = external_exports.object({
+var publishArtifactSuccessSchema = external_exports.object({
   protocol_version: protocolVersionSchema,
   manifest: artifactManifestSchema,
   share_url: webUrlSchema
 }).strict();
+var publishArtifactWorkspaceErrorSchema = external_exports.object({
+  error: external_exports.object({
+    code: external_exports.literal("workspace_not_approved"),
+    attempted_path: external_exports.string().min(1),
+    workspace_root: external_exports.string().min(1),
+    proposed_origin: external_exports.string().url(),
+    next_action: external_exports.string().min(1)
+  }).strict()
+}).strict();
+var publishArtifactOutputSchema = external_exports.union([
+  publishArtifactSuccessSchema,
+  publishArtifactWorkspaceErrorSchema
+]);
 var readArtifactInputSchema = external_exports.object({
   share_url: external_exports.string().url(),
   cursor: external_exports.string().optional(),
@@ -93487,10 +93995,21 @@ var isConfigurationSource = (value) => "defaultConfiguration" in value;
 var fixedConfigurationSource = (configuration) => ({
   defaultConfiguration: () => configuration,
   forWorkspacePath: () => configuration,
+  resolveWorkspacePath: async (path, workspaceRoot) => {
+    const proposal = await proposedWorkspaceRoot(path, workspaceRoot);
+    const approvedRoot = await approvedRootForPath(proposal.candidate, configuration.workspaceRoots);
+    return approvedRoot === void 0 ? {
+      status: "workspace_required",
+      workspaceRoot: proposal.root,
+      proposedOrigin: configuration.baseUrl.origin,
+      availableOrigins: [configuration.baseUrl.origin],
+      deploymentFixed: true
+    } : { status: "approved", configuration, workspaceRoot: approvedRoot };
+  },
   forShareUrl: () => configuration,
   runtimeKey: () => "fixed"
 });
-var createBridgeServer = (configurationOrSource) => {
+var createBridgeServer = (configurationOrSource, options = {}) => {
   const dynamic = isConfigurationSource(configurationOrSource);
   const source = dynamic ? configurationOrSource : fixedConfigurationSource(configurationOrSource);
   const defaultConfiguration = source.defaultConfiguration();
@@ -93501,6 +94020,16 @@ var createBridgeServer = (configurationOrSource) => {
   const logger = defaultConfiguration.logger ?? createRedactingLogger();
   const connectionContext = dynamic ? ` Default deployment: profile ${defaultConfiguration.profileName ?? "environment"} at ${defaultConfiguration.baseUrl.origin}. ArtifactPass selects a more specific configured deployment from workspace_path or the artifact/link being used.` : ` Configured deployment: profile ${defaultConfiguration.profileName ?? "environment"} at ${defaultConfiguration.baseUrl.origin} (${defaultConfiguration.openDevelopment === true ? "open local development" : "authentication required for publishing"}).`;
   const runtimes = /* @__PURE__ */ new Map();
+  const workspaceApprovalController = source.approveWorkspace === void 0 ? void 0 : createWorkspaceApprovalController({
+    approve: source.approveWorkspace,
+    ...options.openWorkspaceApprovalBrowser === void 0 ? {} : { openBrowser: options.openWorkspaceApprovalBrowser },
+    ...options.workspaceApprovalTimeoutMilliseconds === void 0 ? {} : { timeoutMilliseconds: options.workspaceApprovalTimeoutMilliseconds }
+  });
+  const closeMcpServer = server.close.bind(server);
+  server.close = async () => {
+    await workspaceApprovalController?.close();
+    await closeMcpServer();
+  };
   const runtimeFor = (configuration) => {
     const key = source.runtimeKey(configuration);
     const existing = runtimes.get(key);
@@ -93522,8 +94051,39 @@ var createBridgeServer = (configurationOrSource) => {
     }
     return { configuration, ...resources };
   };
-  const runtimeForWorkspacePath = (workspacePath) => runtimeFor(source.forWorkspacePath(workspacePath));
-  const connectionResult = (state) => ({
+  const connectionResult = (state, workspaceRoot) => ({
+    content: [{ type: "text", text: JSON.stringify(state) }],
+    structuredContent: {
+      ...state,
+      authentication_status: state.status,
+      workspace_status: "approved",
+      ready_to_publish: state.status === "connected",
+      workspace_root: workspaceRoot,
+      ...state.status === "connecting" ? { phase: "authentication" } : {}
+    }
+  });
+  const workspaceRequiredResult = (resolution) => {
+    const state = {
+      status: "workspace_required",
+      authentication_status: "unknown",
+      workspace_status: "required",
+      ready_to_publish: false,
+      proposed_origin: resolution.proposedOrigin,
+      workspace_root: resolution.workspaceRoot,
+      phase: "workspace_approval",
+      next_action: "Call connect_artifactpass to review and approve this project."
+    };
+    return {
+      content: [{ type: "text", text: JSON.stringify(state) }],
+      structuredContent: state
+    };
+  };
+  const approvalRequestFor = (resolution) => ({
+    workspaceRoot: resolution.workspaceRoot,
+    proposedOrigin: resolution.proposedOrigin,
+    availableOrigins: resolution.availableOrigins
+  });
+  const workspaceApprovalResult = (state) => ({
     content: [{ type: "text", text: JSON.stringify(state) }],
     structuredContent: state
   });
@@ -93538,10 +94098,15 @@ var createBridgeServer = (configurationOrSource) => {
       idempotentHint: true,
       openWorldHint: false
     }
-  }, async ({ workspace_path: workspacePath }) => {
+  }, async ({ workspace_path: workspacePath, workspace_root: workspaceRoot }) => {
     try {
-      const runtime = runtimeForWorkspacePath(workspacePath);
-      return connectionResult(await runtime.connectionController.status());
+      const resolution = await source.resolveWorkspacePath(workspacePath, workspaceRoot);
+      if (resolution.status === "workspace_required") {
+        const pending = workspaceApprovalController?.status(approvalRequestFor(resolution));
+        return pending === void 0 ? workspaceRequiredResult(resolution) : workspaceApprovalResult(pending);
+      }
+      const runtime = runtimeFor(resolution.configuration);
+      return connectionResult(await runtime.connectionController.status(), resolution.workspaceRoot);
     } catch (error51) {
       return errorResult(error51);
     }
@@ -93557,10 +94122,19 @@ var createBridgeServer = (configurationOrSource) => {
       idempotentHint: true,
       openWorldHint: true
     }
-  }, async ({ workspace_path: workspacePath }) => {
+  }, async ({ workspace_path: workspacePath, workspace_root: workspaceRoot }) => {
     try {
-      const runtime = runtimeForWorkspacePath(workspacePath);
-      return connectionResult(await runtime.connectionController.connect());
+      const resolution = await source.resolveWorkspacePath(workspacePath, workspaceRoot);
+      if (resolution.status === "workspace_required") {
+        if (workspaceApprovalController === void 0 || resolution.deploymentFixed) {
+          return workspaceRequiredResult(resolution);
+        }
+        return workspaceApprovalResult(
+          await workspaceApprovalController.connect(approvalRequestFor(resolution))
+        );
+      }
+      const runtime = runtimeFor(resolution.configuration);
+      return connectionResult(await runtime.connectionController.connect(), resolution.workspaceRoot);
     } catch (error51) {
       return errorResult(error51);
     }
@@ -93575,9 +94149,31 @@ var createBridgeServer = (configurationOrSource) => {
       destructiveHint: false,
       openWorldHint: true
     }
-  }, async ({ path, canonical_source_path: canonicalSourcePath, expires_in_seconds: expiresInSeconds }) => {
+  }, async ({
+    path,
+    workspace_root: workspaceRoot,
+    canonical_source_path: canonicalSourcePath,
+    expires_in_seconds: expiresInSeconds
+  }) => {
     try {
-      const runtime = runtimeFor(source.forWorkspacePath(path));
+      const resolution = await source.resolveWorkspacePath(path, workspaceRoot);
+      if (resolution.status === "workspace_required") {
+        const result2 = {
+          error: {
+            code: "workspace_not_approved",
+            attempted_path: path,
+            workspace_root: resolution.workspaceRoot,
+            proposed_origin: resolution.proposedOrigin,
+            next_action: "Call connect_artifactpass with this path and workspace root to approve access."
+          }
+        };
+        return {
+          isError: true,
+          content: [{ type: "text", text: JSON.stringify(result2) }],
+          structuredContent: result2
+        };
+      }
+      const runtime = runtimeFor(resolution.configuration);
       const { configuration, publicationJournal } = runtime;
       const [token, pdfProvenance] = await Promise.all([
         configuration.openDevelopment === true ? void 0 : resolveCredential({
@@ -93684,7 +94280,7 @@ var configurationFromEnvironmentAndState = (environment, currentWorkspace, local
   );
   const baseUrlValue = baseUrlEnvironment ?? localSettings?.base_url ?? "https://artifactpass.com";
   const rootsValue = rootsEnvironment;
-  const workspaceRoots = rootsValue === void 0 ? [...localSettings?.workspace_roots ?? [resolve3(currentWorkspace)]] : rootsValue.split(delimiter).filter((root) => root.length > 0);
+  const workspaceRoots = rootsValue === void 0 ? [...localSettings?.workspace_roots ?? [resolve4(currentWorkspace)]] : rootsValue.split(delimiter).filter((root) => root.length > 0);
   if (workspaceRoots.length === 0) throw new Error("ARTIFACTPASS_WORKSPACE_ROOTS must not be empty");
   const environmentStore = new CompatibleEnvironmentCredentialStore(
     "ARTIFACTPASS_TOKEN",
@@ -93702,7 +94298,7 @@ var configurationFromEnvironmentAndState = (environment, currentWorkspace, local
     "ARTIFACTPASS_STATE_PATH",
     "ARTIFACT_SHARE_STATE_PATH"
   );
-  const publicationStatePath = publicationStatePathValue === void 0 ? localSettings?.publication_state_path ?? (localConfiguration === void 0 || localSettings?.publication_state === "legacy" ? `${localConfigPath}.publication-state` : publicationStatePathForProfile(localConfigPath, profileName)) : resolve3(publicationStatePathValue);
+  const publicationStatePath = publicationStatePathValue === void 0 ? localSettings?.publication_state_path ?? (localConfiguration === void 0 || localSettings?.publication_state === "legacy" ? `${localConfigPath}.publication-state` : publicationStatePathForProfile(localConfigPath, profileName)) : resolve4(publicationStatePathValue);
   const pdfProvenanceKeyId = compatibleValue("ARTIFACTPASS_PDF_KEY_ID", "ARTIFACT_SHARE_PDF_KEY_ID");
   const pdfProvenancePrivateKey = compatibleValue(
     "ARTIFACTPASS_PDF_PRIVATE_KEY",
@@ -93786,10 +94382,37 @@ var createBridgeConfigurationSource = (environment = process.env, processWorkspa
       "Headless ArtifactPass tokens require an explicit ARTIFACTPASS_BASE_URL or ARTIFACTPASS_PROFILE"
     );
   }
+  const configPath = () => localState()?.path ?? (environment.ARTIFACTPASS_CONFIG_PATH === void 0 && environment.ARTIFACT_SHARE_CONFIG_PATH !== void 0 ? legacyLocalConfigPath(environment) : defaultLocalConfigPath(environment));
+  const availableOrigins = (state) => [
+    .../* @__PURE__ */ new Set([
+      "https://artifactpass.com",
+      ...Object.values(state?.settings.profiles ?? {}).map((profile) => {
+        try {
+          return new URL(profile.base_url).origin;
+        } catch {
+          return profile.base_url;
+        }
+      })
+    ])
+  ].sort((left, right) => left.localeCompare(right));
+  const profileNameForOrigin = (settings, origin) => {
+    const existing = Object.entries(settings?.profiles ?? {}).filter(([, profile]) => {
+      try {
+        return new URL(profile.base_url).origin === origin;
+      } catch {
+        return false;
+      }
+    }).map(([name]) => name).sort((left, right) => left.localeCompare(right))[0];
+    if (existing !== void 0) return existing;
+    if (origin === "https://artifactpass.com") return "production";
+    const host = new URL(origin).hostname.toLowerCase().replaceAll(/[^a-z0-9]+/gu, "-").replaceAll(/^-|-$/gu, "").slice(0, 16) || "deployment";
+    const hash2 = createHash3("sha256").update(origin).digest("hex").slice(0, 8);
+    return validateProfileName(`org-${host}-${hash2}`);
+  };
   return {
     defaultConfiguration,
     forWorkspacePath: (path) => {
-      if (!isAbsolute3(path)) {
+      if (!isAbsolute4(path)) {
         throw new Error("ArtifactPass requires an absolute artifact or workspace path");
       }
       const state = localState();
@@ -93798,6 +94421,115 @@ var createBridgeConfigurationSource = (environment = process.env, processWorkspa
         state === void 0 ? processWorkspace : path,
         state
       );
+    },
+    resolveWorkspacePath: async (path, workspaceRoot) => {
+      const proposal = await proposedWorkspaceRoot(path, workspaceRoot);
+      const state = localState();
+      const baseUrlEnvironment = compatibleEnvironmentValue(
+        environment,
+        "ARTIFACTPASS_BASE_URL",
+        "ARTIFACT_SHARE_BASE_URL"
+      );
+      const rootsEnvironment = compatibleEnvironmentValue(
+        environment,
+        "ARTIFACTPASS_WORKSPACE_ROOTS",
+        "ARTIFACT_SHARE_WORKSPACE_ROOTS"
+      );
+      const fixedByEnvironment = explicitDeployment || rootsEnvironment !== void 0;
+      if (fixedByEnvironment) {
+        const configuration = configurationFor(environment, proposal.candidate, state);
+        const approvedRoot = baseUrlEnvironment !== void 0 && rootsEnvironment === void 0 ? void 0 : await approvedRootForPath(proposal.candidate, configuration.workspaceRoots);
+        return approvedRoot === void 0 ? {
+          status: "workspace_required",
+          workspaceRoot: proposal.root,
+          proposedOrigin: configuration.baseUrl.origin,
+          availableOrigins: [configuration.baseUrl.origin],
+          deploymentFixed: true
+        } : { status: "approved", configuration, workspaceRoot: approvedRoot };
+      }
+      if (state !== void 0) {
+        const match = await matchLocalWorkspaceProfile(state.settings, proposal.candidate);
+        if (match.profileName !== void 0 && match.workspaceRoot !== void 0) {
+          const configuration = configurationFor({
+            ...environment,
+            ARTIFACTPASS_PROFILE: match.profileName
+          }, proposal.candidate, state);
+          return {
+            status: "approved",
+            configuration,
+            workspaceRoot: match.workspaceRoot
+          };
+        }
+      }
+      return {
+        status: "workspace_required",
+        workspaceRoot: proposal.root,
+        proposedOrigin: "https://artifactpass.com",
+        availableOrigins: availableOrigins(state),
+        deploymentFixed: false
+      };
+    },
+    approveWorkspace: async (request, originValue) => {
+      if (explicitDeployment || compatibleEnvironmentValue(
+        environment,
+        "ARTIFACTPASS_WORKSPACE_ROOTS",
+        "ARTIFACT_SHARE_WORKSPACE_ROOTS"
+      ) !== void 0) {
+        throw new Error("This ArtifactPass workspace policy is managed by the agent environment.");
+      }
+      const workspaceRoot = await canonicalExistingPath(request.workspaceRoot);
+      if (workspaceRoot !== request.workspaceRoot) {
+        throw new Error("The project folder changed while approval was open. Start approval again.");
+      }
+      const enteredUrl = new URL(originValue);
+      const before = localState()?.settings ?? null;
+      const existingProfile = Object.values(before?.profiles ?? {}).find((profile) => {
+        try {
+          return new URL(profile.base_url).origin === enteredUrl.origin;
+        } catch {
+          return false;
+        }
+      });
+      const origin = assertDeploymentOrigin(enteredUrl, {
+        openDevelopment: existingProfile?.open_development === true
+      }).origin;
+      await updateLocalBridgeSettings(configPath(), async (current) => {
+        if (current !== null) {
+          const currentMatch = await matchLocalWorkspaceProfile(current, workspaceRoot);
+          if (currentMatch.profileName !== void 0) {
+            const currentProfile = current.profiles[currentMatch.profileName];
+            if (currentProfile === void 0) {
+              throw new Error("The approved ArtifactPass deployment no longer exists.");
+            }
+            const currentOrigin = new URL(currentProfile.base_url).origin;
+            if (currentOrigin !== origin) {
+              throw new Error(
+                `This project was approved for ${currentOrigin} while this page was open. Start approval again to change it.`
+              );
+            }
+            return current;
+          }
+        }
+        const profileName = profileNameForOrigin(current, origin);
+        const previousProfile = current?.profiles[profileName];
+        if (previousProfile !== void 0 && new URL(previousProfile.base_url).origin !== origin) {
+          throw new Error(`ArtifactPass profile ${profileName} already uses another deployment.`);
+        }
+        const nextProfile = {
+          ...previousProfile,
+          base_url: origin,
+          workspace_roots: [
+            .../* @__PURE__ */ new Set([...previousProfile?.workspace_roots ?? [], workspaceRoot])
+          ],
+          ...previousProfile?.credential_namespace === void 0 ? { credential_namespace: "artifactpass" } : {},
+          ...previousProfile?.credential_binding === void 0 ? { credential_binding: "origin" } : {}
+        };
+        let next = upsertLocalBridgeProfile(current, profileName, nextProfile);
+        if (current !== null && current.active_profile !== profileName) {
+          next = setActiveLocalBridgeProfile(next, current.active_profile);
+        }
+        return bindLocalBridgeWorkspace(next, workspaceRoot, profileName);
+      });
     },
     forShareUrl: (url2) => {
       const state = localState();

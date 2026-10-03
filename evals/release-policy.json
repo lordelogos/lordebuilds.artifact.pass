@@ -1,7 +1,7 @@
 {
   "version": 1,
   "policy_id": "artifactpass-0.1.10-search-discoverability-release",
-  "candidate_sha256": "3799c564a8ad4a10e7d4b5e0154e013ebd1fd080f8d8a01f44c2d0c5356f6306",
+  "candidate_sha256": "c10bde1cc838a4c3c19b17629d96f5d4d1f06b42741e79e43076f668deeebebd",
   "scorer_version": "1.0.0",
   "created_at": "2026-09-27T04:35:00.000Z",
   "cohorts": [
