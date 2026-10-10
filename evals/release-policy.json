@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "policy_id": "artifactpass-0.1.11-rc.2-proxy-resilience-release",
-  "candidate_sha256": "8a0d75939db9fc4319e4ca1816b9ea4cb19529ce4d35ebc522c6206750e0839f",
+  "policy_id": "artifactpass-0.1.11-stable-release",
+  "candidate_sha256": "7c52c6e885cf10375d2f00f856ac77e72a699043c47898a77206c82f6e25c5e1",
   "scorer_version": "1.0.0",
   "created_at": "2026-10-10T04:22:12.000Z",
   "cohorts": [
