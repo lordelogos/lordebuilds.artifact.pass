@@ -58,9 +58,9 @@ try {
   if (
     JSON.stringify(packedManifest.dependencies) !== JSON.stringify({
       "@clack/prompts": "^1.8.1",
-      "@modelcontextprotocol/client": "2.0.0",
+      "@modelcontextprotocol/client": "2.3.1",
       "jsonc-parser": "3.3.1",
-      wrangler: "4.147.0",
+      wrangler: "4.149.0",
     })
   ) fail("setup CLI runtime dependencies differ from the reviewed manifest");
   if (packedManifest.scripts?.preinstall !== undefined || packedManifest.scripts?.postinstall !== undefined) {
