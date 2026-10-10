@@ -9,6 +9,18 @@ import serviceViteConfigSource from "../vite.config.ts?raw";
 import { pagesFunctionRoutes } from "../../artifact-pages/src/static-public-assets";
 import packageMetadata from "../../../package.json" with { type: "json" };
 
+type PagesFunctionContext = {
+  request: Request;
+  env: {
+    ARTIFACT_APPLICATION: {
+      fetch: (request: Request) => Promise<Response>;
+    };
+    SEO_ANALYTICS: D1Database;
+  };
+};
+
+type PagesFunctionHandler = (context: PagesFunctionContext) => Promise<Response>;
+
 vi.mock("@cloudflare/vite-plugin", () => ({
   cloudflare: () => ({ name: "cloudflare" }),
 }));
@@ -127,6 +139,46 @@ describe("deployment runtime", () => {
     ]) {
       expect(pagesFunctionRoutes.include).not.toContain(route);
     }
+  });
+
+  it("returns a controlled response when the application service binding rejects", async () => {
+    // @ts-expect-error The Cloudflare Pages entrypoint is intentionally plain JavaScript.
+    const { onRequest } = await import("../../artifact-pages/functions/[[path]].js") as {
+      onRequest: PagesFunctionHandler;
+    };
+    const request = new Request("https://artifactpass.com/health", {
+      headers: {
+        Accept: "application/json",
+        "cf-ray": "test-ray",
+      },
+    });
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const response = await onRequest({
+      request,
+      env: {
+        ARTIFACT_APPLICATION: {
+          fetch: vi.fn().mockRejectedValue(new Error("service binding unavailable")),
+        },
+        SEO_ANALYTICS: {} as D1Database,
+      },
+    });
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("retry-after")).toBe("5");
+    expect(response.headers.get("x-artifactpass-request-id")).toBe("test-ray");
+    await expect(response.json()).resolves.toEqual({
+      error: {
+        code: "service_unavailable",
+        message: "ArtifactPass is temporarily unavailable",
+      },
+    });
+    expect(errorLog).toHaveBeenCalledOnce();
+    expect(errorLog).toHaveBeenCalledWith(expect.stringContaining('"event":"artifactpass.pages_proxy_failed"'));
+    expect(errorLog).toHaveBeenCalledWith(expect.not.stringContaining("service binding unavailable"));
+
+    errorLog.mockRestore();
   });
 
   it("builds the public site and deployable application as separate artifacts", () => {
