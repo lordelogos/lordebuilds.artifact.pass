@@ -1,3 +1,5 @@
+import { PROTOCOL_VERSION } from "artifact-protocol";
+
 import { handleSeoEventRequest } from "../src/seo-analytics.ts";
 
 export const onRequest = async (context) => {
@@ -15,9 +17,11 @@ export const onRequest = async (context) => {
       error_name: error instanceof Error ? error.name : "UnknownError",
     }));
     return Response.json({
+      protocol_version: PROTOCOL_VERSION,
       error: {
-        code: "service_unavailable",
-        message: "ArtifactPass is temporarily unavailable",
+        code: "internal_error",
+        message: "Artifact service failed",
+        request_id: requestId,
       },
     }, {
       status: 503,

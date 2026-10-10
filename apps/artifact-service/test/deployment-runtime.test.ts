@@ -1,5 +1,5 @@
 import { exports } from "cloudflare:workers";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import demoConfigSource from "../wrangler-demo.jsonc?raw";
 import pagesConfigSource from "../../artifact-pages/wrangler.jsonc?raw";
@@ -30,6 +30,10 @@ vi.mock("@vitejs/plugin-react", () => ({
 vi.mock("vite", () => ({
   defineConfig: <Config>(config: Config) => config,
 }));
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe("deployment runtime", () => {
   it("reports that the local artifact service is healthy", { timeout: 30_000 }, async () => {
@@ -169,16 +173,16 @@ describe("deployment runtime", () => {
     expect(response.headers.get("retry-after")).toBe("5");
     expect(response.headers.get("x-artifactpass-request-id")).toBe("test-ray");
     await expect(response.json()).resolves.toEqual({
+      protocol_version: 1,
       error: {
-        code: "service_unavailable",
-        message: "ArtifactPass is temporarily unavailable",
+        code: "internal_error",
+        message: "Artifact service failed",
+        request_id: "test-ray",
       },
     });
     expect(errorLog).toHaveBeenCalledOnce();
     expect(errorLog).toHaveBeenCalledWith(expect.stringContaining('"event":"artifactpass.pages_proxy_failed"'));
     expect(errorLog).toHaveBeenCalledWith(expect.not.stringContaining("service binding unavailable"));
-
-    errorLog.mockRestore();
   });
 
   it("builds the public site and deployable application as separate artifacts", () => {
