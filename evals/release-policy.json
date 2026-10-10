@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "policy_id": "artifactpass-0.1.11-rc.1-workspace-approval-release",
-  "candidate_sha256": "783af2b2e95e9dc37a6018d28b8033864baac31ef42bd828bf74c96361c5e0fd",
+  "policy_id": "artifactpass-0.1.11-rc.2-proxy-resilience-release",
+  "candidate_sha256": "8a0d75939db9fc4319e4ca1816b9ea4cb19529ce4d35ebc522c6206750e0839f",
   "scorer_version": "1.0.0",
-  "created_at": "2026-10-03T11:42:01.000Z",
+  "created_at": "2026-10-10T04:22:12.000Z",
   "cohorts": [
     {
       "id": "generic-to-generic-fidelity",
