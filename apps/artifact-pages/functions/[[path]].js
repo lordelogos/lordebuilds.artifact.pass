@@ -3,8 +3,13 @@ import { PROTOCOL_VERSION } from "artifact-protocol";
 import { handleSeoEventRequest } from "../src/seo-analytics.ts";
 
 export const onRequest = async (context) => {
-  if (new URL(context.request.url).pathname === "/seo-events") {
+  const pathname = new URL(context.request.url).pathname;
+  if (pathname === "/seo-events") {
     return handleSeoEventRequest(context.request, context.env.SEO_ANALYTICS);
+  }
+  if (pathname.startsWith("/assets/")) {
+    const staticAsset = await context.env.ASSETS.fetch(context.request);
+    if (staticAsset.status !== 404) return staticAsset;
   }
   try {
     return await context.env.ARTIFACT_APPLICATION.fetch(context.request);
