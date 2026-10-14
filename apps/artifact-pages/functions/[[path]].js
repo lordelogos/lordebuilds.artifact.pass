@@ -9,7 +9,12 @@ export const onRequest = async (context) => {
   }
   if (pathname.startsWith("/assets/")) {
     const staticAsset = await context.env.ASSETS.fetch(context.request);
-    if (staticAsset.status !== 404) return staticAsset;
+    const contentType = staticAsset.headers.get("content-type") ?? "";
+    // Pages serves the homepage HTML as a successful fallback for unknown asset
+    // paths. That response must not shadow the application Worker's JS and CSS.
+    if (staticAsset.status !== 404 && !contentType.startsWith("text/html")) {
+      return staticAsset;
+    }
   }
   try {
     return await context.env.ARTIFACT_APPLICATION.fetch(context.request);
