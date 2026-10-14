@@ -545,6 +545,45 @@ test("keeps one selected document ready when the sign-in popup is closed", async
   await expect(page.locator("#local-note")).toHaveText("Kept in this browser only.");
 });
 
+test("continues when sign-in succeeded before the popup completion signal arrived", async ({ context, page }) => {
+  let authenticated = false;
+  await context.route(`${origin}/**`, async (route) => {
+    if (await installHomepageRuntime(route, () => authenticated)) return;
+    const url = new URL(route.request().url());
+    if (url.pathname === "/") {
+      await route.fulfill({ contentType: "text/html", body: homepage });
+      return;
+    }
+    if (url.pathname === "/auth/sign-in") {
+      await route.fulfill({ contentType: "text/html", body: "<h1>Sign in to ArtifactPass</h1>" });
+      return;
+    }
+    if (url.pathname === "/upload") {
+      await route.fulfill({ contentType: "text/html", body: "<h1>Upload restored</h1>" });
+      return;
+    }
+    await route.abort();
+  });
+
+  await page.goto(`${origin}/`);
+  await page.getByRole("button", { name: /Try it with your own document/ }).click();
+  await page.locator("#pending-file-input").setInputFiles({
+    name: "handoff.md",
+    mimeType: "text/markdown",
+    buffer: Buffer.from("# Authenticated before close"),
+  });
+
+  const popupPromise = page.waitForEvent("popup");
+  await page.getByRole("button", { name: "Continue to sign in" }).click();
+  const popup = await popupPromise;
+  await popup.waitForURL(new RegExp(`${origin}/auth/sign-in\\?return_to=.*flow.*&theme=light`));
+  authenticated = true;
+  await popup.close();
+
+  await page.waitForURL(`${origin}/upload?pending=homepage&publish=1`);
+  await expect(page.getByRole("heading", { name: "Upload restored" })).toBeVisible();
+});
+
 test("accepts a matching completion signal after the popup closes", async ({ context, page }) => {
   await context.route(`${origin}/**`, async (route) => {
     if (await installHomepageRuntime(route)) return;
