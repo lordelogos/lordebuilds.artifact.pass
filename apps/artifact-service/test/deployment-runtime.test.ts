@@ -12,6 +12,9 @@ import packageMetadata from "../../../package.json" with { type: "json" };
 type PagesFunctionContext = {
   request: Request;
   env: {
+    ASSETS: {
+      fetch: (request: Request) => Promise<Response>;
+    };
     ARTIFACT_APPLICATION: {
       fetch: (request: Request) => Promise<Response>;
     };
@@ -145,6 +148,33 @@ describe("deployment runtime", () => {
     }
   });
 
+  it("serves a built Pages asset before falling back to the application Worker", async () => {
+    // @ts-expect-error The Cloudflare Pages entrypoint is intentionally plain JavaScript.
+    const { onRequest } = await import("../../artifact-pages/functions/[[path]].js") as {
+      onRequest: PagesFunctionHandler;
+    };
+    const request = new Request("https://artifactpass.com/assets/homepage-validation.js");
+    const applicationFetch = vi.fn();
+    const assetFetch = vi.fn().mockResolvedValue(new Response("export const ready = true;", {
+      headers: { "Content-Type": "application/javascript" },
+    }));
+
+    const response = await onRequest({
+      request,
+      env: {
+        ASSETS: { fetch: assetFetch },
+        ARTIFACT_APPLICATION: { fetch: applicationFetch },
+        SEO_ANALYTICS: {} as D1Database,
+      },
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("application/javascript");
+    await expect(response.text()).resolves.toContain("ready = true");
+    expect(assetFetch).toHaveBeenCalledWith(request);
+    expect(applicationFetch).not.toHaveBeenCalled();
+  });
+
   it("returns a controlled response when the application service binding rejects", async () => {
     // @ts-expect-error The Cloudflare Pages entrypoint is intentionally plain JavaScript.
     const { onRequest } = await import("../../artifact-pages/functions/[[path]].js") as {
@@ -161,6 +191,7 @@ describe("deployment runtime", () => {
     const response = await onRequest({
       request,
       env: {
+        ASSETS: { fetch: vi.fn() },
         ARTIFACT_APPLICATION: {
           fetch: vi.fn().mockRejectedValue(new Error("service binding unavailable")),
         },
