@@ -62,6 +62,12 @@ const pagesPreviewHeaders = [
   "  X-Robots-Tag: noindex, nofollow, noarchive",
 ].join("\n");
 
+const homepageValidationHeaders = [
+  "/assets/homepage-validation.js",
+  "  Cache-Control: public, max-age=0, must-revalidate",
+  "  X-Content-Type-Options: nosniff",
+].join("\n");
+
 export const pagesFunctionRoutes = {
   version: 1,
   include: [
@@ -116,7 +122,7 @@ export const staticPublicAssets = (outputDirectory: string): Plugin => ({
       writeFile(resolve(outputDirectory, ".well-known", "ard.json"), aiCatalog),
       writeFile(
         resolve(outputDirectory, "_headers"),
-        `${staticHeaders}\n\n${pagesPreviewHeaders}\n`,
+        `${staticHeaders}\n\n${homepageValidationHeaders}\n\n${pagesPreviewHeaders}\n`,
       ),
       writeFile(
         resolve(outputDirectory, "_routes.json"),

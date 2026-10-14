@@ -172,6 +172,56 @@ test("loads the production validator under the real homepage CSP", async ({ cont
   expect(readFileSync(resolve(serviceRoot, "wrangler.jsonc"), "utf8")).toContain('"/upload/*"');
 });
 
+test("recovers when the validator request fails once", async ({ context, page }) => {
+  let validatorRequests = 0;
+  await context.route(`${origin}/**`, async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/") {
+      await route.fulfill({ contentType: "text/html", body: homepage });
+      return;
+    }
+    if (url.pathname === "/session/status") {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          authenticated: false,
+          deployment_mode: "public",
+          policy: {
+            max_artifact_bytes: 26_214_400,
+          },
+        }),
+      });
+      return;
+    }
+    if (url.pathname === "/assets/homepage-validation.js") {
+      validatorRequests += 1;
+      if (validatorRequests === 1) {
+        await route.fulfill({ status: 404, contentType: "text/plain", body: "Not found" });
+      } else {
+        await route.fulfill({ contentType: "application/javascript", body: homepageValidatorModule });
+      }
+      return;
+    }
+    await route.abort();
+  });
+
+  await page.goto(`${origin}/`);
+  await page.getByRole("button", { name: /Try it with your own document/ }).click();
+  const html = {
+    name: "retry.html",
+    mimeType: "text/html",
+    buffer: Buffer.from("<!doctype html><title>Retry</title>"),
+  };
+  await page.locator("#pending-file-input").setInputFiles(html);
+  await expect(page.locator("#upload-status")).toHaveText("Document validation is unavailable. Try again.");
+
+  await page.locator("#pending-file-input").setInputFiles(html);
+
+  await expect(page.locator("#file-name")).toHaveText("retry.html");
+  await expect(page.getByRole("button", { name: "Continue to sign in" })).toBeVisible();
+  expect(validatorRequests).toBe(2);
+});
+
 test("lets an authenticated browser continue without provider sign-in", async ({ context, page }) => {
   await context.route(`${origin}/**`, async (route) => {
     if (await installHomepageRuntime(route, true)) return;
