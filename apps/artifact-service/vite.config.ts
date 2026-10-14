@@ -18,9 +18,21 @@ const browserTestUploadEntry = (): Plugin => ({
   },
 });
 
+const applicationAssetRevision = (): Plugin => ({
+  name: "artifactpass-application-asset-revision",
+  enforce: "post",
+  transformIndexHtml(html) {
+    return html.replace(
+      /((?:src|href)="\/assets\/[^"?]+)(?=")/gu,
+      "$1?v=2026-10-14",
+    );
+  },
+});
+
 export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
+    applicationAssetRevision(),
     ...(mode === "browser-test" ? [browserTestUploadEntry()] : [cloudflare()]),
   ],
   environments: {
