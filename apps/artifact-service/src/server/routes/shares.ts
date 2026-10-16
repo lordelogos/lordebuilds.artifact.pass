@@ -16,7 +16,11 @@ import {
 import { ArtifactError } from "../storage/artifact-error";
 import { consumeRequestRateLimit } from "../auth/rate-limit";
 import type { ArtifactRecord, ArtifactPolicy } from "../storage/artifact-types";
-import { renderSharePage, type ShareRepresentation } from "../../web/routes/share-page";
+import {
+  renderSharePage,
+  renderUnavailableSharePage,
+  type ShareRepresentation,
+} from "../../web/routes/share-page";
 import {
   htmlContainsJavaScript,
   renderSafeHtmlPreview,
@@ -138,6 +142,14 @@ const viewerHeaders = (nonce: string) => ({
   ].join("; "),
   "Content-Type": "text/html; charset=utf-8",
 });
+
+export const unavailableShareResponse = (): Response => {
+  const nonce = createNonce();
+  return new Response(renderUnavailableSharePage(nonce), {
+    status: 404,
+    headers: viewerHeaders(nonce),
+  });
+};
 
 const representationFor = async (
   service: ArtifactApplicationService,
