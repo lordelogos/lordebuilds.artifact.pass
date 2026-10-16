@@ -140,3 +140,40 @@ export const renderSharePage = ({
   );
   return `<!doctype html>${markup}`;
 };
+
+export const renderUnavailableSharePage = (nonce: string): string => {
+  const markup = renderToStaticMarkup(
+    <html lang="en">
+      <head>
+        <meta charSet="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="referrer" content="no-referrer" />
+        <meta name="theme-color" content="#0b0c0e" />
+        <link rel="icon" href="/artifactpass-logo.svg" type="image/svg+xml" />
+        <title>Artifact unavailable · ArtifactPass</title>
+        <script nonce={nonce} dangerouslySetInnerHTML={{ __html: homepageBootScript }} />
+        <style nonce={nonce} dangerouslySetInnerHTML={{ __html: pageStyles }} />
+      </head>
+      <body>
+        <main className="expired-shell">
+          <section className="expired" aria-labelledby="unavailable-title">
+            <p className="expired-label">Temporary artifact</p>
+            <h1 id="unavailable-title">This artifact does not exist or has expired.</h1>
+            <p className="expired-copy">
+              The link may be incorrect, revoked, or past its cutoff. Ask the sender for a new link
+              if you still need the file.
+            </p>
+            <div className="expired-actions">
+              <a className="expired-action expired-action--primary" href={publicSiteUrl()}>Go to ArtifactPass</a>
+              <a className="expired-action" href="/upload">Share a document</a>
+            </div>
+            <p className="expired-note">
+              For privacy, ArtifactPass does not reveal whether an unavailable link previously existed.
+            </p>
+          </section>
+        </main>
+      </body>
+    </html>,
+  );
+  return `<!doctype html>${markup}`;
+};

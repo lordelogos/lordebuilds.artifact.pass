@@ -249,7 +249,7 @@ describe("safe human viewers", () => {
     expect(rangedDownload.headers.get("content-security-policy")).toContain("sandbox");
   });
 
-  it("contains an exact-cutoff open-page transition and denies every refresh at expiry", async () => {
+  it("shows an unavailable page for expired or missing browser links while preserving JSON errors", async () => {
     const created = await upload("handoff.md", "text/markdown", "# Temporary\n");
     const openPage = await fetch(created.share_url, undefined, request);
     const html = await openPage.text();
@@ -261,7 +261,23 @@ describe("safe human viewers", () => {
     expect(html).toContain('href="https://artifactpass.com/#install"');
 
     vi.setSystemTime(now + 900_000);
-    expect((await fetch(created.share_url, undefined, request)).status).toBe(404);
+    const browserHeaders = { accept: "text/html,application/xhtml+xml" };
+    const expiredPage = await fetch(created.share_url, { headers: browserHeaders }, request);
+    expect(expiredPage.status).toBe(404);
+    expect(expiredPage.headers.get("content-type")).toContain("text/html");
+    expect(await expiredPage.text()).toContain("This artifact does not exist or has expired");
+
+    const missingPage = await request(`/a/${"Z".repeat(43)}`, { headers: browserHeaders });
+    expect(missingPage.status).toBe(404);
+    expect(missingPage.headers.get("content-type")).toContain("text/html");
+    expect(await missingPage.text()).toContain("This artifact does not exist or has expired");
+
+    const machineResponse = await fetch(created.share_url, {
+      headers: { accept: "application/json" },
+    }, request);
+    expect(machineResponse.headers.get("content-type")).toContain("application/json");
+    await expect(machineResponse.json()).resolves.toMatchObject({ error: { code: "not_found" } });
+
     expect((await fetch(`${created.share_url}/content`, undefined, request)).status).toBe(404);
     expect((await fetch(`${created.share_url}/preview`, undefined, request)).status).toBe(404);
     expect((await fetch(`${created.share_url}/interactive`, undefined, request)).status).toBe(404);

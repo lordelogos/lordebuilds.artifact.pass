@@ -21,7 +21,11 @@ import {
 import { createArtifactsRouter } from "./routes/artifacts";
 import { createConnectRouter } from "./routes/connect";
 import { createAuthRouter } from "./routes/auth";
-import { PUBLIC_RESPONSE_HEADERS, createSharesRouter } from "./routes/shares";
+import {
+  PUBLIC_RESPONSE_HEADERS,
+  createSharesRouter,
+  unavailableShareResponse,
+} from "./routes/shares";
 import { D1ArtifactRepository } from "./storage/artifact-repository";
 import { ArtifactApplicationService } from "./storage/artifact-service";
 import { ArtifactError } from "./storage/artifact-error";
@@ -227,6 +231,16 @@ export const createArtifactApplication = (options: ArtifactApplicationOptions = 
 
   app.onError((error, context) => {
     if (error instanceof ArtifactError) {
+      const pathname = new URL(context.req.url).pathname;
+      const acceptsHtml = context.req.header("accept")?.includes("text/html") === true;
+      if (
+        error.code === "not_found" &&
+        context.req.method === "GET" &&
+        /^\/a\/[^/]+\/?$/u.test(pathname) &&
+        acceptsHtml
+      ) {
+        return unavailableShareResponse();
+      }
       return context.json(
         {
           protocol_version: PROTOCOL_VERSION,
