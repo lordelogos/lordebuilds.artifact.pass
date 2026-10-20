@@ -214,6 +214,33 @@ describe("deployment runtime", () => {
     expect(errorLog).toHaveBeenCalledOnce();
     expect(errorLog).toHaveBeenCalledWith(expect.stringContaining('"event":"artifactpass.pages_proxy_failed"'));
     expect(errorLog).toHaveBeenCalledWith(expect.not.stringContaining("service binding unavailable"));
+
+    const browserResponse = await onRequest({
+      request: new Request("https://artifactpass.com/connect/approve?format=html", {
+        headers: { Accept: "text/html" },
+      }),
+      env: {
+        ASSETS: { fetch: vi.fn() },
+        ARTIFACT_APPLICATION: { fetch: vi.fn().mockRejectedValue(new Error("service binding unavailable")) },
+        SEO_ANALYTICS: {} as D1Database,
+      },
+    });
+    expect(browserResponse.status).toBe(503);
+    expect(browserResponse.headers.get("content-type")).toContain("text/html");
+    expect(await browserResponse.text()).toContain("Try again");
+
+    const callbackResponse = await onRequest({
+      request: new Request("https://artifactpass.com/auth/callback/google", {
+        headers: { Accept: "text/html" },
+      }),
+      env: {
+        ASSETS: { fetch: vi.fn() },
+        ARTIFACT_APPLICATION: { fetch: vi.fn().mockRejectedValue(new Error("service binding unavailable")) },
+        SEO_ANALYTICS: {} as D1Database,
+      },
+    });
+    expect(callbackResponse.status).toBe(503);
+    expect(await callbackResponse.text()).toContain('href="/auth/sign-in">Start sign-in again');
   });
 
   it("builds the public site and deployable application as separate artifacts", () => {

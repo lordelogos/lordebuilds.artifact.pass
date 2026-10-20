@@ -33,6 +33,7 @@ import { R2ArtifactObjectStore } from "./storage/r2-object-store";
 import { artifactPolicyFromBindings } from "./storage/validation";
 import { redactRequestPath } from "./observability/redact-request-path";
 import { publicSiteUrl } from "../web/public-site";
+import { browserErrorResponse } from "./browser-error-page";
 
 export interface ArtifactApplicationOptions {
   readonly now?: () => number;
@@ -236,10 +237,25 @@ export const createArtifactApplication = (options: ArtifactApplicationOptions = 
       if (
         error.code === "not_found" &&
         context.req.method === "GET" &&
-        /^\/a\/[^/]+\/?$/u.test(pathname) &&
-        acceptsHtml
+        /^\/a\/[^/]+(?:\/[^/]+)?\/?$/u.test(pathname) &&
+        (acceptsHtml || context.req.header("sec-fetch-mode") === "navigate")
       ) {
-        return unavailableShareResponse();
+        return unavailableShareResponse(/^\/a\/[^/]+\/[^/]+\/?$/u.test(pathname));
+      }
+      const requestId = context.req.header("cf-ray") ?? crypto.randomUUID();
+      const browserResponse = browserErrorResponse(context.req.raw, error.status, requestId);
+      if (browserResponse !== null) {
+        if (pathname === "/connect/approve" || pathname.startsWith("/auth/")) {
+          console.warn(JSON.stringify({
+            event: "artifactpass.browser_navigation_failed",
+            request_id: requestId,
+            method: context.req.method,
+            path: redactRequestPath(pathname),
+            error_code: error.code,
+            status: error.status,
+          }));
+        }
+        return browserResponse;
       }
       return context.json(
         {
@@ -260,6 +276,8 @@ export const createArtifactApplication = (options: ArtifactApplicationOptions = 
       error_message: error instanceof Error ? error.message : String(error),
       ...(error instanceof Error && error.stack !== undefined ? { stack: error.stack } : {}),
     }));
+    const browserResponse = browserErrorResponse(context.req.raw, 500, requestId);
+    if (browserResponse !== null) return browserResponse;
     return context.json(
       {
         protocol_version: PROTOCOL_VERSION,
