@@ -125,7 +125,7 @@ const createNonce = (): string => {
   return btoa(binary);
 };
 
-const viewerHeaders = (nonce: string) => ({
+const viewerHeaders = (nonce: string, allowEmbedding = false) => ({
   ...PUBLIC_RESPONSE_HEADERS,
   "Content-Security-Policy": [
     "default-src 'none'",
@@ -138,16 +138,16 @@ const viewerHeaders = (nonce: string) => ({
     "object-src 'none'",
     "base-uri 'none'",
     "form-action 'none'",
-    "frame-ancestors 'none'",
+    `frame-ancestors '${allowEmbedding ? "self" : "none"}'`,
   ].join("; "),
   "Content-Type": "text/html; charset=utf-8",
 });
 
-export const unavailableShareResponse = (): Response => {
+export const unavailableShareResponse = (allowEmbedding = false): Response => {
   const nonce = createNonce();
   return new Response(renderUnavailableSharePage(nonce), {
     status: 404,
-    headers: viewerHeaders(nonce),
+    headers: viewerHeaders(nonce, allowEmbedding),
   });
 };
 

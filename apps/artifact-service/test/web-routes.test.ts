@@ -281,6 +281,14 @@ describe("safe human viewers", () => {
     expect((await fetch(`${created.share_url}/content`, undefined, request)).status).toBe(404);
     expect((await fetch(`${created.share_url}/preview`, undefined, request)).status).toBe(404);
     expect((await fetch(`${created.share_url}/interactive`, undefined, request)).status).toBe(404);
+
+    const missingPreview = await request(`/a/${"Z".repeat(43)}/preview`, { headers: browserHeaders });
+    expect(missingPreview.status).toBe(404);
+    expect(missingPreview.headers.get("content-type")).toContain("text/html");
+    expect(missingPreview.headers.get("content-security-policy")).toContain("frame-ancestors 'self'");
+    const previewPage = await missingPreview.text();
+    expect(previewPage).toContain("This artifact does not exist or has expired");
+    expect(previewPage).toContain("Temporary artifact");
   });
 
   it.each(["/dashboard", "/history", "/settings"])("does not expose %s", async (path) => {

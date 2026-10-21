@@ -30,6 +30,8 @@ const request = (
   bindings(),
 );
 
+const browserHeaders = { accept: "text/html,application/xhtml+xml" };
+
 const protectedUploadRequest = (
   path: string,
   init: RequestInit,
@@ -143,6 +145,23 @@ beforeEach(async () => {
 });
 
 describe("public ArtifactPass authentication", () => {
+  it("shows recovery pages for browser sign-in errors while preserving JSON for clients", async () => {
+    const callback = await request("/auth/callback/google", { headers: browserHeaders });
+    expect(callback.status).toBe(400);
+    expect(callback.headers.get("content-type")).toContain("text/html");
+    expect(await callback.text()).toContain("Start sign-in again");
+
+    const invalidReturn = await request("/auth/sign-in?return_to=https://other.example", {
+      headers: browserHeaders,
+    });
+    expect(invalidReturn.status).toBe(400);
+    expect(invalidReturn.headers.get("content-type")).toContain("text/html");
+
+    const client = await request("/auth/callback/google", { headers: { accept: "application/json" } });
+    expect(client.headers.get("content-type")).toContain("application/json");
+    await expect(client.json()).resolves.toMatchObject({ error: { code: expect.any(String) } });
+  });
+
   it("reports that public authentication is ready without exposing provider credentials", async () => {
     const response = await request("/health");
     const body = await response.json();

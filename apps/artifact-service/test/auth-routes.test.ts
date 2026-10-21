@@ -223,6 +223,13 @@ describe("Cloudflare Access assertions", () => {
     );
     expect(uploadSurface.status).toBe(200);
     expect(requestedAssetUrl).toBe("https://artifacts.example/upload");
+
+    const missingAssets = await request("/upload", {
+      headers: { accept: "text/html", ...(await accessHeaders()) },
+    }, { ASSETS: undefined });
+    expect(missingAssets.status).toBe(404);
+    expect(missingAssets.headers.get("content-type")).toContain("text/html");
+    expect(await missingAssets.text()).toContain("ask its administrator to check the app assets");
   });
 
   it("renders and submits the hosted Access approval form with a same-origin browser request", async () => {
@@ -255,6 +262,26 @@ describe("Cloudflare Access assertions", () => {
     expect(approval.status).toBe(200);
     expect(await approval.text()).toContain("Connected.");
     expect((await exchangeDeviceFlow(device.device_code, verifier)).status).toBe(200);
+
+    const staleLink = await request(`/connect/approve?user_code=${device.user_code}&format=html`, {
+      headers: await accessHeaders(),
+    });
+    expect(staleLink.status).toBe(404);
+    expect(staleLink.headers.get("content-type")).toContain("text/html");
+    expect(await staleLink.text()).toContain("start a new connection from your agent");
+
+    const repeatedApproval = await request("/connect/approve", {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        origin: "https://artifacts.example",
+        ...(await accessHeaders()),
+      },
+      body: form,
+    });
+    expect(repeatedApproval.status).toBe(409);
+    expect(repeatedApproval.headers.get("content-type")).toContain("text/html");
+    expect(await repeatedApproval.text()).toContain("start a new connection from your agent");
   });
 
   it("shows the exact agent and workspace before registering its device key", async () => {
