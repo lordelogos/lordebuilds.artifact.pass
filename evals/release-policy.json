@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "policy_id": "artifactpass-0.1.11-stable-release",
-  "candidate_sha256": "7c52c6e885cf10375d2f00f856ac77e72a699043c47898a77206c82f6e25c5e1",
+  "policy_id": "artifactpass-0.1.12-rc.1-browser-recovery-release",
+  "candidate_sha256": "20ae8bb5b46ead678628c974dd6c87f847424d8a49b14a9e33e10252383a47f7",
   "scorer_version": "1.0.0",
-  "created_at": "2026-10-10T04:22:12.000Z",
+  "created_at": "2026-10-21T18:27:56.000Z",
   "cohorts": [
     {
       "id": "generic-to-generic-fidelity",

@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/core": "2.0.0",
-    "@modelcontextprotocol/server": "2.0.0",
+    "@modelcontextprotocol/server": "2.3.1",
     "artifact-protocol": "workspace:*",
     "representation-pipeline": "workspace:*",
     "zod": "^4.4.3"
