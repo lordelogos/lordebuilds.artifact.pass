@@ -20,7 +20,7 @@
     "drizzle-orm": "^0.45.2",
     "hast-util-from-html": "^2.0.3",
     "hast-util-to-html": "^9.0.5",
-    "hono": "^4.13.7",
+    "hono": "^4.13.13",
     "jose": "^6.2.9",
     "marked": "^18.0.9",
     "pdfjs-dist": "^6.2.108",
@@ -38,6 +38,6 @@
     "typescript": "^7.0.2",
     "vite": "^8.2.1",
     "vitest": "^4.1.10",
-    "wrangler": "^4.147.0"
+    "wrangler": "^4.152.0"
   }
 }

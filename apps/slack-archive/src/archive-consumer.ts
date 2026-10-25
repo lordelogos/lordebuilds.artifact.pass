@@ -1,0 +1,130 @@
+import { activeLeaseUntil, beginCompletion, claimDelivery, finishDelivery, scheduleRetry, type DeliveryDatabase } from "./delivery-store";
+import type { QueuedArchiveJob } from "./event-receiver";
+import { parseApprovedShareUrl } from "./source-policy";
+import { archiveSource, ArchiveTransferError, type ArchiveTransferOptions } from "./slack-upload";
+
+export interface ArchiveQueueMessage {
+  readonly body: unknown;
+  readonly attempts: number;
+  ack(): void;
+  retry(options: { delaySeconds: number }): void;
+}
+
+export interface ArchiveQueueBatch {
+  readonly messages: readonly ArchiveQueueMessage[];
+}
+
+export interface ArchiveConsumerOptions {
+  readonly database: DeliveryDatabase;
+  readonly botToken: string;
+  readonly approvedOrigins: readonly string[];
+  readonly enabledChannelIds: readonly string[];
+  readonly now: () => number;
+  readonly transfer?: (job: QueuedArchiveJob, options: ArchiveTransferOptions) => Promise<{ readonly fileId: string }>;
+  readonly notificationFetcher?: typeof fetch;
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const queuedJob = (value: unknown, origins: readonly string[], enabledChannels: readonly string[]): QueuedArchiveJob | null => {
+  if (!isRecord(value) ||
+      typeof value.id !== "string" || !/^[a-f0-9]{64}$/u.test(value.id) ||
+      typeof value.channelId !== "string" || !/^[CG][A-Z0-9]{8,}$/u.test(value.channelId) || !enabledChannels.includes(value.channelId) ||
+      typeof value.messageTs !== "string" || !/^\d{9,}\.\d{1,6}$/u.test(value.messageTs) ||
+      typeof value.threadTs !== "string" || !/^\d{9,}\.\d{1,6}$/u.test(value.threadTs) ||
+      value.unfurlId !== undefined && (typeof value.unfurlId !== "string" || !/^[A-Za-z0-9._-]{1,256}$/u.test(value.unfurlId)) ||
+      !parseApprovedShareUrl(value.shareUrl, origins)) return null;
+  return value as unknown as QueuedArchiveJob;
+};
+
+const retryDelaySeconds = 30;
+const maximumAttempts = 3;
+
+const notifyUnavailableLink = async (job: QueuedArchiveJob, options: ArchiveConsumerOptions): Promise<void> => {
+  const target = job.unfurlId
+    ? { unfurl_id: job.unfurlId, source: "conversations_history" }
+    : { channel: job.channelId, ts: job.messageTs };
+  try {
+    const response = await (options.notificationFetcher ?? fetch)("https://slack.com/api/chat.unfurl", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${options.botToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...target,
+        unfurls: {
+          [job.shareUrl]: { text: "This ArtifactPass link has expired or is unavailable. Create and share a fresh link." },
+        },
+      }),
+      signal: AbortSignal.timeout(5_000),
+    });
+    const result: unknown = await response.json();
+    if (!response.ok || typeof result !== "object" || result === null || !("ok" in result) || result.ok !== true) {
+      console.warn("ArtifactPass could not show the unavailable-link preview in Slack");
+    }
+  } catch {
+    // A failed preview must not trigger another attempt to copy an unavailable file.
+    console.warn("ArtifactPass could not show the unavailable-link preview in Slack");
+  }
+};
+
+export const consumeArchiveBatch = async (batch: ArchiveQueueBatch, options: ArchiveConsumerOptions): Promise<void> => {
+  for (const message of batch.messages) {
+    const job = queuedJob(message.body, options.approvedOrigins, options.enabledChannelIds);
+    if (!job) {
+      message.ack();
+      continue;
+    }
+    let claimId: string | null;
+    try {
+      claimId = await claimDelivery(options.database, job, options.now());
+    } catch {
+      message.retry({ delaySeconds: retryDelaySeconds });
+      continue;
+    }
+    if (!claimId) {
+      try {
+        const leaseUntil = await activeLeaseUntil(options.database, job.id);
+        if (leaseUntil === null) message.ack();
+        else message.retry({ delaySeconds: Math.max(retryDelaySeconds, Math.ceil((leaseUntil - options.now()) / 1_000) + 2) });
+      } catch {
+        message.retry({ delaySeconds: retryDelaySeconds });
+      }
+      continue;
+    }
+    try {
+      const result = await (options.transfer ?? archiveSource)(job, {
+        approvedOrigins: options.approvedOrigins,
+        botToken: options.botToken,
+        now: options.now,
+        onCompletionStart: async () => {
+          const marked = await beginCompletion(options.database, job.id, claimId, options.now());
+          if (!marked) throw new Error("Delivery claim is no longer active");
+        },
+      });
+      await finishDelivery(options.database, job.id, claimId, "succeeded", options.now(), null, result.fileId);
+      message.ack();
+    } catch (error) {
+      const failure = error instanceof ArchiveTransferError
+        ? error : new ArchiveTransferError("retryable", "unexpected_transfer_error");
+      try {
+        if (failure.kind === "needs-review") {
+          await finishDelivery(options.database, job.id, claimId, "needs-review", options.now(), failure.code);
+          message.ack();
+        } else if (failure.kind === "terminal" || message.attempts >= maximumAttempts) {
+          await finishDelivery(options.database, job.id, claimId, "failed", options.now(),
+            message.attempts >= maximumAttempts && failure.kind !== "terminal" ? "retry_budget_exhausted" : failure.code);
+          if (failure.kind === "terminal" && (failure.code === "source_expired" || failure.code === "source_unavailable")) {
+            await notifyUnavailableLink(job, options);
+          }
+          message.ack();
+        } else if (await scheduleRetry(options.database, job.id, claimId, failure.code, options.now())) {
+          message.retry({ delaySeconds: retryDelaySeconds });
+        } else {
+          message.ack();
+        }
+      } catch {
+        message.retry({ delaySeconds: retryDelaySeconds });
+      }
+    }
+  }
+};

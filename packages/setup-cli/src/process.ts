@@ -22,6 +22,7 @@ export interface RunOptions {
   readonly input?: string;
   readonly timeoutMilliseconds?: number;
   readonly inheritEnvironment?: boolean;
+  readonly onOutput?: (chunk: string) => void;
 }
 
 export interface RunResult {
@@ -69,6 +70,7 @@ export const runProcess: ProcessRunner = async (command, args, options = {}) =>
         return;
       }
       target.push(chunk);
+      options.onOutput?.(chunk.toString("utf8"));
     };
     child.stdout.on("data", (chunk: Buffer) => capture(stdout, chunk));
     child.stderr.on("data", (chunk: Buffer) => capture(stderr, chunk));
