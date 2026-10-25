@@ -2,7 +2,7 @@
 
 The optional ArtifactPass Archive app copies a file from a live ArtifactPass link into the Slack thread where someone posted it. The Slack copy remains under your workspace's file-retention policy after the original link expires. This is a separate, customer-owned add-on: it does not change your ArtifactPass deployment or install an agent.
 
-This integration is being built and is **not yet released or qualified for production**. The steps below describe the current CLI for a pilot. Do not treat local tests as proof that Slack will deliver events or that a Cloudflare Free account will sustain your traffic. The [Cloudflare capacity notes](slack-archive-free-tier.md) distinguish measured POC transfers from unverified automatic-bot throughput.
+This integration is being built and is **not yet released or qualified for production**. The steps below describe the current CLI for a pilot. Do not treat one live pilot as proof that a Cloudflare Free account will sustain your traffic. The [Cloudflare capacity notes](slack-archive-free-tier.md) separate measured automatic-bot behavior from the quota-derived planning budget.
 
 ## Decide where it runs
 
