@@ -5,6 +5,7 @@ import { expect, test, type Route } from "@playwright/test";
 
 import { popupCancelledScript } from "../../apps/artifact-service/src/web/popup-cancel";
 import { popupCompleteScript } from "../../apps/artifact-service/src/web/popup-complete";
+import { popupProviderStartScript } from "../../apps/artifact-service/src/web/popup-provider-start";
 import { homepageInteractionScript, publicStyles } from "../../apps/artifact-pages/src/public-homepage";
 import { publicPageHeaders } from "../../apps/artifact-pages/src/public-pages";
 
@@ -582,6 +583,78 @@ test("continues when sign-in succeeded before the popup completion signal arrive
 
   await page.waitForURL(`${origin}/upload?pending=homepage&publish=1`);
   await expect(page.getByRole("heading", { name: "Upload restored" })).toBeVisible();
+});
+
+test("keeps waiting when an OAuth provider isolates the still-open sign-in popup", async ({ context, page }) => {
+  let authenticated = false;
+  let authenticatedStatusChecks = 0;
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "BroadcastChannel", { value: undefined });
+  });
+  await context.route("**/*", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.hostname === "provider.artifactpass.test") {
+      await route.fulfill({
+        contentType: "text/html",
+        headers: { "Cross-Origin-Opener-Policy": "same-origin" },
+        body: "<h1>Provider sign-in</h1>",
+      });
+      return;
+    }
+    if (url.pathname === "/session/status" && authenticated) authenticatedStatusChecks += 1;
+    if (await installHomepageRuntime(route, () => authenticated)) return;
+    if (url.pathname === "/") {
+      await route.fulfill({ contentType: "text/html", body: homepage });
+      return;
+    }
+    if (url.pathname === "/auth/sign-in") {
+      await route.fulfill({
+        contentType: "text/html",
+        body: `<h1>Sign in to ArtifactPass</h1><a class="provider" href="https://provider.artifactpass.test/authorize">Continue with provider</a><script>${popupProviderStartScript}</script>`,
+      });
+      return;
+    }
+    if (url.pathname === "/auth/popup/complete") {
+      await route.fulfill({
+        contentType: "text/html",
+        body: `<p id="popup-status"></p><a id="completion-fallback" href="/upload?pending=homepage&amp;publish=1" hidden>Continue in this tab</a><script>${popupCompleteScript}</script>`,
+      });
+      return;
+    }
+    if (url.pathname === "/upload") {
+      await route.fulfill({ contentType: "text/html", body: "<h1>Upload restored</h1>" });
+      return;
+    }
+    await route.abort();
+  });
+
+  await page.goto(`${origin}/`);
+  await page.getByRole("button", { name: /Try it with your own document/ }).click();
+  await page.locator("#pending-file-input").setInputFiles({
+    name: "handoff.md",
+    mimeType: "text/markdown",
+    buffer: Buffer.from("# First sign-in"),
+  });
+
+  const popupPromise = page.waitForEvent("popup");
+  await page.getByRole("button", { name: "Continue to sign in" }).click();
+  const popup = await popupPromise;
+  await popup.waitForURL(new RegExp(`${origin}/auth/sign-in\\?`));
+  const returnTo = new URL(popup.url()).searchParams.get("return_to");
+  expect(returnTo).not.toBeNull();
+  await popup.getByRole("link", { name: "Continue with provider" }).click();
+  await expect(popup.getByRole("heading", { name: "Provider sign-in" })).toBeVisible();
+  await page.waitForTimeout(1800);
+
+  await expect(page.locator("#upload-status")).toHaveText("Finish signing in in the popup. This page will create the link automatically.");
+  await expect(page.getByRole("button", { name: "Finish sign-in in the popup" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Close" })).toBeEnabled();
+
+  authenticated = true;
+  await popup.goto(new URL(returnTo ?? "", origin).href).catch(() => null);
+  await page.waitForURL(`${origin}/upload?pending=homepage&publish=1`);
+  await expect(page.getByRole("heading", { name: "Upload restored" })).toBeVisible();
+  expect(authenticatedStatusChecks).toBeGreaterThan(0);
 });
 
 test("accepts a matching completion signal after the popup closes", async ({ context, page }) => {

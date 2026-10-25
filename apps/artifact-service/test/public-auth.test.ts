@@ -316,6 +316,22 @@ describe("public ArtifactPass authentication", () => {
     expect(source).not.toContain('window.location.assign("/upload")');
   });
 
+  it("signals when popup sign-in leaves for an OAuth provider", async () => {
+    const returnTo = "/auth/popup/complete?flow=11111111222233334444555555555555";
+    const page = await request(`/auth/sign-in?return_to=${encodeURIComponent(returnTo)}`);
+    const regularPage = await request("/auth/sign-in");
+    const script = await request("/auth/popup-provider-start.js");
+
+    expect(page.status).toBe(200);
+    expect(page.headers.get("content-security-policy")).toContain("script-src 'self'");
+    expect(await page.text()).toContain('src="/auth/popup-provider-start.js"');
+    expect(regularPage.headers.get("content-security-policy")).not.toContain("script-src");
+    expect(await regularPage.text()).not.toContain('src="/auth/popup-provider-start.js"');
+    expect(script.status).toBe(200);
+    expect(script.headers.get("content-type")).toContain("application/javascript");
+    expect(await script.text()).toContain('type: "artifactpass:auth-provider-started"');
+  });
+
   it("returns a cancelled provider login to the original ArtifactPass tab", async () => {
     const flow = "11111111222233334444555555555555";
     const returnTo = `/auth/popup/complete?theme=light&flow=${flow}`;
