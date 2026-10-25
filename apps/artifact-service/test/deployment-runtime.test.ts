@@ -1,8 +1,28 @@
 import { exports } from "cloudflare:workers";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import demoConfigSource from "../wrangler-demo.jsonc?raw";
+import pagesConfigSource from "../../artifact-pages/wrangler.jsonc?raw";
+import pagesViteConfigSource from "../../artifact-pages/vite.config.ts?raw";
 import productionConfigSource from "../wrangler.jsonc?raw";
+import serviceViteConfigSource from "../vite.config.ts?raw";
+import { pagesFunctionRoutes } from "../../artifact-pages/src/static-public-assets";
+import packageMetadata from "../../../package.json" with { type: "json" };
+
+type PagesFunctionContext = {
+  request: Request;
+  env: {
+    ASSETS: {
+      fetch: (request: Request) => Promise<Response>;
+    };
+    ARTIFACT_APPLICATION: {
+      fetch: (request: Request) => Promise<Response>;
+    };
+    SEO_ANALYTICS: D1Database;
+  };
+};
+
+type PagesFunctionHandler = (context: PagesFunctionContext) => Promise<Response>;
 
 vi.mock("@cloudflare/vite-plugin", () => ({
   cloudflare: () => ({ name: "cloudflare" }),
@@ -14,6 +34,10 @@ vi.mock("vite", () => ({
   defineConfig: <Config>(config: Config) => config,
 }));
 
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 describe("deployment runtime", () => {
   it("reports that the local artifact service is healthy", { timeout: 30_000 }, async () => {
     const response = await exports.default.fetch("http://localhost/health");
@@ -23,12 +47,13 @@ describe("deployment runtime", () => {
     await expect(response.json()).resolves.toEqual({
       service: "lordebuilds.artifacts.share",
       status: "ok",
+      artifactpass_version: packageMetadata.version,
       human_auth_mode: "artifactpass",
       authentication_configured: false,
     });
   });
 
-  it("serves production public pages as static assets while keeping demo pages dynamic", () => {
+  it("keeps the application Worker focused on application routes", () => {
     const productionConfig = JSON.parse(productionConfigSource) as {
       assets?: { binding?: string; run_worker_first?: readonly string[] };
       main?: string;
@@ -45,7 +70,25 @@ describe("deployment runtime", () => {
         html_handling: "drop-trailing-slash",
       },
     });
-    for (const route of ["/", "/privacy", "/terms"]) {
+    for (const route of [
+      "/",
+      "/how-it-works",
+      "/for-ai-agents",
+      "/private-deployments",
+      "/guides",
+      "/guides/agent-setup",
+      "/guides/private-deployment",
+      "/guides/private-teammate",
+      "/security",
+      "/privacy",
+      "/terms",
+      "/robots.txt",
+      "/sitemap.xml",
+      "/llms.txt",
+      "/ai-catalog.json",
+      "/.well-known/ai-catalog.json",
+      "/.well-known/ard.json",
+    ]) {
       expect(productionConfig.assets?.run_worker_first).not.toContain(route);
     }
     expect(demoConfig).toMatchObject({
@@ -55,6 +98,161 @@ describe("deployment runtime", () => {
         run_worker_first: expect.arrayContaining(["/", "/privacy", "/terms"]),
       },
     });
+  });
+
+  it("routes only application requests from Pages to the production Worker", () => {
+    const pagesConfig = JSON.parse(pagesConfigSource) as {
+      name?: string;
+      pages_build_output_dir?: string;
+      services?: readonly { binding?: string; service?: string }[];
+    };
+
+    expect(pagesConfig).toMatchObject({
+      name: "artifactpass-site",
+      pages_build_output_dir: "./dist",
+      services: [{
+        binding: "ARTIFACT_APPLICATION",
+        service: "lordebuilds-artifacts-share",
+      }],
+    });
+    expect(pagesFunctionRoutes.include).toEqual(expect.arrayContaining([
+      "/assets/*",
+      "/health",
+      "/session/*",
+      "/auth/*",
+      "/upload",
+      "/connect/*",
+      "/api/*",
+      "/a/*",
+    ]));
+    for (const route of [
+      "/",
+      "/how-it-works",
+      "/for-ai-agents",
+      "/private-deployments",
+      "/guides",
+      "/guides/agent-setup",
+      "/guides/private-deployment",
+      "/guides/private-teammate",
+      "/security",
+      "/privacy",
+      "/terms",
+      "/robots.txt",
+      "/sitemap.xml",
+      "/llms.txt",
+      "/ai-catalog.json",
+      "/.well-known/ai-catalog.json",
+      "/.well-known/ard.json",
+    ]) {
+      expect(pagesFunctionRoutes.include).not.toContain(route);
+    }
+  });
+
+  it("serves a built Pages asset before falling back to the application Worker", async () => {
+    // @ts-expect-error The Cloudflare Pages entrypoint is intentionally plain JavaScript.
+    const { onRequest } = await import("../../artifact-pages/functions/[[path]].js") as {
+      onRequest: PagesFunctionHandler;
+    };
+    const request = new Request("https://artifactpass.com/assets/homepage-validation.js");
+    const applicationFetch = vi.fn();
+    const assetFetch = vi.fn().mockResolvedValue(new Response("export const ready = true;", {
+      headers: { "Content-Type": "application/javascript" },
+    }));
+
+    const response = await onRequest({
+      request,
+      env: {
+        ASSETS: { fetch: assetFetch },
+        ARTIFACT_APPLICATION: { fetch: applicationFetch },
+        SEO_ANALYTICS: {} as D1Database,
+      },
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("application/javascript");
+    await expect(response.text()).resolves.toContain("ready = true");
+    expect(assetFetch).toHaveBeenCalledWith(request);
+    expect(applicationFetch).not.toHaveBeenCalled();
+  });
+
+  it("returns a controlled response when the application service binding rejects", async () => {
+    // @ts-expect-error The Cloudflare Pages entrypoint is intentionally plain JavaScript.
+    const { onRequest } = await import("../../artifact-pages/functions/[[path]].js") as {
+      onRequest: PagesFunctionHandler;
+    };
+    const request = new Request("https://artifactpass.com/health", {
+      headers: {
+        Accept: "application/json",
+        "cf-ray": "test-ray",
+      },
+    });
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const response = await onRequest({
+      request,
+      env: {
+        ASSETS: { fetch: vi.fn() },
+        ARTIFACT_APPLICATION: {
+          fetch: vi.fn().mockRejectedValue(new Error("service binding unavailable")),
+        },
+        SEO_ANALYTICS: {} as D1Database,
+      },
+    });
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("retry-after")).toBe("5");
+    expect(response.headers.get("x-artifactpass-request-id")).toBe("test-ray");
+    await expect(response.json()).resolves.toEqual({
+      protocol_version: 1,
+      error: {
+        code: "internal_error",
+        message: "Artifact service failed",
+        request_id: "test-ray",
+      },
+    });
+    expect(errorLog).toHaveBeenCalledOnce();
+    expect(errorLog).toHaveBeenCalledWith(expect.stringContaining('"event":"artifactpass.pages_proxy_failed"'));
+    expect(errorLog).toHaveBeenCalledWith(expect.not.stringContaining("service binding unavailable"));
+
+    const browserResponse = await onRequest({
+      request: new Request("https://artifactpass.com/connect/approve?format=html", {
+        headers: { Accept: "text/html" },
+      }),
+      env: {
+        ASSETS: { fetch: vi.fn() },
+        ARTIFACT_APPLICATION: { fetch: vi.fn().mockRejectedValue(new Error("service binding unavailable")) },
+        SEO_ANALYTICS: {} as D1Database,
+      },
+    });
+    expect(browserResponse.status).toBe(503);
+    expect(browserResponse.headers.get("content-type")).toContain("text/html");
+    expect(await browserResponse.text()).toContain("Try again");
+
+    const callbackResponse = await onRequest({
+      request: new Request("https://artifactpass.com/auth/callback/google", {
+        headers: { Accept: "text/html" },
+      }),
+      env: {
+        ASSETS: { fetch: vi.fn() },
+        ARTIFACT_APPLICATION: { fetch: vi.fn().mockRejectedValue(new Error("service binding unavailable")) },
+        SEO_ANALYTICS: {} as D1Database,
+      },
+    });
+    expect(callbackResponse.status).toBe(503);
+    expect(await callbackResponse.text()).toContain('href="/auth/sign-in">Start sign-in again');
+  });
+
+  it("builds the public site and deployable application as separate artifacts", () => {
+    expect(pagesViteConfigSource).toContain("staticPublicAssets(outputDirectory)");
+    expect(pagesViteConfigSource).toContain('"homepage-validation"');
+    expect(pagesViteConfigSource).toContain('new URL("./dist"');
+    expect(pagesViteConfigSource).toContain('new URL("./public"');
+    expect(pagesViteConfigSource).toContain('from "./src/static-public-assets.ts"');
+    expect(pagesViteConfigSource).not.toContain("../artifact-service/public");
+    expect(pagesViteConfigSource).not.toContain("../artifact-service/src/build/static-public-assets.ts");
+    expect(serviceViteConfigSource).not.toContain("staticPublicAssets");
+    expect(serviceViteConfigSource).not.toContain("homepage-validation");
   });
 
   it("binds the local demo Vite server to the fixed public listener", async () => {

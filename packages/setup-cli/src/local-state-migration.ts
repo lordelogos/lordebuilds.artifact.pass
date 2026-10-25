@@ -9,8 +9,9 @@ import {
   agentCredentialAccountForProfile,
   defaultLocalConfigPath,
   legacyLocalConfigPath,
+  mutateLocalBridgeSettings,
   readLocalBridgeSettings,
-  writeLocalBridgeSettings,
+  updateLocalBridgeSettings,
   type CredentialStore,
   type LocalBridgeSettings,
 } from "agent-bridge";
@@ -100,12 +101,22 @@ const acquireLock = async (
 ): Promise<() => Promise<void>> => {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   for (let attempt = 0; attempt < 2; attempt += 1) {
+    let handle;
     try {
-      const handle = await open(path, "wx", 0o600);
-      await handle.writeFile(JSON.stringify({ pid: process.pid, created_at: now() }));
+      handle = await open(path, "wx", 0o600);
+      try {
+        await handle.writeFile(JSON.stringify({ pid: process.pid, created_at: now() }));
+      } catch (error) {
+        await handle.close().catch(() => undefined);
+        handle = undefined;
+        await rm(path, { force: true });
+        throw error;
+      }
       await handle.close();
+      handle = undefined;
       return async () => rm(path, { force: true });
     } catch (error) {
+      await handle?.close().catch(() => undefined);
       if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
       const metadata = await stat(path);
       if (now() - metadata.mtimeMs <= staleLockMilliseconds) {
@@ -147,6 +158,108 @@ const migratedSettings = (
   ])),
 });
 
+const mergeConcurrentSettings = (
+  migrated: LocalBridgeSettings,
+  current: LocalBridgeSettings | null,
+): LocalBridgeSettings => {
+  if (current === null) return migrated;
+  const profiles = { ...migrated.profiles };
+  for (const [name, currentProfile] of Object.entries(current.profiles)) {
+    const migratedProfile = profiles[name];
+    if (migratedProfile !== undefined) {
+      const { workspace_roots: _migratedRoots, ...migratedIdentity } = migratedProfile;
+      const { workspace_roots: _currentRoots, ...currentIdentity } = currentProfile;
+      for (const [key, value] of Object.entries(currentIdentity)) {
+        if (key in migratedIdentity && digest(value) !== digest(
+          (migratedIdentity as Readonly<Record<string, unknown>>)[key],
+        )) {
+          throw new Error(`ArtifactPass profile ${name} changed during migration; no config was overwritten`);
+        }
+      }
+    }
+    profiles[name] = migratedProfile === undefined
+      ? currentProfile
+      : {
+          ...migratedProfile,
+          ...currentProfile,
+          workspace_roots: [...new Set([
+            ...migratedProfile.workspace_roots,
+            ...currentProfile.workspace_roots,
+          ])],
+        };
+  }
+  return {
+    version: 2,
+    active_profile: current.active_profile,
+    profiles,
+    ...(
+      migrated.workspace_profiles === undefined && current.workspace_profiles === undefined
+        ? {}
+        : {
+            workspace_profiles: {
+              ...migrated.workspace_profiles,
+              ...current.workspace_profiles,
+            },
+          }
+    ),
+  };
+};
+
+const settingsAreMigrationCompatible = (
+  current: LocalBridgeSettings,
+  legacy: LocalBridgeSettings,
+  legacyConfigPath: string,
+): boolean => {
+  try {
+    mergeConcurrentSettings(migratedSettings(legacy, legacyConfigPath), current);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const rollbackCredentialIfOwned = async (
+  account: string,
+  options: LocalStateMigrationOptions,
+): Promise<void> => {
+  const artifactpassStore = options.artifactpassCredentialStore(account);
+  const [currentValue, legacyValue] = await Promise.all([
+    artifactpassStore.get(),
+    options.legacyCredentialStore(account).get(),
+  ]);
+  if (currentValue !== null && currentValue === legacyValue) await artifactpassStore.delete();
+};
+
+const rollbackConfigIfOwned = async (
+  journal: MigrationJournal,
+  configPath: string,
+): Promise<boolean> => {
+  if (journal.artifactpass_config_digest === undefined) {
+    if (journal.created_config) {
+      try {
+        await readLocalBridgeSettings(configPath);
+        return false;
+      } catch (error) {
+        if (isMissingFile(error)) return true;
+        await rm(configPath, { force: true });
+        return true;
+      }
+    }
+    return true;
+  }
+  let rolledBack = false;
+  await mutateLocalBridgeSettings(configPath, (current) => {
+    if (current === null) {
+      rolledBack = true;
+      return null;
+    }
+    if (digest(current) !== journal.artifactpass_config_digest) return current;
+    rolledBack = true;
+    return journal.created_config ? null : journal.previous_config ?? current;
+  });
+  return rolledBack;
+};
+
 export const migrateLegacyLocalState = async (
   options: LocalStateMigrationOptions,
 ): Promise<LocalStateMigrationResult> => {
@@ -173,13 +286,14 @@ export const migrateLegacyLocalState = async (
       };
     }
     if (previousJournal?.status === "in-progress") {
-      for (const account of [...previousJournal.created_credential_accounts].reverse()) {
-        await options.artifactpassCredentialStore(account).delete();
-      }
-      if (previousJournal.created_config) {
-        await rm(options.artifactpassConfigPath, { force: true });
-      } else if (previousJournal.previous_config !== undefined) {
-        await writeLocalBridgeSettings(options.artifactpassConfigPath, previousJournal.previous_config);
+      const configRolledBack = await rollbackConfigIfOwned(
+        previousJournal,
+        options.artifactpassConfigPath,
+      );
+      if (configRolledBack) {
+        for (const account of [...previousJournal.created_credential_accounts].reverse()) {
+          await rollbackCredentialIfOwned(account, options);
+        }
       }
       await writeJournal(journalPath, {
         ...previousJournal,
@@ -214,13 +328,18 @@ export const migrateLegacyLocalState = async (
         legacyPreserved: false,
       };
     }
+    const configsDiffer = artifactpassSettings !== null && legacySettings !== null &&
+      digest(artifactpassSettings) !== digest(legacySettings);
     if (
       artifactpassSettings !== null && legacySettings !== null &&
-      digest(artifactpassSettings) !== digest(legacySettings)
+      configsDiffer &&
+      !settingsAreMigrationCompatible(artifactpassSettings, legacySettings, options.legacyConfigPath)
     ) {
       throw new Error("ArtifactPass and legacy Artifact Share configs conflict; no state was changed");
     }
-    const sourceSettings = artifactpassSettings ?? legacySettings;
+    const sourceSettings = configsDiffer && legacySettings !== null
+      ? legacySettings
+      : artifactpassSettings ?? legacySettings;
     if (sourceSettings === null) throw new Error("ArtifactPass migration source disappeared");
     const operationId = randomUUID();
     let journal: MigrationJournal = {
@@ -272,17 +391,23 @@ export const migrateLegacyLocalState = async (
       journal = {
         ...journal,
         created_config: artifactpassSettings === null,
-        artifactpass_config_digest: digest(nextSettings),
       };
       await writeJournal(journalPath, journal);
-      await writeLocalBridgeSettings(options.artifactpassConfigPath, nextSettings);
-      journal = { ...journal, stage: "config-staged" };
+      const stagedSettings = await updateLocalBridgeSettings(
+        options.artifactpassConfigPath,
+        (current) => mergeConcurrentSettings(nextSettings, current),
+      );
+      journal = {
+        ...journal,
+        stage: "config-staged",
+        artifactpass_config_digest: digest(stagedSettings),
+      };
       await writeJournal(journalPath, journal);
       actions.push("config");
       await options.afterStage?.("config-staged");
 
       const verified = await readLocalBridgeSettings(options.artifactpassConfigPath);
-      if (digest(verified) !== digest(nextSettings)) {
+      if (digest(verified) !== digest(stagedSettings)) {
         throw new Error("ArtifactPass config verification failed");
       }
       for (const account of journal.created_credential_accounts) {
@@ -306,18 +431,16 @@ export const migrateLegacyLocalState = async (
       };
     } catch (error) {
       const rollbackErrors: unknown[] = [];
-      for (const account of [...journal.created_credential_accounts].reverse()) {
-        await options.artifactpassCredentialStore(account).delete().catch((rollbackError: unknown) => {
-          rollbackErrors.push(rollbackError);
-        });
-      }
-      if (journal.created_config) {
-        await rm(options.artifactpassConfigPath, { force: true }).catch((rollbackError: unknown) => {
-          rollbackErrors.push(rollbackError);
-        });
-      } else if (journal.previous_config !== undefined) {
-        await writeLocalBridgeSettings(options.artifactpassConfigPath, journal.previous_config)
-          .catch((rollbackError: unknown) => rollbackErrors.push(rollbackError));
+      let configRolledBack = false;
+      await rollbackConfigIfOwned(journal, options.artifactpassConfigPath)
+        .then((rolledBack) => { configRolledBack = rolledBack; })
+        .catch((rollbackError: unknown) => rollbackErrors.push(rollbackError));
+      if (configRolledBack) {
+        for (const account of [...journal.created_credential_accounts].reverse()) {
+          await rollbackCredentialIfOwned(account, options).catch((rollbackError: unknown) => {
+            rollbackErrors.push(rollbackError);
+          });
+        }
       }
       await writeJournal(journalPath, {
         ...journal,

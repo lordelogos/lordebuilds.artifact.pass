@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="title description">
+  <title id="title">Set up a teammate on private ArtifactPass</title>
+  <desc id="description">A terminal installs ArtifactPass for artifacts.example.com, then a Cloudflare Access screen sends a login code.</desc>
+  <rect width="1200" height="720" fill="#0b0c0e"/>
+  <rect x="54" y="64" width="570" height="592" rx="24" fill="#121418" stroke="#34373d" stroke-width="2"/>
+  <text x="94" y="122" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#efefec">Teammate project</text>
+  <rect x="94" y="166" width="490" height="116" rx="14" fill="#17191d" stroke="#34373d"/>
+  <text x="118" y="202" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" fill="#797d82">project %</text>
+  <text x="118" y="238" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" fill="#efefec">pnpm dlx artifactpass --base-url</text>
+  <text x="118" y="264" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" fill="#557fbd">https://artifacts.example.com</text>
+  <g font-family="Arial, sans-serif"><text x="94" y="340" font-size="18" font-weight="700" fill="#efefec">1. Choose the project agent</text><text x="94" y="380" font-size="18" fill="#b8babd">2. Finish installation</text><text x="94" y="420" font-size="18" fill="#b8babd">3. Restart the agent session</text><text x="94" y="460" font-size="18" fill="#b8babd">4. Ask to connect or share a file</text></g>
+  <rect x="94" y="506" width="490" height="86" rx="14" fill="#17191d"/>
+  <text x="118" y="542" font-family="Arial, sans-serif" font-size="16" fill="#797d82">Agent</text><text x="118" y="572" font-family="Arial, sans-serif" font-size="19" fill="#efefec">Connect ArtifactPass</text>
+  <path d="M644 360h44" stroke="#716de4" stroke-width="6" stroke-linecap="round"/><path d="M678 348l16 12-16 12" fill="none" stroke="#716de4" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="716" y="64" width="430" height="592" rx="24" fill="#f7f7f8"/>
+  <text x="764" y="152" font-family="Arial, sans-serif" font-size="25" font-weight="700" fill="#111827">ArtifactPass</text>
+  <text x="764" y="188" font-family="Arial, sans-serif" font-size="16" fill="#6b7280">artifacts.example.com</text>
+  <text x="764" y="254" font-family="Arial, sans-serif" font-size="23" font-weight="700" fill="#111827">Sign in to publish</text>
+  <text x="764" y="294" font-family="Arial, sans-serif" font-size="17" fill="#4b5563">Use an email address approved by the admin.</text>
+  <rect x="764" y="330" width="334" height="60" rx="10" fill="#fff" stroke="#d1d5db"/><text x="786" y="368" font-family="Arial, sans-serif" font-size="17" fill="#9ca3af">you@example.com</text>
+  <rect x="764" y="412" width="334" height="60" rx="10" fill="#2563eb"/><text x="931" y="450" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" font-weight="700" fill="#fff">Send login code</text>
+  <text x="764" y="532" font-family="Arial, sans-serif" font-size="16" fill="#6b7280">If no code arrives, ask the administrator</text><text x="764" y="560" font-family="Arial, sans-serif" font-size="16" fill="#6b7280">to check the Access allowlist.</text>
+</svg>

@@ -20,6 +20,7 @@ import {
   readPublicTheme,
   type PublicTheme,
 } from "../components/public-chrome";
+import { publicSiteUrl } from "../public-site";
 import {
   clearPendingUpload,
   hasPendingUploadIntent,
@@ -381,7 +382,7 @@ export function UploadPage() {
   const startAnotherShare = () => {
     publicationIdentity.current = null;
     if (automaticPublish) {
-      window.location.assign("/?upload=1");
+      window.location.assign("/upload");
       return;
     }
     setFile(null);
@@ -396,6 +397,10 @@ export function UploadPage() {
   return (
     <div className="share-shell">
       <PublicNavigation
+        homeHref={publicSiteUrl()}
+        guidesHref={publicSiteUrl("/guides")}
+        howHref={publicSiteUrl("/#how")}
+        installHref={publicSiteUrl("/#install")}
         theme={theme}
         onThemeToggle={() => setTheme((current) => current === "dark" ? "light" : "dark")}
       />
@@ -519,7 +524,7 @@ export function UploadPage() {
           )}
 
           {result === null && automaticPublish && error !== null && file === null && (
-            <a className="primary-button" href="/?upload=1">
+            <a className="primary-button" href="/upload">
               Choose a document
             </a>
           )}
@@ -546,7 +551,11 @@ export function UploadPage() {
         </form>
         </section>
       </main>
-      <PublicFooter />
+      <PublicFooter
+        guidesHref={publicSiteUrl("/guides")}
+        privacyHref={publicSiteUrl("/privacy")}
+        termsHref={publicSiteUrl("/terms")}
+      />
     </div>
   );
 }

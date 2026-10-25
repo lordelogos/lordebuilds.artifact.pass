@@ -72,7 +72,7 @@ Add anything the scan missed. If the existing website or email records are absen
 
 ## 5. Handle DNSSEC before replacing nameservers
 
-If DNSSEC or a DS record is enabled at the current registrar, disable it before replacing the nameservers. Old DNSSEC records refer to the previous DNS provider and can make the domain unreachable after the switch.
+If DNSSEC or a DS record is enabled at the current registrar, disable it before replacing the nameservers. Old DNSSEC records refer to the previous DNS provider and can make the domain unreachable after the switch. Cloudflare recommends waiting at least 24 hours after disabling DNSSEC before changing nameservers.
 
 After Cloudflare shows the domain as Active, enable DNSSEC in Cloudflare and follow Cloudflare's instructions to publish the new DS record at the registrar.
 

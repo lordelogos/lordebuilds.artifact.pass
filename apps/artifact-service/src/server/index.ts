@@ -6,6 +6,7 @@ import {
 } from "artifact-protocol";
 import { Hono, type Context, type Next } from "hono";
 import type { JWTVerifyGetKey } from "jose";
+import packageMetadata from "../../../../package.json" with { type: "json" };
 
 import type { ArtifactServiceBindings } from "./adapters/cloudflare-bindings";
 import { AgentTokenRepository } from "./auth/agent-token";
@@ -20,21 +21,19 @@ import {
 import { createArtifactsRouter } from "./routes/artifacts";
 import { createConnectRouter } from "./routes/connect";
 import { createAuthRouter } from "./routes/auth";
-import { PUBLIC_RESPONSE_HEADERS, createSharesRouter } from "./routes/shares";
+import {
+  PUBLIC_RESPONSE_HEADERS,
+  createSharesRouter,
+  unavailableShareResponse,
+} from "./routes/shares";
 import { D1ArtifactRepository } from "./storage/artifact-repository";
 import { ArtifactApplicationService } from "./storage/artifact-service";
 import { ArtifactError } from "./storage/artifact-error";
 import { R2ArtifactObjectStore } from "./storage/r2-object-store";
 import { artifactPolicyFromBindings } from "./storage/validation";
 import { redactRequestPath } from "./observability/redact-request-path";
-import {
-  PUBLIC_SITE_ORIGIN,
-  publicPageHeaders,
-  renderRobotsTxt,
-  renderPublicPage,
-  renderSitemapXml,
-  type PublicPage,
-} from "../web/routes/public-pages";
+import { publicSiteUrl } from "../web/public-site";
+import { browserErrorResponse } from "./browser-error-page";
 
 export interface ArtifactApplicationOptions {
   readonly now?: () => number;
@@ -74,13 +73,6 @@ const protocolLimitsFromBindings = (bindings: ArtifactServiceBindings) => {
   });
 };
 
-const createNonce = (): string => {
-  const bytes = crypto.getRandomValues(new Uint8Array(18));
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary);
-};
-
 const preventSearchIndexing = async (
   context: Context<ArtifactHonoEnvironment>,
   next: Next,
@@ -117,45 +109,25 @@ export const createArtifactApplication = (options: ArtifactApplicationOptions = 
       : { maximumBytes: options.publicUploadMaximumBytes }),
   };
 
-  const servePublicPage = (page: PublicPage, context: Context<ArtifactHonoEnvironment>) => {
-    const nonce = createNonce();
-    const policy = protocolLimitsFromBindings(context.env);
-    return new Response(renderPublicPage(page, nonce, context.req.url, {
-      deploymentMode: context.env.HUMAN_AUTH_MODE === "artifactpass" ? "public" : "private",
-      allowedExpirySeconds: policy.expiry.allowed_seconds,
-    }), {
-      status: 200,
-      headers: {
-        ...publicPageHeaders(nonce),
-        "Content-Type": "text/html; charset=UTF-8",
-      },
-    });
-  };
-
-  app.get("/", (context) => servePublicPage("home", context));
-  app.get("/privacy", (context) => servePublicPage("privacy", context));
-  app.get("/terms", (context) => servePublicPage("terms", context));
+  app.get("/", (context) => {
+    context.header("X-Robots-Tag", "noindex, nofollow, noarchive");
+    return context.redirect("/upload");
+  });
+  app.get("/privacy", (context) => context.redirect(publicSiteUrl("/privacy")));
+  app.get("/terms", (context) => context.redirect(publicSiteUrl("/terms")));
   app.get("/robots.txt", (context) => {
-    const canonical = new URL(context.req.url).origin === PUBLIC_SITE_ORIGIN;
-    return context.text(renderRobotsTxt(context.req.url), 200, {
-      "Cache-Control": canonical ? "public, max-age=3600" : "private, no-store, max-age=0",
+    return context.text("User-agent: *\nDisallow: /\n", 200, {
+      "Cache-Control": "private, no-store, max-age=0",
       "Content-Type": "text/plain; charset=UTF-8",
     });
   });
-  app.get("/sitemap.xml", (context) => {
-    if (new URL(context.req.url).origin !== PUBLIC_SITE_ORIGIN) {
-      return context.notFound();
-    }
-    return context.body(renderSitemapXml(), 200, {
-      "Cache-Control": "public, max-age=3600",
-      "Content-Type": "application/xml; charset=UTF-8",
-    });
-  });
+  app.get("/sitemap.xml", (context) => context.notFound());
 
   app.get("/health", (context) =>
     context.json({
       service: "lordebuilds.artifacts.share",
       status: "ok",
+      artifactpass_version: packageMetadata.version,
       ...(context.env.ARTIFACTPASS_DEPLOYMENT_ID === undefined
         ? {}
         : { deployment_id: context.env.ARTIFACTPASS_DEPLOYMENT_ID }),
@@ -260,6 +232,31 @@ export const createArtifactApplication = (options: ArtifactApplicationOptions = 
 
   app.onError((error, context) => {
     if (error instanceof ArtifactError) {
+      const pathname = new URL(context.req.url).pathname;
+      const acceptsHtml = context.req.header("accept")?.includes("text/html") === true;
+      if (
+        error.code === "not_found" &&
+        context.req.method === "GET" &&
+        /^\/a\/[^/]+(?:\/[^/]+)?\/?$/u.test(pathname) &&
+        (acceptsHtml || context.req.header("sec-fetch-mode") === "navigate")
+      ) {
+        return unavailableShareResponse(/^\/a\/[^/]+\/[^/]+\/?$/u.test(pathname));
+      }
+      const requestId = context.req.header("cf-ray") ?? crypto.randomUUID();
+      const browserResponse = browserErrorResponse(context.req.raw, error.status, requestId);
+      if (browserResponse !== null) {
+        if (pathname === "/connect/approve" || pathname.startsWith("/auth/")) {
+          console.warn(JSON.stringify({
+            event: "artifactpass.browser_navigation_failed",
+            request_id: requestId,
+            method: context.req.method,
+            path: redactRequestPath(pathname),
+            error_code: error.code,
+            status: error.status,
+          }));
+        }
+        return browserResponse;
+      }
       return context.json(
         {
           protocol_version: PROTOCOL_VERSION,
@@ -279,6 +276,8 @@ export const createArtifactApplication = (options: ArtifactApplicationOptions = 
       error_message: error instanceof Error ? error.message : String(error),
       ...(error instanceof Error && error.stack !== undefined ? { stack: error.stack } : {}),
     }));
+    const browserResponse = browserErrorResponse(context.req.raw, 500, requestId);
+    if (browserResponse !== null) return browserResponse;
     return context.json(
       {
         protocol_version: PROTOCOL_VERSION,

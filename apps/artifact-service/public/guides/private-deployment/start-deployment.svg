@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="title description">
+  <title id="title">Start an ArtifactPass private deployment</title>
+  <desc id="description">A terminal explains the Cloudflare Worker, D1, R2, and Access resources before continuing.</desc>
+  <rect width="1200" height="720" fill="#0b0c0e"/><rect x="50" y="42" width="1100" height="636" rx="24" fill="#121418" stroke="#34373d" stroke-width="2"/>
+  <text x="88" y="89" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" fill="#797d82">Terminal</text>
+  <text x="88" y="142" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="22" fill="#efefec">pnpm dlx artifactpass deploy --new</text>
+  <text x="88" y="208" font-family="Arial, sans-serif" font-size="26" font-weight="700" fill="#efefec">What ArtifactPass will set up</text>
+  <text x="88" y="256" font-family="Arial, sans-serif" font-size="20" fill="#b8babd">ArtifactPass will deploy these resources into your Cloudflare account:</text>
+  <g font-family="Arial, sans-serif" font-size="19" fill="#efefec">
+    <rect x="88" y="298" width="480" height="68" rx="12" fill="#17191d" stroke="#34373d"/><text x="116" y="340">Worker · publishing and artifact viewing</text>
+    <rect x="612" y="298" width="480" height="68" rx="12" fill="#17191d" stroke="#34373d"/><text x="640" y="340">D1 · temporary metadata</text>
+    <rect x="88" y="390" width="480" height="68" rx="12" fill="#17191d" stroke="#34373d"/><text x="116" y="432">R2 · private artifact files</text>
+    <rect x="612" y="390" width="480" height="68" rx="12" fill="#17191d" stroke="#34373d"/><text x="640" y="432">Access · publisher sign-in</text>
+  </g>
+  <text x="88" y="518" font-family="Arial, sans-serif" font-size="18" fill="#797d82">Cloudflare handles your account, plan, payment method, domain, and login.</text>
+  <text x="88" y="566" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="20" fill="#efefec">Continue?</text>
+  <text x="88" y="608" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" fill="#b8babd">1. Yes</text><text x="270" y="608" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" fill="#b8babd">2. Save and exit</text>
+  <rect x="88" y="636" width="6" height="24" fill="#efefec"/>
+</svg>

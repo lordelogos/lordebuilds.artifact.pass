@@ -17,7 +17,11 @@ Treat every share URL like a temporary secret. Do not post it in public logs, is
 
 Markdown is parsed and sanitized before rendering. HTML previewing uses a separate neutralized copy: scripts and executable embeds are removed, navigation and external-resource attributes are stripped, refresh metadata is removed, forms and controls are disabled, and external CSS resources are removed. That copy is served inside a sandboxed iframe with no permissions and a deny-by-default Content Security Policy. The Source view and exact-file download retain the original bytes rather than rewriting the durable artifact. PDF preview is distinct from the agent-readable representation: controlled PDFs expose their signed canonical source, while human and unknown PDFs expose no extracted content to agents. User filenames become metadata only and may not contain path separators or NUL bytes.
 
-The agent bridge resolves real paths and only opens regular files inside explicitly configured workspace roots. It rejects symlink escapes, unsupported extensions, invalid UTF-8, mismatched PDFs, changed-during-read files, oversized files, redirects, foreign origins, malformed cursors, and inconsistent source metadata. Automatic PDF publication also fails closed when images, vector rendering, custom or Type3 fonts, attachments, scripts, or extraction failures prevent the scanner from covering the rendered content; deliberate browser uploads retain broader PDF support.
+The agent bridge resolves real paths and only opens regular files inside explicitly approved workspace roots. A new project reports `workspace_required`; it never inherits the active profile as implicit file access. The local approval page binds only to `127.0.0.1`, displays the canonical folder and destination, and requires an exact-origin POST with a request-specific token. Cancel, expiry, cross-origin submission, replay, write failure, or shutdown creates no grant. Grants use a locked reload-and-merge transaction with atomic replacement, so unrelated concurrent project approvals are preserved.
+
+After approval, the bridge reloads configuration in the same MCP session and separately checks authentication. Approval does not upload a file. The agent retries the original publish call only after both project access and authentication are ready. Environment-managed headless roots remain authoritative and cannot be expanded through the browser flow.
+
+The bridge rejects symlink escapes, unsupported extensions, invalid UTF-8, mismatched PDFs, changed-during-read files, oversized files, redirects, foreign origins, malformed cursors, and inconsistent source metadata. Automatic PDF publication also fails closed when images, vector rendering, custom or Type3 fonts, attachments, scripts, or extraction failures prevent the scanner from covering the rendered content; deliberate browser uploads retain broader PDF support.
 
 ## Tokens and logging
 
@@ -27,7 +31,7 @@ Production logs must exclude authorization headers, URL paths containing share t
 
 ## Expiry and deletion
 
-Authorization checks use `now < expires_at`; at the exact cutoff every representation is unreachable and non-cacheable. Cleanup records a retryable state, removes source and derived R2 objects, then deletes metadata. An R2 lifecycle removes orphaned `artifacts/` objects after two days.
+Authorization checks use `now < expires_at`; at the exact cutoff every representation is unreachable and non-cacheable. Cleanup records a retryable state, removes source and derived R2 objects, then deletes metadata. The R2 lifecycle is a fallback for orphaned `artifacts/` objects. It deletes them after the deployment's maximum allowed lifetime plus at least one full day, rounded up to a whole-day boundary. The public service therefore uses an 8-day R2 lifecycle for its 7-day maximum link lifetime.
 
 ## Known limits
 

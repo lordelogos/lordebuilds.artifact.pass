@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "policy_id": "artifactpass-0.1.9-static-public-pages-release",
-  "candidate_sha256": "972e76ed2bfc5677257fd30a977cabb1efade7e7c0dd41fbbb5c44dd54351a90",
+  "policy_id": "artifactpass-0.1.12-rc.2-slack-archive-release",
+  "candidate_sha256": "5e18fc1ac080bc554baf8761ae08ff2d17bd63ffb525c180593ec550a5a8888b",
   "scorer_version": "1.0.0",
-  "created_at": "2026-09-23T14:47:00.000Z",
+  "created_at": "2026-10-21T18:27:56.000Z",
   "cohorts": [
     {
       "id": "generic-to-generic-fidelity",

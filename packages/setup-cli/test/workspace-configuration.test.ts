@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   applyWorkspaceConfiguration,
+  rollbackWorkspaceConfiguration,
   resolveWorkspaceConfiguration,
 } from "../src/workspace-configuration";
 import type { TerminalPrompt } from "../src/terminal-prompt";
@@ -167,5 +168,26 @@ describe("workspace deployment configuration", () => {
       "/work/company": "production",
     });
     expect(configured.profiles.company?.base_url).toBe("https://artifacts.company.example");
+  });
+
+  it("rolls back only its root while preserving a later project grant", () => {
+    const resolved = {
+      baseUrl: "https://artifactpass.com",
+      profileName: "production",
+      workspaceRoot: "/work/temporary-install",
+    };
+    const installed = applyWorkspaceConfiguration(settings, resolved);
+    const withConcurrentGrant = applyWorkspaceConfiguration(installed, {
+      baseUrl: "https://artifactpass.com",
+      profileName: "production",
+      workspaceRoot: "/work/approved-while-installing",
+    });
+
+    const rolledBack = rollbackWorkspaceConfiguration(withConcurrentGrant, settings, resolved);
+    expect(rolledBack?.profiles.production?.workspace_roots).toContain("/work/approved-while-installing");
+    expect(rolledBack?.profiles.production?.workspace_roots).not.toContain("/work/temporary-install");
+    expect(rolledBack?.workspace_profiles?.["/work/approved-while-installing"]).toBe("production");
+    expect(rolledBack?.workspace_profiles?.["/work/temporary-install"]).toBeUndefined();
+    expect(rolledBack?.profiles.company).toEqual(settings.profiles.company);
   });
 });

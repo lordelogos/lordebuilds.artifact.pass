@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, resolve } from "node:path";
 
@@ -195,6 +195,37 @@ describe("local bridge config", () => {
     expect(configuration.workspaceRoots).not.toContain(unrelatedArtifact);
   });
 
+  it("requires approval for an unbound workspace instead of inheriting the active profile", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifactpass-unbound-routing-test-"));
+    const path = resolve(root, "config.json");
+    const privateRoot = resolve(root, "private-company-project");
+    const newRoot = resolve(root, "new-personal-project");
+    await Promise.all([mkdir(privateRoot), mkdir(newRoot)]);
+    await writeLocalBridgeSettings(path, {
+      version: 2,
+      active_profile: "company",
+      workspace_profiles: { [privateRoot]: "company" },
+      profiles: {
+        company: {
+          base_url: "https://artifacts.company.example/",
+          workspace_roots: [privateRoot],
+        },
+      },
+    });
+
+    const source = createBridgeConfigurationSource(
+      { ARTIFACTPASS_CONFIG_PATH: path },
+      resolve(root, "plugin-cache"),
+    );
+    const canonicalNewRoot = await realpath(newRoot);
+    await expect(source.resolveWorkspacePath(newRoot, newRoot)).resolves.toMatchObject({
+      status: "workspace_required",
+      workspaceRoot: canonicalNewRoot,
+      proposedOrigin: "https://artifactpass.com",
+      deploymentFixed: false,
+    });
+  });
+
   it("requires headless tokens to name their deployment", async () => {
     const root = await mkdtemp(resolve(tmpdir(), "artifactpass-headless-deployment-test-"));
 
@@ -211,6 +242,35 @@ describe("local bridge config", () => {
       ARTIFACTPASS_BASE_URL: "https://artifactpass.com",
       ARTIFACTPASS_WORKSPACE_ROOTS: root,
     }, root)).not.toThrow();
+  });
+
+  it("does not treat an explicit deployment URL as filesystem approval", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "artifactpass-explicit-deployment-test-"));
+    const project = resolve(root, "project");
+    await mkdir(project);
+    const canonicalProject = await realpath(project);
+    const withoutRoots = createBridgeConfigurationSource({
+      XDG_CONFIG_HOME: resolve(root, "empty-config"),
+      ARTIFACTPASS_BASE_URL: "http://127.0.0.1:8787",
+      ARTIFACTPASS_OPEN_DEVELOPMENT: "1",
+    }, root);
+    await expect(withoutRoots.resolveWorkspacePath(project, project)).resolves.toMatchObject({
+      status: "workspace_required",
+      workspaceRoot: canonicalProject,
+      proposedOrigin: "http://127.0.0.1:8787",
+      deploymentFixed: true,
+    });
+
+    const withRoots = createBridgeConfigurationSource({
+      XDG_CONFIG_HOME: resolve(root, "empty-config"),
+      ARTIFACTPASS_BASE_URL: "http://127.0.0.1:8787",
+      ARTIFACTPASS_OPEN_DEVELOPMENT: "1",
+      ARTIFACTPASS_WORKSPACE_ROOTS: project,
+    }, root);
+    await expect(withRoots.resolveWorkspacePath(project, project)).resolves.toMatchObject({
+      status: "approved",
+      workspaceRoot: canonicalProject,
+    });
   });
 
   it("rejects an inherited property as the active profile", async () => {

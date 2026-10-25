@@ -73,6 +73,56 @@ export const applyWorkspaceConfiguration = (
     : setActiveLocalBridgeProfile(configured, settings.active_profile);
 };
 
+export const rollbackWorkspaceConfiguration = (
+  current: LocalBridgeSettings | null,
+  before: LocalBridgeSettings | null,
+  resolved: ResolvedWorkspaceConfiguration,
+): LocalBridgeSettings | null => {
+  if (current === null) return null;
+  const previousProfile = before?.profiles[resolved.profileName];
+  const currentProfile = current.profiles[resolved.profileName];
+  if (currentProfile === undefined) return current;
+  const rootExistedBefore = previousProfile?.workspace_roots.includes(resolved.workspaceRoot) === true;
+  const roots = rootExistedBefore
+    ? [...currentProfile.workspace_roots]
+    : currentProfile.workspace_roots.filter((root) => root !== resolved.workspaceRoot);
+  const workspaceProfiles = { ...current.workspace_profiles };
+  const previousBinding = before?.workspace_profiles?.[resolved.workspaceRoot];
+  if (previousBinding !== undefined) {
+    workspaceProfiles[resolved.workspaceRoot] = previousBinding;
+  } else if (workspaceProfiles[resolved.workspaceRoot] === resolved.profileName) {
+    delete workspaceProfiles[resolved.workspaceRoot];
+  }
+
+  const profiles = { ...current.profiles };
+  if (previousProfile === undefined && roots.length === 0) {
+    delete profiles[resolved.profileName];
+  } else {
+    profiles[resolved.profileName] = previousProfile === undefined
+      ? { ...currentProfile, workspace_roots: roots }
+      : {
+          ...previousProfile,
+          workspace_roots: [...new Set([...previousProfile.workspace_roots, ...roots])],
+        };
+  }
+  const profileNames = Object.keys(profiles).sort((left, right) => left.localeCompare(right));
+  if (profileNames.length === 0) return null;
+  const activeProfile = Object.hasOwn(profiles, current.active_profile)
+    ? current.active_profile
+    : before !== null && Object.hasOwn(profiles, before.active_profile)
+      ? before.active_profile
+      : profileNames[0];
+  if (activeProfile === undefined) return null;
+  return {
+    version: 2,
+    active_profile: activeProfile,
+    ...(Object.keys(workspaceProfiles).length === 0
+      ? {}
+      : { workspace_profiles: workspaceProfiles }),
+    profiles,
+  };
+};
+
 const profileForOrigin = (
   origin: string,
   settings: LocalBridgeSettings | null,

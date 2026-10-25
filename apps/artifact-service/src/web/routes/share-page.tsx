@@ -6,6 +6,7 @@ import { HtmlViewer } from "../viewers/html-viewer";
 import { MarkdownViewer } from "../viewers/markdown-viewer";
 import { PdfViewer } from "../viewers/pdf-viewer";
 import { homepageBootScript, themeInteractionScript } from "./public-homepage";
+import { publicSiteUrl } from "../public-site";
 
 export type ShareRepresentation =
   | { readonly kind: "markdown"; readonly html: string; readonly source: string }
@@ -45,7 +46,7 @@ const formatType = (mimeType: ArtifactManifest["mime_type"]): string => ({
   "text/markdown": "Markdown",
 })[mimeType];
 
-const expiryScript = `(()=>{const root=document.querySelector("[data-expires-at]");const countdown=document.querySelector("[data-expiry-countdown]");if(!root)return;const expire=()=>{document.title="Artifact expired · ArtifactPass";document.body.innerHTML='<main class="expired-shell"><section class="expired"><p class="expired-label">Temporary artifact</p><h1>Artifact expired.</h1><p class="expired-copy">This temporary link reached its cutoff. The artifact is no longer available through ArtifactPass.</p><div class="expired-actions"><a class="expired-action expired-action--primary" href="/?upload=1">Share a document</a><a class="expired-action" href="/#install">Set up ArtifactPass</a></div><p class="expired-note">For privacy, expired artifacts have no history or recovery screen.</p></section></main>'};const cutoff=Date.parse(root.dataset.expiresAt||"");const formatRemaining=(remaining)=>{const minutes=Math.max(1,Math.ceil(remaining/60000));if(minutes<120)return{short:minutes+"m left",full:minutes===1?"1 minute remaining":minutes+" minutes remaining"};const hours=Math.ceil(minutes/60);if(hours<48)return{short:hours+"h left",full:hours===1?"1 hour remaining":hours+" hours remaining"};const days=Math.ceil(hours/24);return{short:days+"d left",full:days===1?"1 day remaining":days+" days remaining"}};const update=()=>{const remaining=cutoff-Date.now();if(!Number.isFinite(remaining)||remaining<=0){expire();return false}if(countdown){const formatted=formatRemaining(remaining);countdown.textContent=formatted.short;countdown.setAttribute("aria-label",formatted.full);countdown.title=formatted.full}return true};if(!update())return;const timer=setInterval(()=>{if(!update())clearInterval(timer)},30000);setTimeout(expire,cutoff-Date.now())})();`;
+const expiryScript = `(()=>{const root=document.querySelector("[data-expires-at]");const countdown=document.querySelector("[data-expiry-countdown]");if(!root)return;const expire=()=>{document.title="Artifact expired · ArtifactPass";document.body.innerHTML='<main class="expired-shell"><section class="expired"><p class="expired-label">Temporary artifact</p><h1>Artifact expired.</h1><p class="expired-copy">This temporary link reached its cutoff. The artifact is no longer available through ArtifactPass.</p><div class="expired-actions"><a class="expired-action expired-action--primary" href="/upload">Share a document</a><a class="expired-action" href="${publicSiteUrl("/#install")}">Set up ArtifactPass</a></div><p class="expired-note">For privacy, expired artifacts have no history or recovery screen.</p></section></main>'};const cutoff=Date.parse(root.dataset.expiresAt||"");const formatRemaining=(remaining)=>{const minutes=Math.max(1,Math.ceil(remaining/60000));if(minutes<120)return{short:minutes+"m left",full:minutes===1?"1 minute remaining":minutes+" minutes remaining"};const hours=Math.ceil(minutes/60);if(hours<48)return{short:hours+"h left",full:hours===1?"1 hour remaining":hours+" hours remaining"};const days=Math.ceil(hours/24);return{short:days+"d left",full:days===1?"1 day remaining":days+" days remaining"}};const update=()=>{const remaining=cutoff-Date.now();if(!Number.isFinite(remaining)||remaining<=0){expire();return false}if(countdown){const formatted=formatRemaining(remaining);countdown.textContent=formatted.short;countdown.setAttribute("aria-label",formatted.full);countdown.title=formatted.full}return true};if(!update())return;const timer=setInterval(()=>{if(!update())clearInterval(timer)},30000);setTimeout(expire,cutoff-Date.now())})();`;
 
 const viewerModeScript = `(()=>{const tabs=[...document.querySelectorAll("[data-viewer-mode]")];if(tabs.length===0)return;const panels=[...document.querySelectorAll("[data-viewer-panel]")];const select=(mode)=>{for(const tab of tabs){const selected=tab.dataset.viewerMode===mode;tab.setAttribute("aria-selected",String(selected));tab.tabIndex=selected?0:-1}for(const panel of panels)panel.hidden=panel.dataset.viewerPanel!==mode};for(const tab of tabs){tab.addEventListener("click",()=>select(tab.dataset.viewerMode));tab.addEventListener("keydown",(event)=>{if(event.key!=="ArrowLeft"&&event.key!=="ArrowRight")return;event.preventDefault();const index=tabs.indexOf(tab);const next=event.key==="ArrowRight"?(index+1)%tabs.length:(index-1+tabs.length)%tabs.length;tabs[next].focus();select(tabs[next].dataset.viewerMode)})}})();`;
 
@@ -76,7 +77,7 @@ export const renderSharePage = ({
           <main className="viewer-main">
             <section className="viewer-shell" aria-labelledby="artifact-title">
               <div className="viewer-toolbar">
-                <a className="viewer-home" href="/" aria-label="ArtifactPass home">
+                <a className="viewer-home" href={publicSiteUrl()} aria-label="ArtifactPass home">
                   <ArtifactPassIcon className="viewer-home-mark" aria-hidden="true" focusable="false" />
                   <span className="viewer-home-label">ArtifactPass</span>
                 </a>
@@ -134,6 +135,43 @@ export const renderSharePage = ({
           <script nonce={nonce} dangerouslySetInnerHTML={{ __html: htmlInteractiveScript }} />
         )}
         <script nonce={nonce} dangerouslySetInnerHTML={{ __html: expiryScript }} />
+      </body>
+    </html>,
+  );
+  return `<!doctype html>${markup}`;
+};
+
+export const renderUnavailableSharePage = (nonce: string): string => {
+  const markup = renderToStaticMarkup(
+    <html lang="en">
+      <head>
+        <meta charSet="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="referrer" content="no-referrer" />
+        <meta name="theme-color" content="#0b0c0e" />
+        <link rel="icon" href="/artifactpass-logo.svg" type="image/svg+xml" />
+        <title>Artifact unavailable · ArtifactPass</title>
+        <script nonce={nonce} dangerouslySetInnerHTML={{ __html: homepageBootScript }} />
+        <style nonce={nonce} dangerouslySetInnerHTML={{ __html: pageStyles }} />
+      </head>
+      <body>
+        <main className="expired-shell">
+          <section className="expired" aria-labelledby="unavailable-title">
+            <p className="expired-label">Temporary artifact</p>
+            <h1 id="unavailable-title">This artifact does not exist or has expired.</h1>
+            <p className="expired-copy">
+              The link may be incorrect, revoked, or past its cutoff. Ask the sender for a new link
+              if you still need the file.
+            </p>
+            <div className="expired-actions">
+              <a className="expired-action expired-action--primary" href={publicSiteUrl()}>Go to ArtifactPass</a>
+              <a className="expired-action" href="/upload">Share a document</a>
+            </div>
+            <p className="expired-note">
+              For privacy, ArtifactPass does not reveal whether an unavailable link previously existed.
+            </p>
+          </section>
+        </main>
       </body>
     </html>,
   );

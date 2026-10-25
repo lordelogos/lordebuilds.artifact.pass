@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="description" content="How ArtifactPass HTML previews handle JavaScript, browser isolation, network blocking, source, and downloads.">
+  <title>How ArtifactPass JavaScript previews work | ArtifactPass</title>
+  <link rel="stylesheet" href="case-study.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="https://artifactpass.com">ArtifactPass</a>
+      <nav class="header-nav" aria-label="Primary navigation">
+        <a href="https://artifactpass.com/guides">Setup guides</a>
+        <a href="https://github.com/lordelogos/lordebuilds.artifact.pass">GitHub</a>
+        <a class="primary-link" href="https://artifactpass.com/upload">Share a file</a>
+      </nav>
+    </div>
+  </header>
+  <nav class="series-bar" aria-label="Article series">
+    <div class="series-inner">
+      <span class="series-label">Practical guides</span>
+      <a href="share-interactive-html-prototype.html">Interactive HTML</a>
+      <a href="share-files-from-ai-agents.html">AI agent sharing</a>
+      <a href="deploy-private-artifactpass-cloudflare.html">Private deployment</a>
+      <a aria-current="page" href="javascript-preview-security.html">JavaScript previews</a>
+      <a href="share-temporary-files.html">Temporary file links</a>
+    </div>
+  </nav>
+
+  <main class="page-shell">
+    <header class="hero">
+      <p class="eyebrow">Browser safety</p>
+      <h1>What happens when you enable JavaScript in an ArtifactPass preview</h1>
+      <p class="deck">The code runs on the recipient's device inside an isolated browser frame. ArtifactPass does not start a server process for each preview.</p>
+    </header>
+
+    <div class="article-grid">
+      <nav class="contents" aria-label="On this guide">
+        <h2>On this guide</h2>
+        <ol>
+          <li><a href="#default">The default state</a></li>
+          <li><a href="#enabled">What enabling does</a></li>
+          <li><a href="#isolation">The isolation layers</a></li>
+          <li><a href="#compute">Infrastructure impact</a></li>
+          <li><a href="#decide">When to enable it</a></li>
+          <li><a href="#faq">Questions</a></li>
+        </ol>
+      </nav>
+
+      <article class="article">
+        <div class="summary">
+          <strong>The problem</strong>
+          <p>An HTML file may contain code. Opening a share link should not run that JavaScript before the recipient chooses to enable it.</p>
+        </div>
+
+        <section id="default">
+          <h2>JavaScript stays off until the recipient enables it</h2>
+          <p>ArtifactPass opens the preview with JavaScript disabled and labels files that contain it. The recipient can read the static preview, inspect Source, download the exact file, or choose Enable JavaScript.</p>
+
+          <figure class="figure">
+            <div class="figure-frame figure-frame--viewer-controls">
+              <img src="assets/viewer-javascript-disabled-mobile.png" alt="ArtifactPass HTML viewer with JavaScript disabled and an Enable button" width="390" height="260">
+            </div>
+            <figcaption>The initial state identifies JavaScript and leaves the decision with the recipient.</figcaption>
+          </figure>
+
+          <div class="facts" aria-label="Viewer states">
+            <div class="fact"><strong>Preview</strong><span>Shows a neutralized browser rendering with uploaded scripts removed.</span></div>
+            <div class="fact"><strong>Enable JavaScript</strong><span>Starts an isolated frame for the demo's client-side behavior.</span></div>
+            <div class="fact"><strong>Source</strong><span>Displays the exact uploaded HTML as text for review.</span></div>
+            <div class="fact"><strong>Download</strong><span>Returns the original bytes without rewriting the durable artifact.</span></div>
+          </div>
+        </section>
+
+        <section id="enabled">
+          <h2>What enabling JavaScript actually does</h2>
+          <p>The recipient's browser performs the computation. ArtifactPass serves the uploaded HTML as a separate response with restrictive browser headers, and the browser executes allowed client-side behavior inside the preview frame. ArtifactPass does not create a dedicated server process or hosted browser session for the demo.</p>
+          <p>That distinction matters. A chart animation or local calculator uses the recipient's CPU and memory. The ArtifactPass infrastructure still serves the artifact and viewer request, but it is not continuously computing the interface on the user's behalf.</p>
+
+          <figure class="figure">
+            <div class="figure-frame">
+              <img src="assets/viewer-javascript-enabled.png" alt="ArtifactPass viewer running a fictional project-status demo after JavaScript is enabled" width="1440" height="900">
+            </div>
+            <figcaption>The same viewer becomes functional after the recipient chooses Enable JavaScript.</figcaption>
+          </figure>
+
+          <div class="comparison">
+            <table>
+              <thead><tr><th>Question</th><th>Answer</th></tr></thead>
+              <tbody>
+                <tr><td>Where does the JavaScript run?</td><td>Inside the recipient's browser.</td></tr>
+                <tr><td>Does ArtifactPass run it on a server?</td><td>No. The server delivers the preview document and artifact data.</td></tr>
+                <tr><td>Can it call the public internet?</td><td>No. Network access is blocked in the enabled preview.</td></tr>
+                <tr><td>Can it keep running after the tab closes?</td><td>No. Closing or navigating away ends that browser context.</td></tr>
+                <tr><td>Can the recipient stop it?</td><td>Yes. Use Disable JavaScript, close the tab, or navigate away from the artifact.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="isolation">
+          <h2>The preview is isolated in layers</h2>
+          <p>ArtifactPass does not rely on a single browser flag. It prepares a separate preview representation and combines content removal with browser-enforced boundaries.</p>
+
+          <h3>Neutralized content</h3>
+          <p>For the passive preview, scripts and executable embeds are removed. Navigation and external-resource attributes are stripped, refresh metadata is removed, forms and controls are disabled, and external CSS resources are removed.</p>
+
+          <h3>Sandboxed frame</h3>
+          <p>The preview runs inside an iframe with no broad permissions. The frame is intentionally separated from the ArtifactPass application page and its authenticated state.</p>
+
+          <h3>Deny-by-default Content Security Policy</h3>
+          <p>The preview receives a restrictive Content Security Policy. Network destinations are not opened for the uploaded code, so fetches, analytics, remote scripts, external fonts, and API requests cannot operate as they would on a normal hosted website.</p>
+
+          <h3>Original source remains separate</h3>
+          <p>The preview copy is not the durable artifact. Source view and download retain the exact uploaded bytes. This lets ArtifactPass make previewing safer without silently changing the file the creator shared.</p>
+
+          <figure class="figure">
+            <div class="figure-frame">
+              <img src="assets/viewer-source.png" alt="ArtifactPass source view showing the exact uploaded HTML" width="1440" height="900">
+            </div>
+            <figcaption>Source view exposes the exact uploaded HTML even while the preview uses a prepared representation.</figcaption>
+          </figure>
+
+          <aside class="note">
+            <strong>A browser boundary is still a browser boundary</strong>
+            <p>The isolation depends on the browser engine correctly enforcing iframe sandboxing and Content Security Policy. ArtifactPass removes active content first and tests the boundary, but no browser-based system can claim protection from every possible browser-engine vulnerability.</p>
+          </aside>
+        </section>
+
+        <section id="compute">
+          <h2>How many previews can run at once?</h2>
+          <p>ArtifactPass does not reserve application compute for each active JavaScript preview. The long-running work happens on each recipient's device, so there is no separate preview-concurrency pool that fills up as more people enable JavaScript.</p>
+          <p>Infrastructure usage still grows with normal traffic. Each viewer load reads metadata and artifact content through the Worker and storage layer. Bandwidth, Worker requests, D1 reads, and R2 operations are the relevant service limits. The animation loop or local interaction itself is not billed as server compute after the browser receives it.</p>
+          <p>A very large or computationally expensive script can still make the recipient's tab slow. The browser may throttle it, display an unresponsive-page warning, or terminate the tab. That cost lands on the viewer's device, which is another reason not to enable code from an untrusted source.</p>
+        </section>
+
+        <section id="decide">
+          <h2>When should a recipient enable it?</h2>
+          <p>Enable JavaScript when the sender is trusted and the interaction is necessary to review the artifact. A chart with filters, a small prototype, or a local calculator may need it. A static report often does not.</p>
+          <p>Before enabling, check the filename, sender, source, and purpose. If the artifact arrived unexpectedly, leave JavaScript disabled. If the source references remote services or secrets, do not assume the preview will make that design safe or functional.</p>
+
+          <h3>For creators</h3>
+          <ul>
+            <li>Keep the demo self-contained and avoid external dependencies.</li>
+            <li>Explain what the interaction is expected to do.</li>
+            <li>Use synthetic or non-sensitive sample data.</li>
+            <li>Test the file without network access before sharing it.</li>
+            <li>Choose the shortest lifetime that gives the reviewer enough time.</li>
+          </ul>
+
+          <h3>For recipients</h3>
+          <ul>
+            <li>Leave JavaScript disabled when the static preview is enough.</li>
+            <li>Inspect Source before running code from a sender you do not know well.</li>
+            <li>Disable JavaScript or close the tab if the page behaves unexpectedly.</li>
+            <li>Remember that downloading and opening the file elsewhere leaves the ArtifactPass preview boundary.</li>
+          </ul>
+        </section>
+
+        <section class="faq" id="faq">
+          <h2>Common questions</h2>
+          <details>
+            <summary>Why not run JavaScript automatically?</summary>
+            <p>Automatic execution would remove the recipient's choice and make opening a file perform active work without a clear signal.</p>
+          </details>
+          <details>
+            <summary>Why keep Source and Download?</summary>
+            <p>They make the handoff verifiable. The recipient can inspect the exact HTML and keep the original file instead of relying only on a transformed preview.</p>
+          </details>
+          <details>
+            <summary>Can the preview access ArtifactPass sign-in cookies?</summary>
+            <p>The sandboxed preview is separated from the application context and is not granted broad permissions to the parent page's authenticated state.</p>
+          </details>
+          <details>
+            <summary>Does disabling JavaScript delete the artifact?</summary>
+            <p>No. It only stops active code in the preview. The artifact remains available until its selected expiry.</p>
+          </details>
+        </section>
+
+        <a class="next-guide" href="share-temporary-files.html">
+          <span>Next practical guide</span>
+          <strong>Share files without permanent public URLs</strong>
+        </a>
+      </article>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <span>ArtifactPass practical guide prototype</span>
+      <a href="https://artifactpass.com/security">Open the live security page</a>
+    </div>
+  </footer>
+  <script src="case-study.js"></script>
+</body>
+</html>

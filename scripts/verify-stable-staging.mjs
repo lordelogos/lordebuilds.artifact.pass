@@ -18,6 +18,7 @@ const health = await healthResponse.json();
 if (
   health.status !== "ok" ||
   health.service !== "lordebuilds.artifacts.share" ||
+  health.artifactpass_version !== referenceVersion ||
   health.human_auth_mode !== "artifactpass" ||
   health.authentication_configured !== true
 ) {
@@ -25,10 +26,13 @@ if (
 }
 
 const homepageResponse = await request("/");
-if (!homepageResponse.ok) throw new Error(`Staging homepage failed (${homepageResponse.status})`);
-const homepage = await homepageResponse.text();
-if (!homepage.includes(`artifactpass@${referenceVersion}`)) {
-  throw new Error(`Staging is not serving artifactpass@${referenceVersion}`);
+const homepageLocation = homepageResponse.headers.get("location");
+if (
+  ![302, 303, 307].includes(homepageResponse.status) ||
+  homepageLocation === null ||
+  new URL(homepageLocation, baseUrl).pathname !== "/upload"
+) {
+  throw new Error("Staging root does not hand off to the Worker upload application");
 }
 
 const uploadResponse = await request("/upload");

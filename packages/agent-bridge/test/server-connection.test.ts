@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -170,6 +170,76 @@ describe("plugin-native connection through MCP", () => {
     }
   });
 
+  it("does not report connected when the requested file is outside approved roots", async () => {
+    const approvedRoot = await mkdtemp(join(tmpdir(), "artifactpass-approved-workspace-"));
+    const otherRoot = await mkdtemp(join(tmpdir(), "artifactpass-unapproved-workspace-"));
+    temporaryRoots.push(approvedRoot, otherRoot);
+    const path = join(otherRoot, "handoff.md");
+    await writeFile(path, "# Outside the approved project\n");
+    const canonicalOtherRoot = await realpath(otherRoot);
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    const configuration: BridgeConfiguration = {
+      profileName: "production",
+      baseUrl: new URL("https://artifactpass.com"),
+      workspaceRoots: [approvedRoot],
+      headless: true,
+      environmentStore: {
+        get: vi.fn().mockResolvedValue(`as_${"a".repeat(43)}`),
+        set: vi.fn(),
+        delete: vi.fn(),
+      },
+      connectionController: {
+        status: vi.fn().mockResolvedValue({
+          status: "connected" as const,
+          profile: "production",
+          origin: "https://artifactpass.com",
+        }),
+        connect: vi.fn(),
+      },
+      fetch,
+    };
+    const server = createBridgeServer(configuration);
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: "artifactpass-unapproved-workspace-test", version: "0.0.0" });
+
+    try {
+      await server.connect(serverTransport);
+      await client.connect(clientTransport);
+
+      await expect(client.callTool({
+        name: "connection_status",
+        arguments: { workspace_path: path, workspace_root: otherRoot },
+      })).resolves.toMatchObject({
+        structuredContent: {
+          status: "workspace_required",
+          workspace_status: "required",
+          authentication_status: "unknown",
+          ready_to_publish: false,
+          proposed_origin: "https://artifactpass.com",
+          workspace_root: canonicalOtherRoot,
+        },
+      });
+
+      await expect(client.callTool({
+        name: "publish_artifact",
+        arguments: { path, workspace_root: otherRoot },
+      })).resolves.toMatchObject({
+        isError: true,
+        structuredContent: {
+          error: {
+            code: "workspace_not_approved",
+            attempted_path: path,
+            workspace_root: canonicalOtherRoot,
+          },
+        },
+      });
+      expect(fetch).not.toHaveBeenCalled();
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
   it("passes the artifact path into workspace-aware connection tools", async () => {
     const root = await mkdtemp(join(tmpdir(), "artifactpass-server-workspace-route-"));
     temporaryRoots.push(root);
@@ -237,6 +307,11 @@ describe("plugin-native connection through MCP", () => {
     const source: BridgeConfigurationSource = {
       defaultConfiguration: () => ({ ...configuration, profileName: "production" }),
       forWorkspacePath: vi.fn().mockReturnValue(configuration),
+      resolveWorkspacePath: vi.fn(async () => ({
+        status: "approved" as const,
+        configuration,
+        workspaceRoot: root,
+      })),
       forShareUrl: vi.fn().mockReturnValue(configuration),
       runtimeKey: vi.fn().mockReturnValue("company"),
     };
@@ -258,7 +333,7 @@ describe("plugin-native connection through MCP", () => {
           origin: "https://artifacts.company.example",
         },
       });
-      expect(source.forWorkspacePath).toHaveBeenCalledWith(path);
+      expect(source.resolveWorkspacePath).toHaveBeenCalledWith(path, undefined);
 
       await expect(client.callTool({
         name: "connect_artifactpass",

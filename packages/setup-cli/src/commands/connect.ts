@@ -14,6 +14,8 @@ import {
   fetchWithoutRedirects,
   readLocalBridgeSettings,
   resolveAgentCredential,
+  mutateLocalBridgeSettings,
+  updateLocalBridgeSettings,
   upsertLocalBridgeProfile,
   validateProfileName,
   writeLocalBridgeSettings,
@@ -36,6 +38,7 @@ import {
   installPortableIntegration,
   type PortableIntegration,
 } from "../portable-integration";
+import { rollbackWorkspaceConfiguration } from "../workspace-configuration";
 
 const isMissingFile = (error: unknown): boolean =>
   error instanceof Error && "code" in error && error.code === "ENOENT";
@@ -183,8 +186,48 @@ export const connectHost = async (
   });
   const previousProfile = previousSettings?.profiles[profileName];
   const profileRoots = [...new Set([...(previousProfile?.workspace_roots ?? []), ...roots])];
-  const configuredSettings = (profile: LocalBridgeProfileSettings): LocalBridgeSettings =>
-    bindWorkspaceRoots(upsertLocalBridgeProfile(previousSettings, profileName, profile), roots, profileName);
+  const configuredSettings = (
+    settings: LocalBridgeSettings | null,
+    profile: LocalBridgeProfileSettings,
+  ): LocalBridgeSettings => {
+    const currentProfile = settings?.profiles[profileName];
+    return bindWorkspaceRoots(upsertLocalBridgeProfile(settings, profileName, {
+      ...currentProfile,
+      ...profile,
+      workspace_roots: [...new Set([
+        ...(currentProfile?.workspace_roots ?? []),
+        ...profile.workspace_roots,
+        ...roots,
+      ])],
+    }), roots, profileName);
+  };
+  const persistConfiguredSettings = async (
+    profile: LocalBridgeProfileSettings,
+  ): Promise<void> => {
+    if (dependencies.writeSettings !== undefined) {
+      await dependencies.writeSettings(configPath, configuredSettings(previousSettings, profile));
+      return;
+    }
+    await updateLocalBridgeSettings(configPath, (current) => configuredSettings(current, profile));
+  };
+  const restorePreviousSettings = async (): Promise<void> => {
+    if (dependencies.writeSettings !== undefined) {
+      if (previousSettings === null) {
+        await rm(configPath, { force: true });
+        return;
+      }
+      await dependencies.writeSettings(configPath, previousSettings);
+      return;
+    }
+    await mutateLocalBridgeSettings(configPath, (current) => roots.reduce(
+      (settings, workspaceRoot) => rollbackWorkspaceConfiguration(
+        settings,
+        previousSettings,
+        { baseUrl: origin.origin, profileName, workspaceRoot },
+      ),
+      current,
+    ));
+  };
   const store = dependencies.credentialStore ?? new OsCredentialStore({
     service: ARTIFACTPASS_CREDENTIAL_SERVICE,
     account: agentCredentialAccountForProfile(profileName),
@@ -230,7 +273,7 @@ export const connectHost = async (
   };
   if (openDevelopment) {
     try {
-      await (dependencies.writeSettings ?? writeLocalBridgeSettings)(configPath, configuredSettings({
+      await persistConfiguredSettings({
           base_url: origin.toString(),
           workspace_roots: profileRoots,
           open_development: true,
@@ -239,14 +282,11 @@ export const connectHost = async (
             ? {}
             : { publication_state_path: previousProfile.publication_state_path }),
           credential_namespace: "artifactpass",
-        }));
+        });
       const hostInstallation = await installAndVerify();
       if (hostInstallation !== undefined) dependencies.captureHostInstallation?.(hostInstallation);
     } catch (error) {
-      const restore = previousSettings === null
-        ? rm(configPath, { force: true })
-        : (dependencies.writeSettings ?? writeLocalBridgeSettings)(configPath, previousSettings);
-      await restore.catch((rollbackError: unknown) => {
+      await restorePreviousSettings().catch((rollbackError: unknown) => {
         throw new AggregateError([error, rollbackError], "ArtifactPass local connection failed and rollback was incomplete");
       });
       throw error;
@@ -286,7 +326,7 @@ export const connectHost = async (
           await store.set(boundCredential);
           migratedCredential = true;
         }
-        await (dependencies.writeSettings ?? writeLocalBridgeSettings)(configPath, configuredSettings({
+        await persistConfiguredSettings({
             base_url: origin.toString(),
             workspace_roots: profileRoots,
             ...(previousProfile.publication_state === "legacy" ? { publication_state: "legacy" } : {}),
@@ -298,12 +338,12 @@ export const connectHost = async (
             ...(healthBody.pdf_provenance_key_id === undefined
               ? previousProfile.pdf_key_id === undefined ? {} : { pdf_key_id: previousProfile.pdf_key_id }
               : { pdf_key_id: healthBody.pdf_provenance_key_id }),
-          }));
+          });
         const hostInstallation = await installAndVerify();
         if (hostInstallation !== undefined) dependencies.captureHostInstallation?.(hostInstallation);
       } catch (error) {
         if (migratedCredential) await store.set(previousStoredCredential as string);
-        await (dependencies.writeSettings ?? writeLocalBridgeSettings)(configPath, previousSettings)
+        await restorePreviousSettings()
           .catch((rollbackError: unknown) => {
             throw new AggregateError([error, rollbackError], "ArtifactPass connection verification failed and config rollback was incomplete");
           });
@@ -327,7 +367,7 @@ export const connectHost = async (
   let wroteConfig = false;
   let hostInstallation: HostInstallation | undefined;
   try {
-    await (dependencies.writeSettings ?? writeLocalBridgeSettings)(configPath, configuredSettings({
+    await persistConfiguredSettings({
         base_url: origin.toString(),
         workspace_roots: profileRoots,
         ...(previousProfile?.publication_state === "legacy" ? { publication_state: "legacy" } : {}),
@@ -339,7 +379,7 @@ export const connectHost = async (
         ...(healthBody.pdf_provenance_key_id === undefined
           ? {}
           : { pdf_key_id: healthBody.pdf_provenance_key_id }),
-      }));
+      });
     wroteConfig = true;
     await store.set(bindAgentCredential(origin, token.accessToken));
     hostInstallation = await installAndVerify();
@@ -368,10 +408,7 @@ export const connectHost = async (
       await store.set(previousStoredCredential).catch((cleanupError: unknown) => cleanupErrors.push(cleanupError));
     }
     if (wroteConfig) {
-      const restoreConfig = previousSettings === null
-        ? rm(configPath, { force: true })
-        : (dependencies.writeSettings ?? writeLocalBridgeSettings)(configPath, previousSettings);
-      await restoreConfig.catch((cleanupError: unknown) => cleanupErrors.push(cleanupError));
+      await restorePreviousSettings().catch((cleanupError: unknown) => cleanupErrors.push(cleanupError));
     }
     if (cleanupErrors.length > 0) {
       throw new AggregateError([error, ...cleanupErrors], "ArtifactPass connection failed and cleanup was incomplete");

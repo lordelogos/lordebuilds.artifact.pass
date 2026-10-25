@@ -25,9 +25,9 @@ Setup asks:
 2. Whether you use public or private ArtifactPass.
 3. Your private deployment URL, if you selected private.
 
-ArtifactPass applies this setup and approved file access only to the current project.
+ArtifactPass installs the agent integration once and approves file access only for the current project. When the same integration is used from another project, ArtifactPass asks you to approve that exact project and destination inside the agent. You do not reinstall it.
 
-Restart your agent after setup. When you first ask it to share a file, choose **Connect ArtifactPass**, sign in, and approve the connection. You do not need to reinstall after connecting.
+Restart your agent once after installation. When you first ask it to share a file, review the folder and destination in the local ArtifactPass page, then sign in if that deployment is not connected. Later project approvals take effect in the same agent session.
 
 ## Share from an agent
 
@@ -51,7 +51,14 @@ Run this inside the project you want to update:
 pnpm dlx artifactpass configure
 ```
 
-Restart your agent after changing the setup.
+Running agent sessions read the changed project configuration on the next ArtifactPass tool call.
+
+List or remove exact project grants without disconnecting the deployment:
+
+```sh
+pnpm dlx artifactpass workspace list
+pnpm dlx artifactpass workspace remove /absolute/path/to/project
+```
 
 ## Private deployments
 

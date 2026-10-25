@@ -16,7 +16,11 @@ import {
 import { ArtifactError } from "../storage/artifact-error";
 import { consumeRequestRateLimit } from "../auth/rate-limit";
 import type { ArtifactRecord, ArtifactPolicy } from "../storage/artifact-types";
-import { renderSharePage, type ShareRepresentation } from "../../web/routes/share-page";
+import {
+  renderSharePage,
+  renderUnavailableSharePage,
+  type ShareRepresentation,
+} from "../../web/routes/share-page";
 import {
   htmlContainsJavaScript,
   renderSafeHtmlPreview,
@@ -121,7 +125,7 @@ const createNonce = (): string => {
   return btoa(binary);
 };
 
-const viewerHeaders = (nonce: string) => ({
+const viewerHeaders = (nonce: string, allowEmbedding = false) => ({
   ...PUBLIC_RESPONSE_HEADERS,
   "Content-Security-Policy": [
     "default-src 'none'",
@@ -134,10 +138,18 @@ const viewerHeaders = (nonce: string) => ({
     "object-src 'none'",
     "base-uri 'none'",
     "form-action 'none'",
-    "frame-ancestors 'none'",
+    `frame-ancestors '${allowEmbedding ? "self" : "none"}'`,
   ].join("; "),
   "Content-Type": "text/html; charset=utf-8",
 });
+
+export const unavailableShareResponse = (allowEmbedding = false): Response => {
+  const nonce = createNonce();
+  return new Response(renderUnavailableSharePage(nonce), {
+    status: 404,
+    headers: viewerHeaders(nonce, allowEmbedding),
+  });
+};
 
 const representationFor = async (
   service: ArtifactApplicationService,

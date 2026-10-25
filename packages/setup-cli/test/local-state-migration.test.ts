@@ -5,6 +5,8 @@ import { resolve } from "node:path";
 import {
   FilePublicationJournal,
   readLocalBridgeSettings,
+  updateLocalBridgeSettings,
+  writeLocalBridgeSettings,
   type CredentialStore,
 } from "agent-bridge";
 import { describe, expect, it, vi } from "vitest";
@@ -160,6 +162,76 @@ describe("local state migration", () => {
     expect(stores.artifactpass.get("agent-token")).toBe(token);
     await expect(readLocalBridgeSettings(fixture.artifactpassConfigPath)).resolves.toMatchObject({
       active_profile: "production",
+    });
+  });
+
+  it("merges a project approval written while migration is in progress", async () => {
+    const fixture = await legacyFixture();
+    const stores = memoryStores();
+    const concurrentRoot = resolve(fixture.root, "concurrent-project");
+
+    await migrateLegacyLocalState({
+      artifactpassConfigPath: fixture.artifactpassConfigPath,
+      legacyConfigPath: fixture.legacyConfigPath,
+      artifactpassCredentialStore: stores.artifactpassFactory,
+      legacyCredentialStore: stores.legacyFactory,
+      afterStage: async (stage) => {
+        if (stage !== "credentials-staged") return;
+        await writeLocalBridgeSettings(fixture.artifactpassConfigPath, {
+          version: 2,
+          active_profile: "production",
+          workspace_profiles: { [concurrentRoot]: "production" },
+          profiles: {
+            production: {
+              base_url: "https://artifactpass.com/",
+              workspace_roots: [concurrentRoot],
+            },
+          },
+        });
+      },
+    });
+
+    await expect(readLocalBridgeSettings(fixture.artifactpassConfigPath)).resolves.toMatchObject({
+      workspace_profiles: { [concurrentRoot]: "production" },
+      profiles: { production: { workspace_roots: expect.arrayContaining([fixture.root, concurrentRoot]) } },
+    });
+  });
+
+  it("does not erase a later project approval when migration rolls back", async () => {
+    const fixture = await legacyFixture();
+    const stores = memoryStores();
+    const concurrentRoot = resolve(fixture.root, "later-project");
+
+    await expect(migrateLegacyLocalState({
+      artifactpassConfigPath: fixture.artifactpassConfigPath,
+      legacyConfigPath: fixture.legacyConfigPath,
+      artifactpassCredentialStore: stores.artifactpassFactory,
+      legacyCredentialStore: stores.legacyFactory,
+      afterStage: async (stage) => {
+        if (stage !== "config-staged") return;
+        await updateLocalBridgeSettings(fixture.artifactpassConfigPath, (settings) => {
+          if (settings === null) throw new Error("Expected staged settings");
+          const production = settings.profiles.production;
+          if (production === undefined) throw new Error("Expected production profile");
+          return {
+            ...settings,
+            workspace_profiles: { ...settings.workspace_profiles, [concurrentRoot]: "production" },
+            profiles: {
+              ...settings.profiles,
+              production: {
+                ...production,
+                workspace_roots: [...production.workspace_roots, concurrentRoot],
+              },
+            },
+          };
+        });
+        throw new Error("injected failure after concurrent approval");
+      },
+    })).rejects.toThrow("injected failure after concurrent approval");
+
+    await expect(readLocalBridgeSettings(fixture.artifactpassConfigPath)).resolves.toMatchObject({
+      workspace_profiles: { [concurrentRoot]: "production" },
+      profiles: { production: { workspace_roots: expect.arrayContaining([concurrentRoot]) } },
     });
   });
 

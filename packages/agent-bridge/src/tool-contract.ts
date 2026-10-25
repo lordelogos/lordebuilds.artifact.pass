@@ -22,12 +22,23 @@ export const connectionInputSchema = z.object({
   workspace_path: z.string().min(1).describe(
     "Absolute artifact or workspace path used to select the deployment configured for this workspace.",
   ),
+  workspace_root: z.string().min(1).optional().describe(
+    "Optional absolute project root proposed for explicit workspace approval.",
+  ),
 }).strict();
 
 export const connectionOutputSchema = z.object({
-  status: z.enum(["disconnected", "connecting", "connected", "failed"]),
-  profile: z.string().min(1),
-  origin: z.string().url(),
+  status: z.enum(["workspace_required", "disconnected", "connecting", "connected", "failed"]),
+  authentication_status: z.enum(["unknown", "disconnected", "connecting", "connected", "failed"]),
+  workspace_status: z.enum(["required", "approved"]),
+  ready_to_publish: z.boolean(),
+  profile: z.string().min(1).optional(),
+  origin: z.string().url().optional(),
+  proposed_origin: z.string().url().optional(),
+  workspace_root: z.string().min(1),
+  phase: z.enum(["workspace_approval", "authentication"]).optional(),
+  error_code: z.string().min(1).optional(),
+  next_action: z.string().min(1).optional(),
   expires_at: z.number().int().positive().optional(),
   user_code: z.string().min(1).optional(),
   approval_url: z.string().url().optional(),
@@ -37,6 +48,9 @@ export const connectionOutputSchema = z.object({
 
 export const publishArtifactInputSchema = z.object({
   path: z.string().min(1).describe("Absolute or workspace-relative local file path"),
+  workspace_root: z.string().min(1).optional().describe(
+    "Optional absolute project root proposed for explicit workspace approval.",
+  ),
   canonical_source_path: z.string().min(1).optional().describe(
     "Optional UTF-8 source used to generate a PDF. When configured, ArtifactPass verifies it against the PDF and signs the agent-readable representation.",
   ),
@@ -45,11 +59,26 @@ export const publishArtifactInputSchema = z.object({
   ),
 });
 
-export const publishArtifactOutputSchema = z.object({
+const publishArtifactSuccessSchema = z.object({
   protocol_version: protocolVersionSchema,
   manifest: artifactManifestSchema,
   share_url: webUrlSchema,
 }).strict();
+
+const publishArtifactWorkspaceErrorSchema = z.object({
+  error: z.object({
+    code: z.literal("workspace_not_approved"),
+    attempted_path: z.string().min(1),
+    workspace_root: z.string().min(1),
+    proposed_origin: z.string().url(),
+    next_action: z.string().min(1),
+  }).strict(),
+}).strict();
+
+export const publishArtifactOutputSchema = z.union([
+  publishArtifactSuccessSchema,
+  publishArtifactWorkspaceErrorSchema,
+]);
 
 export const readArtifactInputSchema = z.object({
   share_url: z.string().url(),

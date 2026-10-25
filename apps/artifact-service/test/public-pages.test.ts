@@ -1,9 +1,17 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 
-import packageMetadata from "../../../package.json" with { type: "json" };
 import { createArtifactApplication } from "../src/server/index";
-import { renderPublicPage } from "../src/web/routes/public-pages";
+import {
+  PUBLIC_SITE_ORIGIN,
+  guideInteractionScript,
+  publicPageHeaders,
+  renderAiCatalogJson,
+  renderLlmsTxt,
+  renderRobotsTxt,
+  renderSitemapXml,
+  renderStaticPublicPage,
+} from "../../artifact-pages/src/public-pages";
 
 const requestFrom = (origin: string, path: string): Promise<Response> =>
   Promise.resolve(createArtifactApplication().fetch(
@@ -11,38 +19,277 @@ const requestFrom = (origin: string, path: string): Promise<Response> =>
     env,
   ));
 
-const request = (path: string): Promise<Response> =>
-  requestFrom("https://staging.artifactpass.com", path);
-
-describe("public service pages", () => {
+describe("public site", () => {
   it.each([
-    ["/", "ArtifactPass", "Pass work between agents, teammates, and humans."],
-    ["/privacy", "Privacy", "Google and GitHub"],
-    ["/terms", "Terms", "temporary bearer link"],
-  ])("serves %s without authentication", async (path, title, copy) => {
-    const response = await request(path);
-    const markup = await response.text();
+    ["home", "ArtifactPass", "Pass work between agents, teammates, and humans."],
+    ["how-it-works", "How ArtifactPass Works", "temporary link"],
+    ["for-ai-agents", "Artifact Sharing for AI Agents", "MCP-compatible"],
+    ["private-deployments", "Private ArtifactPass Deployments", "Cloudflare account"],
+    ["guides", "ArtifactPass Setup Guides", "Set up ArtifactPass, then use it well"],
+    ["agent-setup-guide", "Set Up ArtifactPass for an AI Agent", "approve exact project folders"],
+    ["private-deployment-guide", "Private ArtifactPass Deployment Guide", "artifacts.example.com"],
+    ["private-teammate-guide", "Join a Private ArtifactPass Deployment", "publisher access"],
+    ["agent-sharing-guide", "Share Files From AI Agents", "finished file"],
+    ["temporary-sharing-guide", "Create an Expiring File Link", "1 hour"],
+    ["private-cloudflare-guide", "Private Artifact Sharing on Cloudflare", "Cloudflare account"],
+    ["interactive-html-guide", "Share an Interactive HTML Prototype", "self-contained HTML"],
+    ["javascript-preview-guide", "Preview HTML With JavaScript Safely Disabled", "recipient enables it"],
+    ["security", "ArtifactPass Security", "bearer link"],
+    ["privacy", "Privacy", "Google and GitHub"],
+    ["terms", "Terms", "temporary bearer link"],
+  ] as const)("renders the static %s page", (page, title, copy) => {
+    const markup = renderStaticPublicPage(page);
 
-    expect(response.status).toBe(200);
-    expect(response.headers.get("content-type")).toContain("text/html");
-    expect(response.headers.get("cache-control")).toContain("no-store");
-    expect(response.headers.get("content-security-policy")).toContain("default-src 'none'");
-    expect(response.headers.get("referrer-policy")).toBe("no-referrer");
     expect(markup).toContain(`<title>${title}`);
     expect(markup).toContain(copy);
+    expect(markup).toContain('name="robots" content="index, follow, max-image-preview:large"');
+    expect(markup).toContain(`rel="canonical" href="${PUBLIC_SITE_ORIGIN}`);
   });
 
-  it("links the public homepage to upload and policy pages", async () => {
-    const markup = await (await request("/")).text();
+  it("publishes crawlable metadata and structured product data", () => {
+    const markup = renderStaticPublicPage("home");
+
+    expect(markup).toContain('property="og:title"');
+    expect(markup).toContain('name="twitter:card" content="summary"');
+    expect(markup).toContain('type="application/ld+json"');
+    expect(markup).toContain('"@type":"WebSite"');
+    expect(markup).toContain('"@type":"SoftwareApplication"');
+    expect(renderRobotsTxt(`${PUBLIC_SITE_ORIGIN}/robots.txt`)).toContain("Allow: /");
+    const sitemap = renderSitemapXml();
+    expect(sitemap).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/</loc>`);
+    expect(sitemap).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/how-it-works</loc>`);
+    expect(sitemap).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/for-ai-agents</loc>`);
+    expect(sitemap).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/private-deployments</loc>`);
+    expect(sitemap).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/guides</loc>`);
+    expect(sitemap).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/guides/agent-setup</loc>`);
+    expect(sitemap).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/guides/private-deployment</loc>`);
+    expect(sitemap).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/guides/private-teammate</loc>`);
+    expect(sitemap).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/guides/share-files-from-ai-agents</loc>`);
+    expect(sitemap).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/guides/temporary-file-sharing</loc>`);
+    expect(sitemap).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/guides/private-file-sharing-cloudflare</loc>`);
+    expect(sitemap).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/guides/share-interactive-html</loc>`);
+    expect(sitemap).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/guides/safe-javascript-preview</loc>`);
+    expect(sitemap).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/security</loc>`);
+    expect(sitemap).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/privacy</loc>`);
+    expect(sitemap).toContain(`<loc>${PUBLIC_SITE_ORIGIN}/terms</loc>`);
+    expect(markup).toContain('rel="ai-catalog" href="/.well-known/ai-catalog.json"');
+    expect(markup).toContain('rel="ard" href="/.well-known/ard.json"');
+  });
+
+  it("publishes machine-readable agent discovery documents", () => {
+    const llmsTxt = renderLlmsTxt();
+    const catalog = JSON.parse(renderAiCatalogJson()) as {
+      specVersion?: string;
+      entries?: readonly { identifier?: string; type?: string; url?: string }[];
+    };
+
+    expect(llmsTxt).toMatch(/^# ArtifactPass\n/u);
+    expect(llmsTxt).toContain(`[ArtifactPass homepage](${PUBLIC_SITE_ORIGIN}/)`);
+    expect(llmsTxt).toContain("share-artifact/SKILL.md");
+    expect(catalog.specVersion).toBe("1.0");
+    expect(catalog.entries).toHaveLength(2);
+    expect(catalog.entries).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        identifier: "urn:air:artifactpass.com:skill:share-artifact",
+        type: 'text/markdown; profile="urn:air:agent-skills"',
+        url: expect.stringContaining("share-artifact/SKILL.md"),
+      }),
+    ]));
+  });
+
+  it("keeps public labels and Cloudflare analytics compatible with quality audits", () => {
+    const markup = renderStaticPublicPage("home");
+    const contentSecurityPolicy = publicPageHeaders("test")["Content-Security-Policy"];
+
+    expect(markup).toContain(".explain-label{display:block;margin-bottom:20px;color:var(--ash)");
+    expect(contentSecurityPolicy).toContain("https://static.cloudflareinsights.com");
+    expect(contentSecurityPolicy).toContain("https://cloudflareinsights.com");
+  });
+
+  it("links the public homepage to the app and policy pages", () => {
+    const markup = renderStaticPublicPage("home");
 
     expect(markup).toContain('href="/upload"');
     expect(markup).toContain('href="#how"');
     expect(markup).toContain('href="/privacy"');
     expect(markup).toContain('href="/terms"');
+    expect(markup).toContain('href="/how-it-works"');
+    expect(markup).toContain('href="/for-ai-agents"');
+    expect(markup).toContain('href="/private-deployments"');
+    expect(markup).toContain('href="/guides"');
+    expect(markup).toContain('href="/security"');
   });
 
-  it("explains the product in plain language for people and AI agents", async () => {
-    const markup = await (await request("/")).text();
+  it("gives each discovery page unique metadata and structured data", () => {
+    for (const [page, path] of [
+      ["how-it-works", "/how-it-works"],
+      ["for-ai-agents", "/for-ai-agents"],
+      ["private-deployments", "/private-deployments"],
+      ["guides", "/guides"],
+      ["agent-setup-guide", "/guides/agent-setup"],
+      ["private-deployment-guide", "/guides/private-deployment"],
+      ["private-teammate-guide", "/guides/private-teammate"],
+      ["agent-sharing-guide", "/guides/share-files-from-ai-agents"],
+      ["temporary-sharing-guide", "/guides/temporary-file-sharing"],
+      ["private-cloudflare-guide", "/guides/private-file-sharing-cloudflare"],
+      ["interactive-html-guide", "/guides/share-interactive-html"],
+      ["javascript-preview-guide", "/guides/safe-javascript-preview"],
+      ["security", "/security"],
+    ] as const) {
+      const markup = renderStaticPublicPage(page);
+
+      expect(markup).toContain(`rel="canonical" href="${PUBLIC_SITE_ORIGIN}${path}"`);
+      expect(markup).toContain('type="application/ld+json"');
+      expect(markup).toMatch(/"@type":"(?:WebPage|HowTo|Article)"/u);
+      expect(markup).toContain('"@type":"BreadcrumbList"');
+    }
+  });
+
+  it("publishes practical guides as image-led articles with unique search intent", () => {
+    const guides = renderStaticPublicPage("guides");
+    const practicalPages = [
+      ["agent-sharing-guide", "/guides/share-files-from-ai-agents", "share files from ai agents"],
+      ["temporary-sharing-guide", "/guides/temporary-file-sharing", "temporary file sharing"],
+      ["private-cloudflare-guide", "/guides/private-file-sharing-cloudflare", "private file sharing on cloudflare"],
+      ["interactive-html-guide", "/guides/share-interactive-html", "share interactive html"],
+      ["javascript-preview-guide", "/guides/safe-javascript-preview", "safe html preview"],
+    ] as const;
+
+    expect(guides).toContain("Set up ArtifactPass");
+    expect(guides).toContain("Use ArtifactPass");
+
+    for (const [page, path, intent] of practicalPages) {
+      const markup = renderStaticPublicPage(page);
+      expect(guides).toContain(`href="${path}"`);
+      expect(markup.toLowerCase()).toContain(intent);
+      expect(markup).toContain('"@type":"Article"');
+      expect(markup).toContain('property="og:type" content="article"');
+      expect(markup).toContain('property="og:image" content="https://artifactpass.com/guides/');
+      expect(markup).toContain('name="twitter:card" content="summary_large_image"');
+      expect(markup).toContain('class="practical-series"');
+      expect(markup).toContain('aria-label="On this guide"');
+      expect(markup).toContain('href="/guides"');
+      for (const match of markup.matchAll(/<a href="(#[^"]+)">/gu)) {
+        const anchor = match[1];
+        if (anchor !== undefined) expect(markup).toContain(`id="${anchor.slice(1)}"`);
+      }
+    }
+  });
+
+  it("keeps setup instructions in the canonical setup guides", () => {
+    const agentSharing = renderStaticPublicPage("agent-sharing-guide");
+    const interactiveHtml = renderStaticPublicPage("interactive-html-guide");
+    const privateCloudflare = renderStaticPublicPage("private-cloudflare-guide");
+
+    expect(agentSharing).toContain('href="/guides/agent-setup"');
+    expect(agentSharing.match(/href="\/guides\/agent-setup"/gu)).toHaveLength(1);
+    expect(agentSharing).not.toContain("Set up ArtifactPass in the project");
+    expect(agentSharing).not.toContain("pnpm dlx artifactpass configure");
+    expect(agentSharing).not.toContain("pnpm dlx artifactpass doctor");
+    expect(interactiveHtml).toContain('href="/guides/agent-setup"');
+    expect(interactiveHtml.match(/href="\/guides\/agent-setup"/gu)).toHaveLength(1);
+    expect(interactiveHtml).not.toContain("pnpm dlx artifactpass</code>");
+
+    expect(privateCloudflare).toContain('href="/guides/private-deployment"');
+    expect(privateCloudflare).toContain('href="/guides/private-teammate"');
+    expect(privateCloudflare.match(/href="\/guides\/private-deployment"/gu)).toHaveLength(1);
+    expect(privateCloudflare.match(/href="\/guides\/private-teammate"/gu)).toHaveLength(1);
+    expect(privateCloudflare).not.toContain("pnpm dlx artifactpass deploy --new");
+    expect(privateCloudflare).not.toContain("pnpm dlx artifactpass deploy --resume");
+    expect(privateCloudflare).not.toContain("Connect the domain to Cloudflare DNS");
+  });
+
+  it("publishes image-led setup guides with complete user paths", () => {
+    const guides = renderStaticPublicPage("guides");
+    const agentSetup = renderStaticPublicPage("agent-setup-guide");
+    const privateDeployment = renderStaticPublicPage("private-deployment-guide");
+    const privateTeammate = renderStaticPublicPage("private-teammate-guide");
+
+    expect(guides).toContain('href="/guides/agent-setup"');
+    expect(guides).toContain('href="/guides/private-deployment"');
+    expect(guides).toContain('href="/guides/private-teammate"');
+
+    expect(agentSetup).toContain('"@type":"HowTo"');
+    expect(agentSetup).toContain("pnpm dlx artifactpass");
+    expect(agentSetup).toContain("Connect ArtifactPass");
+    expect(agentSetup).toContain('data-copy-command=""');
+    expect(agentSetup).toContain(guideInteractionScript);
+    expect(agentSetup).toContain('/guides/agent-setup/run-command.svg');
+    expect(agentSetup).toContain('/guides/agent-setup/connect-agent.svg');
+    expect(agentSetup).toContain("always includes the local approval URL");
+    expect(agentSetup).toContain("prints the MCP configuration file and skills directory");
+    expect(agentSetup).toContain("limits local file access to project roots you explicitly approve");
+    expect(agentSetup).not.toContain("prints the approval URL as well as trying to open it");
+
+    expect(privateDeployment).toContain('"@type":"HowTo"');
+    expect(privateDeployment).toContain("Administrator guide");
+    expect(privateDeployment).toContain("15 minutes");
+    expect(privateDeployment).toContain("30 minutes");
+    expect(privateDeployment).toContain("1 hour");
+    expect(privateDeployment).toContain("1 day");
+    expect(privateDeployment).toContain("7 days");
+    expect(privateDeployment).toContain("Edit hostname");
+    expect(privateDeployment).toContain("Edit sign-in");
+    expect(privateDeployment).toContain("Edit allowed people");
+    expect(privateDeployment).toContain("Edit link lifetimes");
+    expect(privateDeployment).toContain("Save and exit");
+    expect(privateDeployment).toContain("Approved company email domains:");
+    expect(privateDeployment).toContain("Specific email addresses:");
+    expect(privateDeployment).toContain("Existing company login");
+    expect(privateDeployment).toContain("Check DNSSEC before changing nameservers");
+    expect(privateDeployment).toContain("does not create a separate ArtifactPass email-address allow list");
+    expect(privateDeployment).toMatch(/administrator[^.]*outside[^.]*domain[^.]*specific-address/iu);
+    expect(privateDeployment).toContain("example.com");
+    expect(privateDeployment).toContain("artifacts.example.com");
+    expect(privateDeployment).toContain('/guides/private-deployment/connect-domain.jpg');
+    expect(privateDeployment).toContain('/guides/private-deployment/connect-domain-form.jpg');
+    expect(privateDeployment).toContain('/guides/private-deployment/review-dns.png');
+    expect(privateDeployment).toContain('/guides/private-deployment/cloudflare-access-application.png');
+
+    expect(privateTeammate).toContain('"@type":"HowTo"');
+    expect(privateTeammate).toContain("Email verification code");
+    expect(privateTeammate).toContain("Existing company login");
+    expect(privateTeammate).toContain("Cloudflare intentionally shows the same");
+    expect(privateTeammate).toContain("prints their paths for you to register manually");
+    expect(privateTeammate).toContain("pnpm dlx artifactpass --base-url https://artifacts.example.com");
+    expect(privateTeammate).toContain('/guides/private-teammate/teammate-setup.svg');
+
+    for (const markup of [agentSetup, privateDeployment, privateTeammate]) {
+      expect(markup).toContain('class="guide-trail"');
+      expect(markup).toContain('class="guide-pager"');
+      expect(markup).toContain('href="/guides"');
+    }
+    expect(agentSetup).toContain('class="guide-pager-link guide-pager-link--next" href="/guides/private-deployment"');
+    expect(privateDeployment).toContain('class="guide-pager-link" href="/guides/agent-setup"');
+    expect(privateDeployment).toContain('class="guide-pager-link guide-pager-link--next" href="/guides/private-teammate"');
+    expect(privateTeammate).toContain('class="guide-pager-link" href="/guides/private-deployment"');
+
+    for (const markup of [guides, agentSetup, privateDeployment, privateTeammate]) {
+      expect(markup).not.toContain("lordebuilds.com");
+      expect(markup).not.toContain("lordegraphics");
+      expect(markup).not.toContain("paulehiks");
+    }
+  });
+
+  it("puts every pnpm guide command inside the accessible copy control", () => {
+    const guideMarkup = [
+      renderStaticPublicPage("guides"),
+      renderStaticPublicPage("agent-setup-guide"),
+      renderStaticPublicPage("private-deployment-guide"),
+      renderStaticPublicPage("private-teammate-guide"),
+    ].join("\n");
+    const pnpmCommands = [...guideMarkup.matchAll(/<code(?:\s[^>]*)?>(pnpm dlx [^<]+)<\/code>/gu)]
+      .map((match) => match[1]);
+    const copyablePnpmCommands = [...guideMarkup.matchAll(
+      /<div class="guide-command"><code data-guide-command="">(pnpm dlx [^<]+)<\/code><button type="button" data-copy-command="" aria-label="Copy command: [^"]+">Copy<\/button><span class="visually-hidden" data-copy-status="" aria-live="polite"><\/span><\/div>/gu,
+    )].map((match) => match[1]);
+
+    expect(pnpmCommands).not.toHaveLength(0);
+    expect(copyablePnpmCommands).toEqual(pnpmCommands);
+  });
+
+  it("explains the product in plain language for people and AI agents", () => {
+    const markup = renderStaticPublicPage("home");
 
     expect(markup).toContain('id="how"');
     expect(markup).toContain("How ArtifactPass works");
@@ -53,93 +300,63 @@ describe("public service pages", () => {
     expect(markup).toContain("One agent shares the file.");
     expect(markup).toContain("The next agent opens the exact file.");
     expect(markup).toContain("No copy-pasting. No lost formatting.");
-    expect(markup).toContain("Sign in to share.");
-    expect(markup).toContain("No sign-in to open.");
   });
 
-  it("presents one-hour, one-day, and seven-day public sharing choices", async () => {
-    const markup = await (await request("/")).text();
+  it("presents the public retention choices", () => {
+    const markup = renderStaticPublicPage("home");
 
     expect(markup).toMatch(/name="expiry"[^>]*value="3600"/u);
     expect(markup).toMatch(/name="expiry"[^>]*value="86400"/u);
     expect(markup).toMatch(/name="expiry"[^>]*value="604800"/u);
     expect(markup).not.toMatch(/name="expiry"[^>]*value="900"/u);
     expect(markup).not.toMatch(/name="expiry"[^>]*value="1800"/u);
-    expect(markup).toContain("1 hour, 1 day, or 7 days.");
   });
 
-  it("preserves an administrator's configured choices on a private deployment", () => {
-    const markup = renderPublicPage("home", "nonce", "https://artifacts.example.com", {
-      deploymentMode: "private",
-      allowedExpirySeconds: [900, 3600, 86_400],
-    });
+  it("uses the stable unpinned setup command", () => {
+    const markup = renderStaticPublicPage("home");
 
-    expect(markup).toMatch(/name="expiry"[^>]*value="900"/u);
-    expect(markup).toMatch(/name="expiry"[^>]*value="3600"/u);
-    expect(markup).toMatch(/name="expiry"[^>]*value="86400"/u);
-    expect(markup).not.toMatch(/name="expiry"[^>]*value="604800"/u);
-    expect(markup).toContain("15 minutes, 1 hour, or 1 day.");
-    expect(markup).not.toContain("1 hour, 1 day, or 7 days.");
-    expect(markup).toContain(
-      `pnpm dlx artifactpass@${packageMetadata.version} --base-url https://artifacts.example.com`,
-    );
-  });
-
-  it("serves the approved setup-first homepage with nonce-protected interactions", async () => {
-    const response = await request("/");
-    const markup = await response.text();
-    const policy = response.headers.get("content-security-policy") ?? "";
-
-    expect(markup).toContain("MCP + Agent Skills");
-    expect(markup).toContain(
-      `pnpm dlx artifactpass@${packageMetadata.version} --base-url https://staging.artifactpass.com`,
-    );
-    expect(markup).toContain("Setup applies only to the project folder you run it from.");
-    expect(markup).toContain('id="theme-toggle"');
-    expect(markup).toContain("theme-symbol");
-    expect(markup).toContain('class="header-divider"');
-    expect(markup).toContain('aria-label="View ArtifactPass on GitHub"');
-    expect(markup).toContain('data-artifactpass-mark="capability-corridor"');
-    expect(markup).toContain('rel="icon" href="/artifactpass-logo.svg"');
-    expect(markup).toContain('class="header-action header-action--primary"');
-    expect(markup).toContain('id="upload-dialog"');
-    expect(markup).toContain('id="pending-file-input"');
-    expect(markup).toContain("artifactpass-pending-upload");
-    expect(markup).toContain("window.open");
-    expect(markup).toContain("artifactpass:auth-complete");
-    expect(markup).toContain("/auth/popup/complete");
-    expect(policy).toContain("script-src 'nonce-");
-    expect(policy).toContain("form-action 'self'");
-    expect(policy).toContain("img-src 'self'");
-    expect(response.headers.get("cross-origin-opener-policy")).toBe("same-origin-allow-popups");
-  });
-
-  it("lets the production install command resolve the latest stable package", async () => {
-    const markup = await (await requestFrom("https://artifactpass.com", "/")).text();
-
-    expect(markup).toContain(
-      '<code id="install-command">pnpm dlx artifactpass</code>',
-    );
-    expect(markup).not.toContain(`artifactpass@${packageMetadata.version}`);
+    expect(markup).toContain('<code id="install-command">pnpm dlx artifactpass</code>');
     expect(markup).not.toContain("--base-url");
   });
 
-  it("publishes complete service policies instead of placeholder staging notices", async () => {
-    const [privacy, terms] = await Promise.all([
-      request("/privacy").then((response) => response.text()),
-      request("/terms").then((response) => response.text()),
-    ]);
+  it("publishes complete service policies", () => {
+    const privacy = renderStaticPublicPage("privacy");
+    const terms = renderStaticPublicPage("terms");
 
     expect(privacy).toContain("Google scopes");
-    expect(privacy).toContain("<code>openid</code>");
-    expect(privacy).toContain("<code>email</code>");
     expect(privacy).toContain("We do not sell your personal information");
     expect(privacy).toContain("Cloudflare");
-    expect(privacy).toContain("GitHub repository");
     expect(terms).toContain("Acceptable use");
     expect(terms).toContain("Open-source software");
-    expect(terms).toContain("temporary bearer link");
-    expect(privacy).not.toContain("Staging service notice");
-    expect(terms).not.toContain("These staging terms");
+  });
+});
+
+describe("deployable application", () => {
+  it("opens at the upload application instead of carrying the marketing homepage", async () => {
+    const response = await requestFrom("https://artifacts.example.com", "/");
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe("/upload");
+    expect(response.headers.get("x-robots-tag")).toContain("noindex");
+  });
+
+  it.each([
+    ["/privacy", `${PUBLIC_SITE_ORIGIN}/privacy`],
+    ["/terms", `${PUBLIC_SITE_ORIGIN}/terms`],
+  ])("sends %s to the ArtifactPass-owned public site", async (path, target) => {
+    const response = await requestFrom("https://artifacts.example.com", path);
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe(target);
+  });
+
+  it("keeps customer deployments out of search indexes", async () => {
+    const [robots, sitemap] = await Promise.all([
+      requestFrom("https://artifacts.example.com", "/robots.txt"),
+      requestFrom("https://artifacts.example.com", "/sitemap.xml"),
+    ]);
+
+    await expect(robots.text()).resolves.toBe("User-agent: *\nDisallow: /\n");
+    expect(sitemap.status).toBe(404);
   });
 });

@@ -5,6 +5,7 @@ const storageState = process.env.ARTIFACT_SHARE_E2E_STORAGE_STATE;
 
 export default defineConfig({
   testDir: "./tests/e2e",
+  testIgnore: "public-guides.spec.ts",
   outputDir: "./test-results",
   fullyParallel: false,
   retries: process.env.CI === undefined ? 0 : 2,

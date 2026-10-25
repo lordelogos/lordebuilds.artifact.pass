@@ -107,6 +107,7 @@ describe("safe human viewers", () => {
     expect(html).toContain("# Safe heading");
     expect(html).toContain('class="viewer-home"');
     expect(html).toContain('aria-label="ArtifactPass home"');
+    expect(html).toContain('href="https://artifactpass.com/"');
     expect(html).not.toContain('class="site-header"');
     expect(html).not.toContain("Georgia");
     expect(html).not.toContain("<script>document.cookie");
@@ -248,7 +249,7 @@ describe("safe human viewers", () => {
     expect(rangedDownload.headers.get("content-security-policy")).toContain("sandbox");
   });
 
-  it("contains an exact-cutoff open-page transition and denies every refresh at expiry", async () => {
+  it("shows an unavailable page for expired or missing browser links while preserving JSON errors", async () => {
     const created = await upload("handoff.md", "text/markdown", "# Temporary\n");
     const openPage = await fetch(created.share_url, undefined, request);
     const html = await openPage.text();
@@ -256,13 +257,38 @@ describe("safe human viewers", () => {
     expect(html).toContain("setTimeout");
     expect(html).toContain("Artifact expired");
     expect(html).toContain("Share a document");
-    expect(html).toContain('/?upload=1');
+    expect(html).toContain('href="/upload"');
+    expect(html).toContain('href="https://artifactpass.com/#install"');
 
     vi.setSystemTime(now + 900_000);
-    expect((await fetch(created.share_url, undefined, request)).status).toBe(404);
+    const browserHeaders = { accept: "text/html,application/xhtml+xml" };
+    const expiredPage = await fetch(created.share_url, { headers: browserHeaders }, request);
+    expect(expiredPage.status).toBe(404);
+    expect(expiredPage.headers.get("content-type")).toContain("text/html");
+    expect(await expiredPage.text()).toContain("This artifact does not exist or has expired");
+
+    const missingPage = await request(`/a/${"Z".repeat(43)}`, { headers: browserHeaders });
+    expect(missingPage.status).toBe(404);
+    expect(missingPage.headers.get("content-type")).toContain("text/html");
+    expect(await missingPage.text()).toContain("This artifact does not exist or has expired");
+
+    const machineResponse = await fetch(created.share_url, {
+      headers: { accept: "application/json" },
+    }, request);
+    expect(machineResponse.headers.get("content-type")).toContain("application/json");
+    await expect(machineResponse.json()).resolves.toMatchObject({ error: { code: "not_found" } });
+
     expect((await fetch(`${created.share_url}/content`, undefined, request)).status).toBe(404);
     expect((await fetch(`${created.share_url}/preview`, undefined, request)).status).toBe(404);
     expect((await fetch(`${created.share_url}/interactive`, undefined, request)).status).toBe(404);
+
+    const missingPreview = await request(`/a/${"Z".repeat(43)}/preview`, { headers: browserHeaders });
+    expect(missingPreview.status).toBe(404);
+    expect(missingPreview.headers.get("content-type")).toContain("text/html");
+    expect(missingPreview.headers.get("content-security-policy")).toContain("frame-ancestors 'self'");
+    const previewPage = await missingPreview.text();
+    expect(previewPage).toContain("This artifact does not exist or has expired");
+    expect(previewPage).toContain("Temporary artifact");
   });
 
   it.each(["/dashboard", "/history", "/settings"])("does not expose %s", async (path) => {

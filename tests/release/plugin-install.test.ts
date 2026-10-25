@@ -84,9 +84,13 @@ describe("dual-host plugin package", () => {
         arguments: { path: artifactPath },
       });
       expect(result.isError).toBe(true);
-      expect(result.content).toEqual(expect.arrayContaining([
-        expect.objectContaining({ text: expect.stringContaining("outside the approved workspace roots") }),
-      ]));
+      expect(result.structuredContent).toMatchObject({
+        error: {
+          code: "workspace_not_approved",
+          attempted_path: artifactPath,
+          proposed_origin: "http://127.0.0.1:8787",
+        },
+      });
     } finally {
       await client.close();
       await rm(root, { recursive: true, force: true });

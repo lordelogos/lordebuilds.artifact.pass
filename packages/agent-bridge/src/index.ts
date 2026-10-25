@@ -30,6 +30,7 @@ export {
   defaultLocalConfigPath,
   localBridgeProfileNameForWorkspace,
   legacyLocalConfigPath,
+  mutateLocalBridgeSettings,
   publicationStatePathForProfile,
   readCompatibleLocalBridgeSettingsSync,
   readLocalBridgeSettings,
@@ -37,12 +38,14 @@ export {
   selectLocalBridgeProfile,
   setActiveLocalBridgeProfile,
   upsertLocalBridgeProfile,
+  updateLocalBridgeSettings,
   validateProfileName,
   writeLocalBridgeSettings,
   type LocalBridgeProfileSettings,
   type LocalBridgeSettings,
   type CompatibleLocalBridgeSettings,
 } from "./config/local-config";
+export { containsCanonicalPath } from "./config/workspace-access";
 export {
   FilePublicationJournal,
   MemoryPublicationJournal,
@@ -62,6 +65,7 @@ export {
   serveBridgeStdio,
   type BridgeConfiguration,
   type BridgeConfigurationSource,
+  type BridgeWorkspaceResolution,
 } from "./server";
 export {
   createConnectionController,

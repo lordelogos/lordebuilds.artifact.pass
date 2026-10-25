@@ -35,6 +35,9 @@ try {
   if (!entries.includes("package/dist/install-receipt-v1.schema.json")) fail("legacy install receipt v1 schema is missing");
   if (!entries.includes("package/dist/install-receipt-v2.schema.json")) fail("legacy install receipt v2 schema is missing");
   if (!entries.includes("package/dist/deployment/index.js")) fail("Worker deployment bundle is missing");
+  if (!entries.includes("package/dist/slack-wizard.html")) fail("Slack archive setup wizard is missing");
+  if (!entries.includes("package/dist/slack-archive/index.js")) fail("Slack archive Worker is missing");
+  if (!entries.includes("package/dist/slack-archive/0001-deliveries.sql")) fail("Slack archive migration is missing");
   if (!entries.includes("package/dist/marketplace/plugins/artifactpass/dist/cli.mjs")) {
     fail("attested plugin bundle is missing from setup CLI");
   }

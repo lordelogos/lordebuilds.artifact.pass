@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="title description">
+  <title id="title">Choose public or private ArtifactPass</title>
+  <desc id="description">A two-panel setup illustration showing public ArtifactPass and the private artifacts.example.com example.</desc>
+  <rect width="1200" height="720" fill="#0b0c0e"/>
+  <text x="70" y="82" font-family="Arial, sans-serif" font-size="34" font-weight="700" fill="#efefec">Choose the deployment for this project</text>
+  <rect x="70" y="126" width="505" height="480" rx="24" fill="#121418" stroke="#557fbd" stroke-width="3"/>
+  <text x="110" y="188" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" fill="#557fbd">OPTION 1</text>
+  <text x="110" y="238" font-family="Arial, sans-serif" font-size="30" font-weight="700" fill="#efefec">Public</text>
+  <text x="110" y="282" font-family="Arial, sans-serif" font-size="20" fill="#b8babd">Use ArtifactPass at artifactpass.com.</text>
+  <rect x="110" y="330" width="425" height="74" rx="13" fill="#17191d" stroke="#34373d"/>
+  <text x="136" y="376" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="19" fill="#efefec">https://artifactpass.com</text>
+  <text x="110" y="462" font-family="Arial, sans-serif" font-size="18" fill="#797d82">No private URL required.</text>
+  <text x="110" y="506" font-family="Arial, sans-serif" font-size="18" fill="#797d82">Sign in with Google or GitHub on first use.</text>
+  <rect x="625" y="126" width="505" height="480" rx="24" fill="#121418" stroke="#b98458" stroke-width="3"/>
+  <text x="665" y="188" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" fill="#b98458">OPTION 2</text>
+  <text x="665" y="238" font-family="Arial, sans-serif" font-size="30" font-weight="700" fill="#efefec">Private</text>
+  <text x="665" y="282" font-family="Arial, sans-serif" font-size="20" fill="#b8babd">Use the URL supplied by an administrator.</text>
+  <rect x="665" y="330" width="425" height="74" rx="13" fill="#17191d" stroke="#34373d"/>
+  <text x="688" y="376" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" fill="#efefec">https://artifacts.example.com</text>
+  <text x="665" y="462" font-family="Arial, sans-serif" font-size="18" fill="#797d82">Include https:// and the full hostname.</text>
+  <text x="665" y="506" font-family="Arial, sans-serif" font-size="18" fill="#797d82">Cloudflare Access handles sign-in.</text>
+  <text x="70" y="662" font-family="Arial, sans-serif" font-size="18" fill="#797d82">This choice is saved for the current project and can be changed later.</text>
+</svg>
