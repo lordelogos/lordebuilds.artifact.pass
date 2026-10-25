@@ -1,6 +1,6 @@
 import { consumeArchiveBatch, type ArchiveQueueBatch } from "./archive-consumer";
 import type { DeliveryDatabase } from "./delivery-store";
-import { handleSlackEvent, type QueuedArchiveJob } from "./event-receiver";
+import { handleSlackBootstrapChallenge, handleSlackEvent, type QueuedArchiveJob } from "./event-receiver";
 
 export interface ArchiveEnvironment {
   readonly SLACK_SIGNING_SECRET: string;
@@ -30,6 +30,7 @@ export default {
       return new Response("Not found", { status: 404 });
     }
     try {
+      if (!env.SLACK_SIGNING_SECRET) return await handleSlackBootstrapChallenge(request);
       return await handleSlackEvent(request, {
         signingSecret: env.SLACK_SIGNING_SECRET,
         teamId: env.SLACK_TEAM_ID,

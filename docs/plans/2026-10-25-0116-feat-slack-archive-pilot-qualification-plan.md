@@ -193,6 +193,13 @@ flowchart TB
 - **Not yet proven:** A newly posted already-expired URL, live Queue redelivery, transient retry, and uncertain Slack completion. The latter cases have targeted local tests but not live failure injection. The pilot browser stopped submitting new Slack messages during the expiry check, so do not treat the invalid-link result as a direct expired-post test.
 - **Capacity:** The live Queue dashboard showed five acknowledged messages using 15 operations, with zero retries; the Worker showed zero errors during this small sample. The 3,000-files/day limit remains quota-derived, not load-tested. ArtifactPass caps both agent and human artifacts at 25 MiB; the earlier 64 MiB direct-transfer POC was not an ArtifactPass share.
 
+### Qualification continuation, 2026-10-25
+
+- **Passed:** A newly posted, already-expired private link created no Slack file and ended as `source_unavailable` in delivery status. A separate burst of ten fresh messages over about seven seconds produced ten distinct same-thread files, ten successes, no Queue backlog, and no retries. D1 delivery times were 3.16–11.79 seconds from message timestamp (7.78 seconds average). The Queue settled at 21 writes, 21 reads, and 21 deletes for 21 acknowledged pilot messages.
+- **Passed locally:** 50 archive tests and 13 focused setup/status tests, including retry exhaustion and uncertain Slack completion. A local package tarball installed through `pnpm dlx` and exposed `slack --help`. These are not substitutes for a new administrator completing a live installation or for testing the exact future RC tarball.
+- **Still open:** Live fault injection for Queue redelivery, transient Slack failure, and uncertain completion; a new administrator's end-to-end walkthrough; exact RC publication and live qualification. A full 3,000-file day has not been run. The capacity document now gives the 24-hour protocol and retains 3,000/day as a quota-derived planning budget.
+- **Release prerequisite progress:** Production dependency audit reports no known vulnerabilities after updating the affected dependency set. The complete test suite passed 773 tests with one skipped, and typecheck, build, license inspection, package inspection, and packed-install checks passed. The default `release:check` is not green in this local checkout because the linter includes unrelated pre-existing untracked skill scripts with warnings; lint passes with those untracked paths excluded. A clean release checkout still needs to pass the exact unmodified gate before any RC is published.
+
 ---
 
 ## Definition of Done

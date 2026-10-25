@@ -34,7 +34,7 @@ test("activation refuses to enable signed events until both secrets are in Cloud
   }
 });
 
-test("activation deploys identity, then writes the signed-event manifest", async () => {
+test("activation deploys identity without requiring a second Slack manifest", async () => {
   const directory = await mkdtemp(join(tmpdir(), "artifactpass-slack-activate-"));
   const statePath = join(directory, "configuration.json");
   const config = {
@@ -62,11 +62,10 @@ test("activation deploys identity, then writes the signed-event manifest", async
       statePath, deploymentRoot: directory, runner,
       teamId: "T1234567890", appId: "A1234567890",
     });
-    expect(activated.stage).toBe("manifest-pending");
+    expect(activated.stage).toBe("worker-deployed");
     expect(activated.enabled_channels).toEqual([]);
-    const manifest = JSON.parse(await readFile(join(directory, "app-manifest.json"), "utf8"));
-    expect(manifest.settings.event_subscriptions.bot_events).toEqual(["link_shared"]);
-    expect(manifest.settings.event_subscriptions.request_url).toBe(`${config.worker_url}/slack/events`);
+    await expect(readFile(join(directory, "app-manifest.json"), "utf8"))
+      .rejects.toMatchObject({ code: "ENOENT" });
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

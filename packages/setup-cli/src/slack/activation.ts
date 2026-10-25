@@ -1,10 +1,6 @@
-import { writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
-
 import { runProcess, type ProcessRunner } from "../process";
 import { validateSlackArchiveConfiguration, writeSlackArchiveConfiguration, type SlackArchiveConfiguration } from "./configuration";
 import { provisionSlackResources } from "./deployment";
-import { createSlackAppManifest } from "./manifest";
 
 export interface SlackActivationOptions {
   readonly statePath: string;
@@ -48,18 +44,15 @@ export const activateSlackArchive = async (
     ...config,
     team_id: options.teamId,
     app_id: options.appId,
-    stage: "manifest-pending",
+    stage: "worker-deployed",
     updated_at: new Date().toISOString(),
   };
   await writeSlackArchiveConfiguration(options.statePath, prepared);
-  const deployed = await provisionSlackResources(prepared, {
+  return provisionSlackResources(prepared, {
     accountId: config.account_id,
     statePath: options.statePath,
     deploymentRoot: options.deploymentRoot,
     runner,
     approved: true,
   });
-  const manifestPath = join(dirname(options.statePath), "app-manifest.json");
-  await writeFile(manifestPath, `${JSON.stringify(createSlackAppManifest(deployed, deployed.worker_url ?? ""), null, 2)}\n`, { mode: 0o600 });
-  return deployed;
 };

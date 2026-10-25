@@ -26,6 +26,11 @@ describe("posted Slack link selection", () => {
     }]);
   });
 
+  test("keeps Slack's preview identifier when one is supplied", () => {
+    expect(selectArchiveJobs({ ...postedEvent, unfurl_id: "C123.preview-1" }, config)[0])
+      .toMatchObject({ unfurlId: "C123.preview-1" });
+  });
+
   test("uses the parent thread for a posted reply", () => {
     expect(selectArchiveJobs({ ...postedEvent, thread_ts: "1729999999.000200" }, config)[0]?.threadTs)
       .toBe("1729999999.000200");

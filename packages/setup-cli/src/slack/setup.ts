@@ -9,7 +9,7 @@ import {
   writeSlackArchiveConfiguration,
 } from "./configuration";
 import { provisionSlackResources } from "./deployment";
-import { createSlackBootstrapManifest } from "./manifest";
+import { createSlackInitialManifest } from "./manifest";
 
 export interface SlackSetupOptions {
   readonly statePath: string;
@@ -64,7 +64,7 @@ export const runSlackSetup = async (options: SlackSetupOptions): Promise<string>
     "This separate add-on copies approved live ArtifactPass links into their Slack message threads.",
     "Your Cloudflare account owns one Worker, Queue, and D1 database. ArtifactPass does not receive the bot token or archived file bytes.",
     "The account must have a workers.dev subdomain so Slack can reach its event receiver. Cloudflare can set one up in Workers & Pages.",
-    "The Slack app needs only links:read and files:write. No message-history scope is requested.",
+    "The Slack app needs links:read to detect links, links:write to warn when one is unavailable, and files:write to save a copy. No message-history scope is requested.",
     "A Slack copy follows your workspace retention policy and cannot be revoked by expiring the original ArtifactPass link.",
     "Cloudflare Free planning budget: up to 3,000 archived files/day across this account, only if other usage and retries leave room. This is not yet load-tested.",
     "Cloudflare account dashboard: https://dash.cloudflare.com/",
@@ -78,17 +78,17 @@ export const runSlackSetup = async (options: SlackSetupOptions): Promise<string>
         `Archive Worker: ${config.worker_url}`,
         `Slack app: ${config.app_id}`,
         `Enabled channels: ${config.enabled_channels.length}`,
-        "Run `pnpm dlx artifactpass slack status` for live delivery counts. Add a channel with `pnpm dlx artifactpass slack channels add <channel-link-or-id>`.",
+        "Run `pnpm dlx artifactpass slack status` for live delivery counts. Enable all selected channels in one command: `pnpm dlx artifactpass slack channels add <channel-link-1> <channel-link-2> ...`.",
       ].join("\n");
     }
-    const path = join(dirname(options.statePath), "bootstrap-manifest.json");
-    await writeFile(path, `${JSON.stringify(createSlackBootstrapManifest(config), null, 2)}\n`, { mode: 0o600 });
+    const path = join(dirname(options.statePath), "app-manifest.json");
+    await writeFile(path, `${JSON.stringify(createSlackInitialManifest(config, config.worker_url), null, 2)}\n`, { mode: 0o600 });
     return [
       `Archive Worker: ${config.worker_url}`,
-      `Bootstrap Slack app manifest: ${path}`,
+      `Complete Slack app manifest: ${path}`,
       "Create a Slack app from that manifest at https://api.slack.com/apps?new_app=1 and install it in the intended workspace.",
       `In Cloudflare, open https://dash.cloudflare.com/${config.account_id}/workers-and-pages and select ${config.worker_name}. Add SLACK_BOT_TOKEN and SLACK_SIGNING_SECRET as Worker secrets.`,
-      "Then run: pnpm dlx artifactpass slack activate --team-id T1234567890 --app-id A1234567890 (replace both IDs with the ones in your Slack app).",
+      "Then run: pnpm dlx artifactpass slack activate --team-id T1234567890 --app-id A1234567890. Find the T… workspace ID in Slack's web URL (app.slack.com/client/T…); find the A… App ID on the app's Basic Information page.",
       "Archiving is not active yet. No channel is enabled.",
     ].join("\n");
   }
@@ -118,15 +118,15 @@ export const runSlackSetup = async (options: SlackSetupOptions): Promise<string>
     activity?.fail("Cloudflare provisioning stopped. Your progress is saved for resume.");
     throw error;
   }
-  const manifestPath = join(dirname(options.statePath), "bootstrap-manifest.json");
-  await writeFile(manifestPath, `${JSON.stringify(createSlackBootstrapManifest(deployed), null, 2)}\n`, { mode: 0o600 });
+  const manifestPath = join(dirname(options.statePath), "app-manifest.json");
+  await writeFile(manifestPath, `${JSON.stringify(createSlackInitialManifest(deployed, deployed.worker_url ?? ""), null, 2)}\n`, { mode: 0o600 });
   return [
     `Archive Worker: ${deployed.worker_url}`,
-    `Bootstrap Slack app manifest: ${manifestPath}`,
+    `Complete Slack app manifest: ${manifestPath}`,
     "Open https://api.slack.com/apps?new_app=1 in your chosen browser profile. Create an app from the manifest and install it in the intended workspace.",
     `In Cloudflare, open https://dash.cloudflare.com/${account.id}/workers-and-pages and select ${deployed.worker_name}. Add SLACK_BOT_TOKEN and SLACK_SIGNING_SECRET as Worker secrets.`,
-    "Then run: pnpm dlx artifactpass slack activate --team-id T1234567890 --app-id A1234567890 (replace both IDs with your Slack app IDs).",
-    "Archiving is still off. No channel is enabled, and the app's signed event subscription has not been activated.",
+    "Then run: pnpm dlx artifactpass slack activate --team-id T1234567890 --app-id A1234567890. Find the T… workspace ID in Slack's web URL (app.slack.com/client/T…); find the A… App ID on the app's Basic Information page.",
+    "The manifest already includes the link domains and event URL. Verify the URL in Slack if prompted. Archiving stays off until the app is connected and channels are enabled.",
     "Resume: pnpm dlx artifactpass slack setup",
   ].join("\n");
 };

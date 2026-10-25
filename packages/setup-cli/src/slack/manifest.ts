@@ -9,14 +9,12 @@ const basicManifest = () => ({
   features: {
     bot_user: { display_name: "ArtifactPass Archive", always_online: false },
   },
-  oauth_config: { scopes: { bot: ["links:read", "files:write"] } },
+  oauth_config: { scopes: { bot: ["links:read", "links:write", "files:write"] } },
   settings: {
     org_deploy_enabled: false,
     socket_mode_enabled: false,
   },
 });
-
-export const createSlackBootstrapManifest = (_config: SlackArchiveConfiguration) => basicManifest();
 
 export const createSlackAppManifest = (config: SlackArchiveConfiguration, rawWorkerUrl: string) => {
   let worker: URL;
@@ -43,3 +41,6 @@ export const createSlackAppManifest = (config: SlackArchiveConfiguration, rawWor
     },
   } as const;
 };
+
+export const createSlackInitialManifest = (config: SlackArchiveConfiguration, workerUrl: string) =>
+  createSlackAppManifest(config, workerUrl);

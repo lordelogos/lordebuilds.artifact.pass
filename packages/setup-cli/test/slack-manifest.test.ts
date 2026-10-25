@@ -5,28 +5,29 @@ import {
   createSlackArchiveConfiguration,
   removeSlackSource,
 } from "../src/slack/configuration";
-import { createSlackAppManifest, createSlackBootstrapManifest } from "../src/slack/manifest";
+import { createSlackAppManifest, createSlackInitialManifest } from "../src/slack/manifest";
 
 const workerUrl = "https://artifactpass-archive.example.workers.dev";
 
 describe("customer-owned Slack manifest", () => {
-  test("public-only setup requests only link detection and file-write scopes", () => {
+  test("public-only setup requests link detection, unavailable-link previews, and file upload", () => {
     const config = createSlackArchiveConfiguration();
     expect(config.sources).toEqual(["https://artifactpass.com"]);
     expect(config.enabled_channels).toEqual([]);
     const manifest = createSlackAppManifest(config, workerUrl);
     expect(manifest.features.unfurl_domains).toEqual(["artifactpass.com"]);
-    expect(manifest.oauth_config.scopes.bot).toEqual(["links:read", "files:write"]);
+    expect(manifest.oauth_config.scopes.bot).toEqual(["links:read", "links:write", "files:write"]);
     expect(manifest.settings.event_subscriptions.bot_events).toEqual(["link_shared"]);
     expect(manifest.settings.event_subscriptions.request_url).toBe(`${workerUrl}/slack/events`);
     expect(JSON.stringify(manifest)).not.toContain("history");
   });
 
-  test("the bootstrap manifest can be installed before the signing secret exists", () => {
-    const bootstrap = createSlackBootstrapManifest(createSlackArchiveConfiguration());
-    expect(bootstrap.oauth_config.scopes.bot).toEqual(["links:read", "files:write"]);
-    expect(bootstrap.features).not.toHaveProperty("unfurl_domains");
-    expect(bootstrap.settings).not.toHaveProperty("event_subscriptions");
+  test("the first manifest already contains link domains and event delivery", () => {
+    const config = addSlackSource(createSlackArchiveConfiguration(), "https://artifacts.example.com");
+    const initial = createSlackInitialManifest(config, workerUrl);
+    expect(initial).toEqual(createSlackAppManifest(config, workerUrl));
+    expect(initial.features.unfurl_domains).toEqual(["artifactpass.com", "artifacts.example.com"]);
+    expect(initial.settings.event_subscriptions.request_url).toBe(`${workerUrl}/slack/events`);
   });
 
   test("private origins can be added and the public origin removed", () => {

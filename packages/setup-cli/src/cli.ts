@@ -34,6 +34,7 @@ import type { IdentityRule } from "./cloudflare/deployment";
 import { activatePublicArtifactPass } from "./cloudflare/public-activation";
 import { runDoctor } from "./doctor";
 import { runSlackSetup } from "./slack/setup";
+import { startSlackArchiveWizard } from "./slack/wizard";
 import { activateSlackArchive } from "./slack/activation";
 import {
   addSlackChannel,
@@ -45,8 +46,8 @@ import {
   type SlackArchiveConfiguration,
 } from "./slack/configuration";
 import { provisionSlackResources } from "./slack/deployment";
-import { createSlackAppManifest, createSlackBootstrapManifest } from "./slack/manifest";
-import { readSlackArchiveStatus } from "./slack/status";
+import { createSlackAppManifest, createSlackInitialManifest } from "./slack/manifest";
+import { readSlackArchiveStatus, slackArchiveRecoveryHint } from "./slack/status";
 import { uninstallSlackArchive } from "./slack/uninstall";
 import { openBrowser } from "./open-browser";
 import { migrateDefaultLocalState } from "./local-state-migration";
@@ -159,7 +160,8 @@ Commands:
   slack activate --team-id <id> --app-id <id>
   slack status
   slack sources add|remove <https-origin>
-  slack channels add|remove <channel-link-or-id>
+  slack channels add <channel-link-or-id> [more channel links or IDs]
+  slack channels remove <channel-link-or-id>
   slack pause|resume|update
   slack rotate|uninstall
 
@@ -334,49 +336,79 @@ const main = async (): Promise<void> => {
         approved: true,
       }));
     };
-    if (args[0] === "setup" && args.length === 1) {
+    if (args[0] === "setup" && (args.length === 1 || (args.length === 2 && args[1] === "--terminal"))) {
+      if (args[1] === "--terminal") {
+        const prompt = await createTerminalPrompt();
+        print(await runSlackSetup({ statePath: slackStatePath, deploymentRoot: slackDeploymentRoot, prompt }));
+        return;
+      }
+      const wizard = await startSlackArchiveWizard({
+        statePath: slackStatePath,
+        deploymentRoot: slackDeploymentRoot,
+        htmlPath: resolve(dirname(fileURLToPath(import.meta.url)), "slack-wizard.html"),
+      });
       const prompt = await createTerminalPrompt();
-      print(await runSlackSetup({ statePath: slackStatePath, deploymentRoot: slackDeploymentRoot, prompt }));
+      const handoff = "Open the link below in the browser profile you want. Keep this terminal open while using the wizard.\nPress Ctrl+C to stop; your progress is saved locally.";
+      if (prompt.interactive && prompt.intro && prompt.note) {
+        prompt.intro("ArtifactPass Slack archive");
+        prompt.note(handoff, "Local setup ready");
+        prompt.write(`${wizard.url}\n`);
+      } else {
+        print(`ArtifactPass Slack archive setup is ready.\n${handoff}\n${wizard.url}`);
+      }
+      await wizard.closed;
       return;
     }
-    if (args[0] === "status" && args.length === 1) {
+    if (args[0] === "status" && (args.length === 1 || (args.length === 2 && args[1] === "--json"))) {
       const current = await requireSlackConfiguration();
-      const status = await withSlackActivity("Checking Cloudflare archive delivery status", () => readSlackArchiveStatus(current));
-      if (status.verified && current.stage !== "ready") {
-        await writeSlackArchiveConfiguration(slackStatePath, {
-          ...current, stage: "ready", verified_at: new Date().toISOString(),
-        });
+      const status = args[1] === "--json"
+        ? await readSlackArchiveStatus(current)
+        : await withSlackActivity("Checking Cloudflare archive delivery status", () => readSlackArchiveStatus(current));
+      if (args[1] === "--json") {
+        print({ ...status, failures: status.failures.map(failure => ({
+          ...failure, next_action: slackArchiveRecoveryHint(failure.last_error_code),
+        })) });
+        return;
       }
       print([
-        `Stage: ${status.verified ? "ready (live archive verified)" : status.stage === "ready" ? "configured (no archive verified since the last change)" : status.stage}`,
+        `Stage: ${status.verified ? "deliveries verified (inspect the Slack files before calling setup complete)" : status.stage === "ready" ? "configured (no archive verified since the last change)" : status.stage}`,
         `Paused: ${status.paused ? "yes" : "no"}`,
         `Sources: ${status.sources.join(", ")}`,
         `Enabled channels: ${status.enabled_channels.length ? status.enabled_channels.join(", ") : "none"}`,
+        ...status.channels.map(channel => `Channel ${channel.channel_id}: ${channel.verified ? "delivery verified" : "waiting for a fresh successful delivery"}`),
+        ...status.verified_sources.map(source => `Source ${source.origin}: ${source.verified ? "delivery verified" : "waiting for a fresh successful delivery"}`),
         `Worker: ${status.worker_url ?? "not deployed"}`,
         status.counts === null ? "Deliveries: unavailable until D1 is provisioned" :
           `Deliveries: ${status.counts.succeeded} succeeded, ${status.counts.failed} failed, ${status.counts.needs_review} need review, ${status.counts.transferring} transferring`,
-        ...status.failures.map(failure => `Failure: ${failure.id.slice(0, 12)} in ${failure.channel_id}: ${failure.last_error_code ?? "unknown"}`),
+        ...status.failures.map(failure => `Failure: ${failure.id.slice(0, 12)} in ${failure.channel_id}: ${failure.last_error_code ?? "unknown"}\nNext: ${slackArchiveRecoveryHint(failure.last_error_code)}`),
       ].join("\n"));
       return;
     }
-    if ((args[0] === "sources" || args[0] === "channels") &&
-        (args[1] === "add" || args[1] === "remove") && args.length === 3) {
+    if ((args[0] === "sources" && (args[1] === "add" || args[1] === "remove") && args.length === 3) ||
+        (args[0] === "channels" && ((args[1] === "add" && args.length >= 3) ||
+          (args[1] === "remove" && args.length === 3)))) {
       const current = await requireSlackConfiguration();
       if (args[0] === "channels" && !current.app_id) throw new Error("Activate the Slack app before enabling a channel");
       const next = args[0] === "sources"
         ? args[1] === "add" ? addSlackSource(current, args[2] ?? "") : removeSlackSource(current, args[2] ?? "")
-        : args[1] === "add" ? addSlackChannel(current, args[2] ?? "") : removeSlackChannel(current, args[2] ?? "");
+        : args[1] === "add" ? addSlackChannel(current, ...args.slice(2)) : removeSlackChannel(current, args[2] ?? "");
+      if (next === current) {
+        print(args[0] === "sources"
+          ? "That source is already approved. No Worker update was needed."
+          : "Those channels are already enabled. No Worker update was needed.");
+        return;
+      }
       const applied = await applySlackConfiguration(next);
       if (args[0] === "sources" && applied.worker_url) {
         const manifest = applied.app_id
           ? createSlackAppManifest(applied, applied.worker_url)
-          : createSlackBootstrapManifest(applied);
-        const path = resolve(dirname(slackStatePath), applied.app_id ? "app-manifest.json" : "bootstrap-manifest.json");
+          : createSlackInitialManifest(applied, applied.worker_url);
+        const path = resolve(dirname(slackStatePath), "app-manifest.json");
         await writeFile(path, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
         print(`Source list updated in the Worker. Apply the new Slack app manifest at ${path} in https://api.slack.com/apps before expecting the new source to work.`);
       } else {
         print(args[1] === "add"
-          ? `Channel enabled in the Worker. Invite ArtifactPass Archive to ${applied.enabled_channels.at(-1)} and post a live ArtifactPass link to verify. Run \`pnpm dlx artifactpass slack status\` afterward.`
+          ? `Channels enabled in one Worker update: ${applied.enabled_channels.filter(id => !current.enabled_channels.includes(id)).join(", ")}. Invite ArtifactPass Archive to each selected channel in Slack, then post a live ArtifactPass link in each to verify. Run \`pnpm dlx artifactpass slack status\` afterward.`
           : "Channel removed from the Worker. New links there will not be archived.");
       }
       return;
@@ -436,14 +468,14 @@ const main = async (): Promise<void> => {
         appId: value(activationArgs, "--app-id"),
       }));
       print([
-        `Signed-event manifest: ${resolve(slackStatePath, "../app-manifest.json")}`,
-        `Open https://api.slack.com/apps in your chosen browser profile. Edit app ${activated.app_id} and apply the signed-event manifest.`,
+        `Slack app: ${activated.app_id}. The initial manifest already contains the signed-event receiver and link domains.`,
+        "In Slack, confirm Event Subscriptions is on and the request URL is verified. Do not create another app or replace its manifest.",
         "Archiving remains off until you enable a channel and invite the bot to that channel.",
       ].join("\n"));
       return;
     }
     if ((args[0] === "--help" || args[0] === "help") && args.length === 1) {
-      print("ArtifactPass Slack archive\n\n  slack setup                  Create the customer-owned Worker, Queue, D1, and bootstrap manifest.\n  slack activate --team-id --app-id  Check secrets and write the signed-event manifest.\n  slack sources add|remove     Change approved ArtifactPass origins (five-domain limit).\n  slack channels add|remove    Opt channels in or out.\n  slack status                 Show verified deliveries and inspectable failures.\n  slack pause|resume|update    Control or update only this add-on.\n  slack rotate|uninstall       Rotate Cloudflare-held secrets or remove this add-on.\n\nArchiving remains inactive until an administrator enables a channel.");
+      print("ArtifactPass Slack archive\n\n  slack setup                  Print a local browser setup link; choose your own browser profile.\n  slack setup --terminal       Use the terminal-only setup flow.\n  slack activate --team-id --app-id  Connect credentials to the app created from the complete manifest.\n  slack sources add|remove     Change approved ArtifactPass origins (five-domain limit).\n  slack channels add <links...>  Opt several channels in with one Worker update.\n  slack channels remove <link> Opt one channel out.\n  slack status [--json]        Show verified deliveries and inspectable failures.\n  slack pause|resume|update    Control or update only this add-on.\n  slack rotate|uninstall       Rotate Cloudflare-held secrets or remove this add-on.\n\nArchiving remains inactive until an administrator enables a channel.");
       return;
     }
     throw new Error("Use `artifactpass slack --help` to see Slack archive commands");

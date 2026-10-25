@@ -58,6 +58,7 @@ await writeFile(
 
 const slackArchiveRoot = resolve(outputRoot, "slack-archive");
 await mkdir(slackArchiveRoot, { recursive: true });
+await cp(resolve(packageRoot, "src/slack/wizard.html"), resolve(outputRoot, "slack-wizard.html"));
 await build({
   entryPoints: [resolve(repositoryRoot, "apps/slack-archive/src/index.ts")],
   outfile: resolve(slackArchiveRoot, "index.js"),

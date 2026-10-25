@@ -61,12 +61,26 @@ describe("queued archive consumer", () => {
 
   test("a source failure is inspectable and is not retried", async () => {
     const fixture = setup();
+    const notices: { url: string; init: RequestInit }[] = [];
     await consumeArchiveBatch({ messages: [fixture.message] }, {
       ...fixture.options,
       transfer: async () => { throw new ArchiveTransferError("terminal", "source_expired"); },
+      notificationFetcher: async (url, init) => {
+        notices.push({ url: String(url), init: init ?? {} });
+        return Response.json({ ok: true });
+      },
     });
     expect(fixture.acknowledged).toBe(1);
     expect(fixture.retried).toEqual([]);
+    expect(notices).toHaveLength(1);
+    expect(notices[0]?.url).toBe("https://slack.com/api/chat.unfurl");
+    expect(JSON.parse(String(notices[0]?.init.body))).toEqual({
+      channel: job.channelId,
+      ts: job.messageTs,
+      unfurls: {
+        [job.shareUrl]: { text: "This ArtifactPass link has expired or is unavailable. Create and share a fresh link." },
+      },
+    });
     expect(fixture.sqlite.prepare("SELECT status, last_error_code FROM deliveries WHERE id = ?").get(job.id))
       .toMatchObject({ status: "failed", last_error_code: "source_expired" });
     fixture.sqlite.close();

@@ -5,6 +5,7 @@ export interface ArchiveJob {
   readonly messageTs: string;
   readonly threadTs: string;
   readonly shareUrl: string;
+  readonly unfurlId?: string;
 }
 
 export interface ArchiveSelectionConfig {
@@ -29,6 +30,7 @@ export interface SlackEventOptions extends ArchiveSelectionConfig {
 
 const channelId = /^[CG][A-Z0-9]{8,}$/u;
 const messageTimestamp = /^\d{9,}\.\d{1,6}$/u;
+const unfurlId = /^[A-Za-z0-9._-]{1,256}$/u;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -56,6 +58,8 @@ export const selectArchiveJobs = (event: unknown, config: ArchiveSelectionConfig
       messageTs: event.message_ts,
       threadTs: event.thread_ts ?? event.message_ts,
       shareUrl: share.shareUrl,
+      ...(typeof event.unfurl_id === "string" && unfurlId.test(event.unfurl_id)
+        ? { unfurlId: event.unfurl_id } : {}),
     });
   }
   return jobs;
@@ -105,6 +109,25 @@ const archiveId = async (teamId: string, job: ArchiveJob): Promise<string> => {
   const input = text.encode(JSON.stringify([teamId, job.channelId, job.messageTs, job.shareUrl]));
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", input));
   return [...digest].map(byte => byte.toString(16).padStart(2, "0")).join("");
+};
+
+// A newly created Slack app has no signing secret available to the customer yet.
+// This endpoint answers only Slack's one-time URL challenge until credentials are installed.
+// It never accepts or queues an event in this state.
+export const handleSlackBootstrapChallenge = async (request: Request): Promise<Response> => {
+  if (request.method !== "POST") return new Response("Method not allowed", { status: 405, headers: noStore });
+  if (!request.headers.get("Content-Type")?.startsWith("application/json")) {
+    return new Response("Expected JSON", { status: 415, headers: noStore });
+  }
+  const rawBody = await readBody(request);
+  if (rawBody === null) return new Response("Request too large", { status: 413, headers: noStore });
+  let payload: unknown;
+  try { payload = JSON.parse(rawBody); } catch { return new Response("Invalid JSON", { status: 400, headers: noStore }); }
+  if (!isRecord(payload) || payload.type !== "url_verification" ||
+      typeof payload.challenge !== "string" || payload.challenge.length < 1 || payload.challenge.length > 256) {
+    return new Response("Unauthorized", { status: 401, headers: noStore });
+  }
+  return new Response(payload.challenge, { headers: { ...noStore, "Content-Type": "text/plain; charset=utf-8" } });
 };
 
 export const handleSlackEvent = async (request: Request, options: SlackEventOptions): Promise<Response> => {

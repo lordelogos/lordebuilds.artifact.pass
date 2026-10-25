@@ -5,6 +5,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   addSlackChannel,
+  addSlackSource,
   createSlackArchiveConfiguration,
   readSlackArchiveConfiguration,
   writeSlackArchiveConfiguration,
@@ -41,5 +42,22 @@ describe("non-secret Slack archive setup state", () => {
     const config = addSlackChannel(createSlackArchiveConfiguration(), "https://example.slack.com/archives/C1234567890/p1730000000000100");
     expect(config.enabled_channels).toEqual(["C1234567890"]);
     expect(config.paused).toBe(false);
+  });
+
+  test("one setup action enables multiple distinct channels", () => {
+    const config = addSlackChannel(
+      createSlackArchiveConfiguration(),
+      "https://example.slack.com/archives/C1234567890",
+      "G1234567890",
+      "C1234567890",
+    );
+    expect(config.enabled_channels).toEqual(["C1234567890", "G1234567890"]);
+  });
+
+  test("a private deployment root URL may have a trailing slash, but not a path", () => {
+    const config = addSlackSource(createSlackArchiveConfiguration(), "https://artifacts.example.com/");
+    expect(config.sources).toEqual(["https://artifactpass.com", "https://artifacts.example.com"]);
+    expect(() => addSlackSource(config, "https://artifacts.example.com/a/abc"))
+      .toThrow(/without a path/u);
   });
 });

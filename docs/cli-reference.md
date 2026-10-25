@@ -26,11 +26,14 @@ Anything marked **Conditional** appears only when the CLI needs that information
 | `pnpm dlx artifactpass activate-public ...` | Operator command for public DNS activation | No questions |
 | `pnpm dlx artifactpass deploy --account-id ...` | Legacy non-interactive private deployment | No questions |
 | `pnpm dlx artifactpass help` | Print command usage | No questions |
-| `pnpm dlx artifactpass slack setup` | Provision the separate Slack archive add-on | Cloudflare account, approval to create Worker/Queue/D1; Slack dashboard handoff |
-| `pnpm dlx artifactpass slack activate --team-id ... --app-id ...` | Check Cloudflare secret names and write the signed-event manifest | No terminal questions; administrator applies manifest in Slack |
+| `pnpm dlx artifactpass slack setup` | Print a local browser wizard link for the separate Slack archive add-on | Open in your chosen browser profile; Cloudflare resource approval and Slack dashboard handoff |
+| `pnpm dlx artifactpass slack setup --terminal` | Use the terminal-only setup path | Cloudflare account and resource approval in the terminal |
+| `pnpm dlx artifactpass slack activate --team-id ... --app-id ...` | Check Cloudflare secret names and connect the app created from the complete initial manifest | No second manifest; administrator confirms Slack's event URL is verified |
 | `pnpm dlx artifactpass slack status` | Read delivery counts and failures | No questions |
+| `pnpm dlx artifactpass slack status --json` | Read non-secret setup and delivery status for an agent or script | No questions |
 | `pnpm dlx artifactpass slack sources add\|remove <origin>` | Change registered link origins | No questions; administrator applies updated manifest in Slack |
-| `pnpm dlx artifactpass slack channels add\|remove <link-or-id>` | Opt a channel in or out | No questions; invite bot in Slack when adding |
+| `pnpm dlx artifactpass slack channels add <links-or-ids...>` | Opt several channels in with one Worker update | Invite the bot to each selected channel in Slack |
+| `pnpm dlx artifactpass slack channels remove <link-or-id>` | Opt one channel out | No questions |
 | `pnpm dlx artifactpass slack pause\|resume\|update` | Control or update only the archive Worker | No questions |
 | `pnpm dlx artifactpass slack rotate` | Show where to rotate Slack secrets | No questions |
 | `pnpm dlx artifactpass slack uninstall` | Remove the add-on's Cloudflare resources | Explicit delete confirmation |

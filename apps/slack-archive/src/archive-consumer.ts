@@ -21,6 +21,7 @@ export interface ArchiveConsumerOptions {
   readonly enabledChannelIds: readonly string[];
   readonly now: () => number;
   readonly transfer?: (job: QueuedArchiveJob, options: ArchiveTransferOptions) => Promise<{ readonly fileId: string }>;
+  readonly notificationFetcher?: typeof fetch;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -32,12 +33,39 @@ const queuedJob = (value: unknown, origins: readonly string[], enabledChannels: 
       typeof value.channelId !== "string" || !/^[CG][A-Z0-9]{8,}$/u.test(value.channelId) || !enabledChannels.includes(value.channelId) ||
       typeof value.messageTs !== "string" || !/^\d{9,}\.\d{1,6}$/u.test(value.messageTs) ||
       typeof value.threadTs !== "string" || !/^\d{9,}\.\d{1,6}$/u.test(value.threadTs) ||
+      value.unfurlId !== undefined && (typeof value.unfurlId !== "string" || !/^[A-Za-z0-9._-]{1,256}$/u.test(value.unfurlId)) ||
       !parseApprovedShareUrl(value.shareUrl, origins)) return null;
   return value as unknown as QueuedArchiveJob;
 };
 
 const retryDelaySeconds = 30;
 const maximumAttempts = 3;
+
+const notifyUnavailableLink = async (job: QueuedArchiveJob, options: ArchiveConsumerOptions): Promise<void> => {
+  const target = job.unfurlId
+    ? { unfurl_id: job.unfurlId, source: "conversations_history" }
+    : { channel: job.channelId, ts: job.messageTs };
+  try {
+    const response = await (options.notificationFetcher ?? fetch)("https://slack.com/api/chat.unfurl", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${options.botToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...target,
+        unfurls: {
+          [job.shareUrl]: { text: "This ArtifactPass link has expired or is unavailable. Create and share a fresh link." },
+        },
+      }),
+      signal: AbortSignal.timeout(5_000),
+    });
+    const result: unknown = await response.json();
+    if (!response.ok || typeof result !== "object" || result === null || !("ok" in result) || result.ok !== true) {
+      console.warn("ArtifactPass could not show the unavailable-link preview in Slack");
+    }
+  } catch {
+    // A failed preview must not trigger another attempt to copy an unavailable file.
+    console.warn("ArtifactPass could not show the unavailable-link preview in Slack");
+  }
+};
 
 export const consumeArchiveBatch = async (batch: ArchiveQueueBatch, options: ArchiveConsumerOptions): Promise<void> => {
   for (const message of batch.messages) {
@@ -85,6 +113,9 @@ export const consumeArchiveBatch = async (batch: ArchiveQueueBatch, options: Arc
         } else if (failure.kind === "terminal" || message.attempts >= maximumAttempts) {
           await finishDelivery(options.database, job.id, claimId, "failed", options.now(),
             message.attempts >= maximumAttempts && failure.kind !== "terminal" ? "retry_budget_exhausted" : failure.code);
+          if (failure.kind === "terminal" && (failure.code === "source_expired" || failure.code === "source_unavailable")) {
+            await notifyUnavailableLink(job, options);
+          }
           message.ack();
         } else if (await scheduleRetry(options.database, job.id, claimId, failure.code, options.now())) {
           message.retry({ delaySeconds: retryDelaySeconds });

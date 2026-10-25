@@ -20,13 +20,14 @@ export interface SlackArchiveConfiguration {
   readonly worker_url?: string;
   readonly team_id?: string;
   readonly app_id?: string;
+  readonly manifest_applied_for?: string;
   readonly verified_at?: string | undefined;
 }
 
 const allowedFields = new Set([
   "schema_version", "installation_id", "stage", "created_at", "updated_at", "sources",
   "enabled_channels", "account_id", "database_id", "queue_name", "worker_name",
-  "worker_url", "team_id", "app_id", "verified_at", "paused",
+  "worker_url", "team_id", "app_id", "manifest_applied_for", "verified_at", "paused",
 ]);
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -40,7 +41,7 @@ export const canonicalSlackSource = (raw: string): string => {
   } catch {
     throw new Error("Enter an HTTPS ArtifactPass origin, such as https://artifacts.example.com");
   }
-  if (url.protocol !== "https:" || candidate !== url.origin || url.username || url.password ||
+  if (url.protocol !== "https:" || (candidate !== url.origin && candidate !== `${url.origin}/`) || url.username || url.password ||
       !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/u.test(url.hostname)) {
     throw new Error("Enter an HTTPS ArtifactPass origin without a path, such as https://artifacts.example.com");
   }
@@ -94,11 +95,13 @@ export const slackChannelId = (raw: string): string => {
   throw new Error("Enter a Slack channel ID or link, such as https://example.slack.com/archives/C1234567890");
 };
 
-export const addSlackChannel = (config: SlackArchiveConfiguration, raw: string): SlackArchiveConfiguration => {
-  const id = slackChannelId(raw);
-  if (config.enabled_channels.includes(id)) return config;
+export const addSlackChannel = (config: SlackArchiveConfiguration, ...raws: readonly string[]): SlackArchiveConfiguration => {
+  if (raws.length === 0) throw new Error("Enter at least one Slack channel ID or link");
+  const ids = raws.map(slackChannelId);
+  const enabled = [...new Set([...config.enabled_channels, ...ids])];
+  if (enabled.length === config.enabled_channels.length) return config;
   return {
-    ...config, enabled_channels: [...config.enabled_channels, id],
+    ...config, enabled_channels: enabled,
     stage: config.stage === "ready" ? "worker-deployed" : config.stage,
     verified_at: undefined, updated_at: new Date().toISOString(),
   };
@@ -132,6 +135,10 @@ export const validateSlackArchiveConfiguration = (value: unknown): SlackArchiveC
     if (value[field] !== undefined && (typeof value[field] !== "string" || value[field].length === 0)) {
       throw new Error("Slack setup state is invalid");
     }
+  }
+  if (value.manifest_applied_for !== undefined &&
+      (typeof value.manifest_applied_for !== "string" || !/^[a-f0-9]{64}$/u.test(value.manifest_applied_for))) {
+    throw new Error("Slack setup state is invalid");
   }
   return value as unknown as SlackArchiveConfiguration;
 };

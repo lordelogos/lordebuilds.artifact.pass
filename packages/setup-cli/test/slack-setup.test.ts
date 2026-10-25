@@ -33,7 +33,7 @@ test("setup shows prerequisites and can save before any Cloudflare mutation", as
     });
     expect(result).toMatch(/saved|paused/i);
     expect(output.join(" ")).toMatch(/Cloudflare account/i);
-    expect(output.join(" ")).toMatch(/links:read.*files:write/su);
+    expect(output.join(" ")).toMatch(/links:read.*links:write.*files:write/su);
     expect(calls).toEqual(["whoami --json"]);
     const saved = await readSlackArchiveConfiguration(join(directory, "configuration.json"));
     expect(saved?.stage).toBe("prepared");

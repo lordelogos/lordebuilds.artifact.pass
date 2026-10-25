@@ -5,6 +5,32 @@ import { expect, test, vi } from "vitest";
 
 import worker from "../src/index";
 
+test("a new Worker verifies Slack's callback before app credentials exist but rejects ordinary events", async () => {
+  const environment = {
+    APPROVED_ORIGINS: JSON.stringify(["https://artifactpass.com"]),
+    ENABLED_CHANNEL_IDS: "[]",
+    SLACK_TEAM_ID: "",
+    SLACK_APP_ID: "",
+    ARCHIVE_QUEUE: { send: async () => { throw new Error("Must not queue"); } },
+  };
+  const challenge = await worker.fetch(new Request("https://bot.example.com/slack/events", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type: "url_verification", challenge: "setup-challenge" }),
+  }), environment as never);
+  expect(challenge.status).toBe(200);
+  expect(await challenge.text()).toBe("setup-challenge");
+  const event = await worker.fetch(new Request("https://bot.example.com/slack/events", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type: "event_callback", event: { type: "link_shared" } }),
+  }), environment as never);
+  expect(event.status).toBe(401);
+  const afterCredentials = await worker.fetch(new Request("https://bot.example.com/slack/events", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type: "url_verification", challenge: "setup-challenge" }),
+  }), { ...environment, SLACK_SIGNING_SECRET: "test-secret" } as never);
+  expect(afterCredentials.status).toBe(401);
+});
+
 test("the Worker route accepts a signed posted link and sends one Queue job", async () => {
   const now = Math.floor(Date.now() / 1000);
   const shareUrl = `https://artifactpass.com/a/${"A".repeat(43)}`;
