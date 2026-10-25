@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, test } from "vitest";
 
-import { claimDelivery, finishDelivery, type DeliveryDatabase } from "../src/delivery-store";
+import { beginCompletion, claimDelivery, finishDelivery, scheduleRetry, type DeliveryDatabase } from "../src/delivery-store";
 
 const migration = readFileSync(new URL("../migrations/0001-deliveries.sql", import.meta.url), "utf8");
 const job = {
@@ -52,6 +52,26 @@ describe("durable delivery claims", () => {
     const row = sqlite.prepare("SELECT * FROM deliveries WHERE id = ?").get(job.id);
     expect(row).toMatchObject({ attempts: 2, status: "transferring" });
     expect(JSON.stringify(row)).not.toContain(job.shareUrl);
+    sqlite.close();
+  });
+
+  test("an attempted Slack completion is never automatically reclaimed", async () => {
+    const { sqlite, db } = database();
+    const claim = await claimDelivery(db, job, 1_730_000_000_000);
+    expect(await beginCompletion(db, job.id, claim ?? "", 1_730_000_000_001)).toBe(true);
+    expect(await claimDelivery(db, job, 1_730_100_000_000)).toBeNull();
+    expect(await finishDelivery(db, job.id, claim ?? "", "succeeded", 1_730_000_000_002)).toBe(true);
+    expect(sqlite.prepare("SELECT status FROM deliveries WHERE id = ?").get(job.id)).toMatchObject({ status: "succeeded" });
+    sqlite.close();
+  });
+
+  test("a definite transient failure can be retried after its delay", async () => {
+    const { sqlite, db } = database();
+    const claim = await claimDelivery(db, job, 1_730_000_000_000);
+    expect(await scheduleRetry(db, job.id, claim ?? "", "source_unavailable", 1_730_000_000_000, 30_000)).toBe(true);
+    expect(await claimDelivery(db, job, 1_730_000_010_000)).toBeNull();
+    expect(await claimDelivery(db, job, 1_730_000_030_000)).not.toBeNull();
+    expect(sqlite.prepare("SELECT attempts, last_error_code FROM deliveries WHERE id = ?").get(job.id)).toMatchObject({ attempts: 2, last_error_code: "source_unavailable" });
     sqlite.close();
   });
 });

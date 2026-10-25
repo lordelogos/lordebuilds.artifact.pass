@@ -8,6 +8,8 @@ CREATE TABLE deliveries (
   attempts INTEGER NOT NULL,
   claim_id TEXT NOT NULL,
   lease_until INTEGER,
+  last_error_code TEXT,
+  slack_file_id TEXT,
   updated_at INTEGER NOT NULL
 );
 

@@ -33,11 +33,44 @@ export const finishDelivery = async (
   claimId: string,
   status: "succeeded" | "failed" | "needs-review",
   now: number,
+  errorCode: string | null = null,
+  slackFileId: string | null = null,
 ): Promise<boolean> => {
   const result = await database.prepare(`
     UPDATE deliveries
-    SET status = ?, lease_until = NULL, updated_at = ?
+    SET status = ?, lease_until = NULL, last_error_code = ?, slack_file_id = ?, updated_at = ?
+    WHERE id = ? AND claim_id = ? AND status IN ('transferring', 'needs-review')
+  `).bind(status, errorCode, slackFileId, now, id, claimId).run();
+  return result.meta.changes === 1;
+};
+
+export const beginCompletion = async (
+  database: DeliveryDatabase,
+  id: string,
+  claimId: string,
+  now: number,
+): Promise<boolean> => {
+  const result = await database.prepare(`
+    UPDATE deliveries
+    SET status = 'needs-review', lease_until = NULL,
+        last_error_code = 'slack_completion_uncertain', updated_at = ?
     WHERE id = ? AND claim_id = ? AND status = 'transferring'
-  `).bind(status, now, id, claimId).run();
+  `).bind(now, id, claimId).run();
+  return result.meta.changes === 1;
+};
+
+export const scheduleRetry = async (
+  database: DeliveryDatabase,
+  id: string,
+  claimId: string,
+  errorCode: string,
+  now: number,
+  delayMilliseconds: number,
+): Promise<boolean> => {
+  const result = await database.prepare(`
+    UPDATE deliveries
+    SET lease_until = ?, last_error_code = ?, updated_at = ?
+    WHERE id = ? AND claim_id = ? AND status = 'transferring'
+  `).bind(now + delayMilliseconds, errorCode, now, id, claimId).run();
   return result.meta.changes === 1;
 };
