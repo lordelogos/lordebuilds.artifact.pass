@@ -1,3 +1,5 @@
+import { parseApprovedShareUrl } from "./source-policy";
+
 export interface ArchiveJob {
   readonly channelId: string;
   readonly messageTs: string;
@@ -8,6 +10,18 @@ export interface ArchiveJob {
 export interface ArchiveSelectionConfig {
   readonly approvedOrigins: readonly string[];
   readonly enabledChannelIds: readonly string[];
+}
+
+export interface QueuedArchiveJob extends ArchiveJob {
+  readonly id: string;
+}
+
+export interface SlackEventOptions extends ArchiveSelectionConfig {
+  readonly signingSecret: string;
+  readonly teamId: string;
+  readonly appId: string;
+  readonly queue: { send(job: QueuedArchiveJob): Promise<void> };
+  readonly now: () => number;
 }
 
 const channelId = /^[CG][A-Z0-9]{8,}$/u;
@@ -43,5 +57,61 @@ export const selectArchiveJobs = (event: unknown, config: ArchiveSelectionConfig
   }
   return jobs;
 };
-import { parseApprovedShareUrl } from "./source-policy";
+
+const text = new TextEncoder();
+const noStore = { "Cache-Control": "no-store" };
+
+const verifySignature = async (request: Request, rawBody: string, secret: string, now: number): Promise<boolean> => {
+  const timestamp = request.headers.get("X-Slack-Request-Timestamp");
+  const signature = request.headers.get("X-Slack-Signature");
+  if (!timestamp || !/^\d{10,}$/u.test(timestamp) || !signature || !/^v0=[a-f0-9]{64}$/u.test(signature)) return false;
+  if (Math.abs(Math.floor(now / 1000) - Number(timestamp)) > 300) return false;
+  const key = await crypto.subtle.importKey("raw", text.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["verify"]);
+  const bytes = new Uint8Array(signature.slice(3).match(/.{2}/gu)!.map(byte => Number.parseInt(byte, 16)));
+  return crypto.subtle.verify("HMAC", key, bytes, text.encode(`v0:${timestamp}:${rawBody}`));
+};
+
+const archiveId = async (teamId: string, job: ArchiveJob): Promise<string> => {
+  const input = text.encode(JSON.stringify([teamId, job.channelId, job.messageTs, job.shareUrl]));
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", input));
+  return [...digest].map(byte => byte.toString(16).padStart(2, "0")).join("");
+};
+
+export const handleSlackEvent = async (request: Request, options: SlackEventOptions): Promise<Response> => {
+  if (request.method !== "POST") return new Response("Method not allowed", { status: 405, headers: noStore });
+  if (!request.headers.get("Content-Type")?.startsWith("application/json")) {
+    return new Response("Expected JSON", { status: 415, headers: noStore });
+  }
+  const rawBody = await request.text();
+  if (rawBody.length > 65_536) return new Response("Request too large", { status: 413, headers: noStore });
+  if (!await verifySignature(request, rawBody, options.signingSecret, options.now())) {
+    return new Response("Unauthorized", { status: 401, headers: noStore });
+  }
+  let payload: unknown;
+  try {
+    payload = JSON.parse(rawBody);
+  } catch {
+    return new Response("Invalid JSON", { status: 400, headers: noStore });
+  }
+  if (!isRecord(payload)) return new Response("Invalid event", { status: 400, headers: noStore });
+  if (payload.type === "url_verification") {
+    if (typeof payload.challenge !== "string" || payload.challenge.length > 256) {
+      return new Response("Invalid challenge", { status: 400, headers: noStore });
+    }
+    return new Response(payload.challenge, { headers: { ...noStore, "Content-Type": "text/plain; charset=utf-8" } });
+  }
+  if (payload.type !== "event_callback") return new Response("OK", { headers: noStore });
+  if (payload.team_id !== options.teamId || payload.api_app_id !== options.appId) {
+    return new Response("Wrong workspace or app", { status: 403, headers: noStore });
+  }
+  const jobs = selectArchiveJobs(payload.event, options);
+  try {
+    for (const job of jobs) {
+      await options.queue.send({ ...job, id: await archiveId(options.teamId, job) });
+    }
+  } catch {
+    return new Response("Archive queue unavailable", { status: 503, headers: noStore });
+  }
+  return new Response("OK", { headers: noStore });
+};
 
