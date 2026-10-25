@@ -16,7 +16,9 @@ describe("customer-owned Cloudflare resource setup", () => {
     const runner: ProcessRunner = async (command, args) => {
       expect(command).toBe("wrangler");
       calls.push(args.join(" "));
-      if (args[0] === "queues" && args[1] === "info") throw new Error("Queue not found");
+      if (args[0] === "queues" && args[1] === "info") {
+        throw new Error('wrangler failed with status 1: Queue "artifactpass-archive-12345678-queue" does not exist. To create it, run: wrangler queues create artifactpass-archive-12345678-queue');
+      }
       if (args[0] === "d1" && args[1] === "list") {
         return { stdout: databaseCreated ? JSON.stringify([{ name: "artifactpass-archive-12345678-db", uuid: "12345678-1234-1234-1234-123456789abc" }]) : "[]", stderr: "" };
       }
@@ -38,6 +40,7 @@ describe("customer-owned Cloudflare resource setup", () => {
       expect(calls).toContain("d1 create artifactpass-archive-12345678-db");
       expect(calls.some(item => item.startsWith("d1 execute ") && item.includes("--remote"))).toBe(true);
       expect(calls.some(item => item.startsWith("deploy --config "))).toBe(true);
+      expect(calls.find(item => item.startsWith("deploy --config "))).not.toContain("--strict");
       const generated = await readFile(join(directory, "wrangler-slack-archive.json"), "utf8");
       expect(generated).toContain("ARCHIVE_QUEUE");
       expect(generated).toContain("ARCHIVE_DB");

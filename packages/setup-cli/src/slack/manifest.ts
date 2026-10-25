@@ -1,6 +1,6 @@
 import type { SlackArchiveConfiguration } from "./configuration";
 
-const basicManifest = (config: SlackArchiveConfiguration) => ({
+const basicManifest = () => ({
   display_information: {
     name: "ArtifactPass Archive",
     description: "Copy approved ArtifactPass links into their Slack threads",
@@ -8,7 +8,6 @@ const basicManifest = (config: SlackArchiveConfiguration) => ({
   },
   features: {
     bot_user: { display_name: "ArtifactPass Archive", always_online: false },
-    unfurl_domains: config.sources.map(origin => new URL(origin).hostname),
   },
   oauth_config: { scopes: { bot: ["links:read", "files:write"] } },
   settings: {
@@ -17,7 +16,7 @@ const basicManifest = (config: SlackArchiveConfiguration) => ({
   },
 });
 
-export const createSlackBootstrapManifest = (config: SlackArchiveConfiguration) => basicManifest(config);
+export const createSlackBootstrapManifest = (_config: SlackArchiveConfiguration) => basicManifest();
 
 export const createSlackAppManifest = (config: SlackArchiveConfiguration, rawWorkerUrl: string) => {
   let worker: URL;
@@ -30,9 +29,13 @@ export const createSlackAppManifest = (config: SlackArchiveConfiguration, rawWor
     throw new Error("The archive Worker needs a public HTTPS origin before generating a Slack manifest");
   }
   return {
-    ...basicManifest(config),
+    ...basicManifest(),
+    features: {
+      ...basicManifest().features,
+      unfurl_domains: config.sources.map(origin => new URL(origin).hostname),
+    },
     settings: {
-      ...basicManifest(config).settings,
+      ...basicManifest().settings,
       event_subscriptions: {
         request_url: `${worker.origin}/slack/events`,
         bot_events: ["link_shared"],

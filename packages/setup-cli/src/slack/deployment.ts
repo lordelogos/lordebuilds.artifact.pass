@@ -88,7 +88,7 @@ export const provisionSlackResources = async (
   try {
     await runner("wrangler", ["queues", "info", resourceNames.queue_name], { env: environment });
   } catch (error) {
-    if (!(error instanceof Error) || !/not found|404/iu.test(error.message)) throw error;
+    if (!(error instanceof Error) || !/not found|does not exist|404/iu.test(error.message)) throw error;
     await runner("wrangler", ["queues", "create", resourceNames.queue_name], { env: environment });
   }
 
@@ -108,7 +108,9 @@ export const provisionSlackResources = async (
   await writeFile(configPath, `${JSON.stringify(workerConfiguration(withDatabase, options.deploymentRoot), null, 2)}\n`, { mode: 0o600 });
   await runner("wrangler", ["d1", "execute", databaseName, "--remote", "--file",
     join(options.deploymentRoot, "0001-deliveries.sql"), "--yes", "--config", configPath], { env: environment });
-  const deployed = await runner("wrangler", ["deploy", "--config", configPath, "--strict"], { env: environment });
+  // Dashboard secret updates create a new remote Worker version. Wrangler preserves those
+  // secrets, but --strict rejects the expected remote difference on activation and resume.
+  const deployed = await runner("wrangler", ["deploy", "--config", configPath], { env: environment });
   const workerUrl = workersUrlPattern.exec(`${deployed.stdout}\n${deployed.stderr}`)?.[0];
   if (!workerUrl) throw new Error("The Worker deployed, but its workers.dev URL was not reported; inspect the Cloudflare dashboard before continuing");
   const complete: SlackArchiveConfiguration = {

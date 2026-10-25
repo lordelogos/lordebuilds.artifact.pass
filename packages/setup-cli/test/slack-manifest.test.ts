@@ -25,6 +25,7 @@ describe("customer-owned Slack manifest", () => {
   test("the bootstrap manifest can be installed before the signing secret exists", () => {
     const bootstrap = createSlackBootstrapManifest(createSlackArchiveConfiguration());
     expect(bootstrap.oauth_config.scopes.bot).toEqual(["links:read", "files:write"]);
+    expect(bootstrap.features).not.toHaveProperty("unfurl_domains");
     expect(bootstrap.settings).not.toHaveProperty("event_subscriptions");
   });
 
