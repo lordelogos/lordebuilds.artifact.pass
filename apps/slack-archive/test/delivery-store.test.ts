@@ -23,6 +23,7 @@ const database = () => {
           const result = sqlite.prepare(sql).run(...values);
           return { meta: { changes: Number(result.changes) } };
         },
+        first: async () => (sqlite.prepare(sql).get(...values) ?? null) as Record<string, unknown> | null,
       }),
     }),
   };
@@ -65,12 +66,11 @@ describe("durable delivery claims", () => {
     sqlite.close();
   });
 
-  test("a definite transient failure can be retried after its delay", async () => {
+  test("a definite transient failure releases its claim before Queue redelivery", async () => {
     const { sqlite, db } = database();
     const claim = await claimDelivery(db, job, 1_730_000_000_000);
-    expect(await scheduleRetry(db, job.id, claim ?? "", "source_unavailable", 1_730_000_000_000, 30_000)).toBe(true);
-    expect(await claimDelivery(db, job, 1_730_000_010_000)).toBeNull();
-    expect(await claimDelivery(db, job, 1_730_000_030_000)).not.toBeNull();
+    expect(await scheduleRetry(db, job.id, claim ?? "", "source_unavailable", 1_730_000_000_000)).toBe(true);
+    expect(await claimDelivery(db, job, 1_730_000_000_001)).not.toBeNull();
     expect(sqlite.prepare("SELECT attempts, last_error_code FROM deliveries WHERE id = ?").get(job.id)).toMatchObject({ attempts: 2, last_error_code: "source_unavailable" });
     sqlite.close();
   });

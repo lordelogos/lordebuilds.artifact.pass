@@ -1,4 +1,4 @@
-CREATE TABLE deliveries (
+CREATE TABLE IF NOT EXISTS deliveries (
   id TEXT PRIMARY KEY,
   status TEXT NOT NULL CHECK (status IN ('transferring', 'succeeded', 'failed', 'needs-review')),
   channel_id TEXT NOT NULL,
@@ -13,4 +13,4 @@ CREATE TABLE deliveries (
   updated_at INTEGER NOT NULL
 );
 
-CREATE INDEX deliveries_status_updated ON deliveries (status, updated_at);
+CREATE INDEX IF NOT EXISTS deliveries_status_updated ON deliveries (status, updated_at);

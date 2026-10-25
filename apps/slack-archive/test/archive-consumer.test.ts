@@ -3,7 +3,7 @@ import { DatabaseSync } from "node:sqlite";
 import { describe, expect, test } from "vitest";
 
 import { consumeArchiveBatch } from "../src/archive-consumer";
-import type { DeliveryDatabase } from "../src/delivery-store";
+import { claimDelivery, type DeliveryDatabase } from "../src/delivery-store";
 import type { QueuedArchiveJob } from "../src/event-receiver";
 import { ArchiveTransferError } from "../src/slack-upload";
 
@@ -22,6 +22,7 @@ const setup = () => {
     prepare: sql => ({
       bind: (...values) => ({
         run: async () => ({ meta: { changes: Number(sqlite.prepare(sql).run(...values).changes) } }),
+        first: async () => (sqlite.prepare(sql).get(...values) ?? null) as Record<string, unknown> | null,
       }),
     }),
   };
@@ -33,7 +34,10 @@ const setup = () => {
     ack: () => { acknowledged++; },
     retry: ({ delaySeconds }: { delaySeconds: number }) => { retried.push(delaySeconds); },
   };
-  const options = { database, botToken: "xoxb-test", approvedOrigins: ["https://artifactpass.com"], now: () => now };
+  const options = {
+    database, botToken: "xoxb-test", approvedOrigins: ["https://artifactpass.com"],
+    enabledChannelIds: ["C0CC13XRWJG"], now: () => now,
+  };
   return { sqlite, database, message, options, retried, get acknowledged() { return acknowledged; } };
 };
 
@@ -65,6 +69,28 @@ describe("queued archive consumer", () => {
     expect(fixture.retried).toEqual([]);
     expect(fixture.sqlite.prepare("SELECT status, last_error_code FROM deliveries WHERE id = ?").get(job.id))
       .toMatchObject({ status: "failed", last_error_code: "source_expired" });
+    fixture.sqlite.close();
+  });
+
+  test("a redelivery arriving during an active lease waits rather than disappearing", async () => {
+    const fixture = setup();
+    expect(await claimDelivery(fixture.database, job, now)).not.toBeNull();
+    let transfers = 0;
+    const transfer = async (_job: QueuedArchiveJob, options: { onCompletionStart: () => Promise<void> }) => {
+      transfers++;
+      await options.onCompletionStart();
+      return { fileId: "F12345678" };
+    };
+    await consumeArchiveBatch({ messages: [fixture.message] }, {
+      ...fixture.options, now: () => now + 1_000, transfer,
+    });
+    expect(fixture.retried).toEqual([601]);
+    expect(fixture.acknowledged).toBe(0);
+    await consumeArchiveBatch({ messages: [{ ...fixture.message, attempts: 2 }] }, {
+      ...fixture.options, now: () => now + 602_000, transfer,
+    });
+    expect(transfers).toBe(1);
+    expect(fixture.acknowledged).toBe(1);
     fixture.sqlite.close();
   });
 
@@ -103,6 +129,18 @@ describe("queued archive consumer", () => {
     const fixture = setup();
     await consumeArchiveBatch({ messages: [{ ...fixture.message, body: { ...job, shareUrl: `https://evil.example/a/${"A".repeat(43)}` } }] }, {
       ...fixture.options,
+      transfer: async () => { throw new Error("must not transfer"); },
+    });
+    expect(fixture.acknowledged).toBe(1);
+    expect(fixture.sqlite.prepare("SELECT COUNT(*) AS count FROM deliveries").get()).toMatchObject({ count: 0 });
+    fixture.sqlite.close();
+  });
+
+  test("pausing or removing a channel also blocks jobs already queued", async () => {
+    const fixture = setup();
+    await consumeArchiveBatch({ messages: [fixture.message] }, {
+      ...fixture.options,
+      enabledChannelIds: [],
       transfer: async () => { throw new Error("must not transfer"); },
     });
     expect(fixture.acknowledged).toBe(1);

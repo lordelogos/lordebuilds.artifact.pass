@@ -1,4 +1,4 @@
-import { beginCompletion, claimDelivery, finishDelivery, scheduleRetry, type DeliveryDatabase } from "./delivery-store";
+import { activeLeaseUntil, beginCompletion, claimDelivery, finishDelivery, scheduleRetry, type DeliveryDatabase } from "./delivery-store";
 import type { QueuedArchiveJob } from "./event-receiver";
 import { parseApprovedShareUrl } from "./source-policy";
 import { archiveSource, ArchiveTransferError, type ArchiveTransferOptions } from "./slack-upload";
@@ -18,6 +18,7 @@ export interface ArchiveConsumerOptions {
   readonly database: DeliveryDatabase;
   readonly botToken: string;
   readonly approvedOrigins: readonly string[];
+  readonly enabledChannelIds: readonly string[];
   readonly now: () => number;
   readonly transfer?: (job: QueuedArchiveJob, options: ArchiveTransferOptions) => Promise<{ readonly fileId: string }>;
 }
@@ -25,10 +26,10 @@ export interface ArchiveConsumerOptions {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-const queuedJob = (value: unknown, origins: readonly string[]): QueuedArchiveJob | null => {
+const queuedJob = (value: unknown, origins: readonly string[], enabledChannels: readonly string[]): QueuedArchiveJob | null => {
   if (!isRecord(value) ||
       typeof value.id !== "string" || !/^[a-f0-9]{64}$/u.test(value.id) ||
-      typeof value.channelId !== "string" || !/^[CG][A-Z0-9]{8,}$/u.test(value.channelId) ||
+      typeof value.channelId !== "string" || !/^[CG][A-Z0-9]{8,}$/u.test(value.channelId) || !enabledChannels.includes(value.channelId) ||
       typeof value.messageTs !== "string" || !/^\d{9,}\.\d{1,6}$/u.test(value.messageTs) ||
       typeof value.threadTs !== "string" || !/^\d{9,}\.\d{1,6}$/u.test(value.threadTs) ||
       !parseApprovedShareUrl(value.shareUrl, origins)) return null;
@@ -40,7 +41,7 @@ const maximumAttempts = 3;
 
 export const consumeArchiveBatch = async (batch: ArchiveQueueBatch, options: ArchiveConsumerOptions): Promise<void> => {
   for (const message of batch.messages) {
-    const job = queuedJob(message.body, options.approvedOrigins);
+    const job = queuedJob(message.body, options.approvedOrigins, options.enabledChannelIds);
     if (!job) {
       message.ack();
       continue;
@@ -53,7 +54,13 @@ export const consumeArchiveBatch = async (batch: ArchiveQueueBatch, options: Arc
       continue;
     }
     if (!claimId) {
-      message.ack();
+      try {
+        const leaseUntil = await activeLeaseUntil(options.database, job.id);
+        if (leaseUntil === null) message.ack();
+        else message.retry({ delaySeconds: Math.max(retryDelaySeconds, Math.ceil((leaseUntil - options.now()) / 1_000) + 2) });
+      } catch {
+        message.retry({ delaySeconds: retryDelaySeconds });
+      }
       continue;
     }
     try {
@@ -79,8 +86,7 @@ export const consumeArchiveBatch = async (batch: ArchiveQueueBatch, options: Arc
           await finishDelivery(options.database, job.id, claimId, "failed", options.now(),
             message.attempts >= maximumAttempts && failure.kind !== "terminal" ? "retry_budget_exhausted" : failure.code);
           message.ack();
-        } else if (await scheduleRetry(options.database, job.id, claimId, failure.code,
-          options.now(), retryDelaySeconds * 1_000)) {
+        } else if (await scheduleRetry(options.database, job.id, claimId, failure.code, options.now())) {
           message.retry({ delaySeconds: retryDelaySeconds });
         } else {
           message.ack();

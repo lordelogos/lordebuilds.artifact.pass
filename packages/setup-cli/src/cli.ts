@@ -1,5 +1,7 @@
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { homedir } from "node:os";
+import { writeFile } from "node:fs/promises";
 
 import {
   defaultLocalConfigPath,
@@ -31,6 +33,21 @@ import { CloudflareClient } from "./cloudflare/client";
 import type { IdentityRule } from "./cloudflare/deployment";
 import { activatePublicArtifactPass } from "./cloudflare/public-activation";
 import { runDoctor } from "./doctor";
+import { runSlackSetup } from "./slack/setup";
+import { activateSlackArchive } from "./slack/activation";
+import {
+  addSlackChannel,
+  addSlackSource,
+  readSlackArchiveConfiguration,
+  removeSlackChannel,
+  removeSlackSource,
+  writeSlackArchiveConfiguration,
+  type SlackArchiveConfiguration,
+} from "./slack/configuration";
+import { provisionSlackResources } from "./slack/deployment";
+import { createSlackAppManifest, createSlackBootstrapManifest } from "./slack/manifest";
+import { readSlackArchiveStatus } from "./slack/status";
+import { uninstallSlackArchive } from "./slack/uninstall";
 import { openBrowser } from "./open-browser";
 import { migrateDefaultLocalState } from "./local-state-migration";
 import {
@@ -69,12 +86,16 @@ import {
 import {
   createNonInteractiveTerminalPrompt,
   createTerminalPrompt,
+  promptForChoice,
   TerminalPromptCancelledError,
   type TerminalPrompt,
 } from "./terminal-prompt";
 
 const deploymentRoot = resolve(dirname(fileURLToPath(import.meta.url)), "deployment");
 const defaultMarketplace = resolve(dirname(fileURLToPath(import.meta.url)), "marketplace");
+const slackDeploymentRoot = resolve(dirname(fileURLToPath(import.meta.url)), "slack-archive");
+const slackStatePath = resolve(process.env.XDG_CONFIG_HOME ?? resolve(homedir(), ".config"),
+  "artifactpass", "slack-archive", "configuration.json");
 
 const values = (args: readonly string[], flag: string): string[] => {
   const result: string[] = [];
@@ -134,6 +155,13 @@ Commands:
   profile use <name>
   disconnect [--profile <name>]
   doctor
+  slack setup
+  slack activate --team-id <id> --app-id <id>
+  slack status
+  slack sources add|remove <https-origin>
+  slack channels add|remove <channel-link-or-id>
+  slack pause|resume|update
+  slack rotate|uninstall
 
 Private setup uses ArtifactPass Cloudflare OAuth and stores its refresh grant in your OS credential store. CLOUDFLARE_API_TOKEN remains an environment-only fallback.`;
 
@@ -275,6 +303,150 @@ const main = async (): Promise<void> => {
     print(result);
     if (!result.node || !result.wrangler || !result.deploymentAssets) process.exitCode = 1;
     return;
+  }
+  if (command === "slack") {
+    const withSlackActivity = async <Result>(message: string, action: () => Promise<Result>): Promise<Result> => {
+      const prompt = await createTerminalPrompt();
+      const activity = prompt.interactive ? prompt.activity?.(message) : undefined;
+      if (!activity) prompt.write(`${message}...\n`);
+      try {
+        const result = await action();
+        activity?.succeed(message);
+        return result;
+      } catch (error) {
+        activity?.fail(`${message} failed`);
+        throw error;
+      }
+    };
+    const requireSlackConfiguration = async () => {
+      const current = await readSlackArchiveConfiguration(slackStatePath);
+      if (!current) throw new Error("Run `artifactpass slack setup` first");
+      return current;
+    };
+    const applySlackConfiguration = async (next: SlackArchiveConfiguration): Promise<SlackArchiveConfiguration> => {
+      await writeSlackArchiveConfiguration(slackStatePath, next);
+      if (!next.account_id || !next.worker_url) return next;
+      const accountId = next.account_id;
+      return withSlackActivity("Updating the customer-owned archive Worker", () => provisionSlackResources(next, {
+        accountId,
+        statePath: slackStatePath,
+        deploymentRoot: slackDeploymentRoot,
+        approved: true,
+      }));
+    };
+    if (args[0] === "setup" && args.length === 1) {
+      const prompt = await createTerminalPrompt();
+      print(await runSlackSetup({ statePath: slackStatePath, deploymentRoot: slackDeploymentRoot, prompt }));
+      return;
+    }
+    if (args[0] === "status" && args.length === 1) {
+      const current = await requireSlackConfiguration();
+      const status = await withSlackActivity("Checking Cloudflare archive delivery status", () => readSlackArchiveStatus(current));
+      if (status.verified && current.stage !== "ready") {
+        await writeSlackArchiveConfiguration(slackStatePath, {
+          ...current, stage: "ready", verified_at: new Date().toISOString(),
+        });
+      }
+      print([
+        `Stage: ${status.verified ? "ready (live archive verified)" : status.stage === "ready" ? "configured (no archive verified since the last change)" : status.stage}`,
+        `Paused: ${status.paused ? "yes" : "no"}`,
+        `Sources: ${status.sources.join(", ")}`,
+        `Enabled channels: ${status.enabled_channels.length ? status.enabled_channels.join(", ") : "none"}`,
+        `Worker: ${status.worker_url ?? "not deployed"}`,
+        status.counts === null ? "Deliveries: unavailable until D1 is provisioned" :
+          `Deliveries: ${status.counts.succeeded} succeeded, ${status.counts.failed} failed, ${status.counts.needs_review} need review, ${status.counts.transferring} transferring`,
+        ...status.failures.map(failure => `Failure: ${failure.id.slice(0, 12)} in ${failure.channel_id}: ${failure.last_error_code ?? "unknown"}`),
+      ].join("\n"));
+      return;
+    }
+    if ((args[0] === "sources" || args[0] === "channels") &&
+        (args[1] === "add" || args[1] === "remove") && args.length === 3) {
+      const current = await requireSlackConfiguration();
+      if (args[0] === "channels" && !current.app_id) throw new Error("Activate the Slack app before enabling a channel");
+      const next = args[0] === "sources"
+        ? args[1] === "add" ? addSlackSource(current, args[2] ?? "") : removeSlackSource(current, args[2] ?? "")
+        : args[1] === "add" ? addSlackChannel(current, args[2] ?? "") : removeSlackChannel(current, args[2] ?? "");
+      const applied = await applySlackConfiguration(next);
+      if (args[0] === "sources" && applied.worker_url) {
+        const manifest = applied.app_id
+          ? createSlackAppManifest(applied, applied.worker_url)
+          : createSlackBootstrapManifest(applied);
+        const path = resolve(dirname(slackStatePath), applied.app_id ? "app-manifest.json" : "bootstrap-manifest.json");
+        await writeFile(path, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
+        print(`Source list updated in the Worker. Apply the new Slack app manifest at ${path} in https://api.slack.com/apps before expecting the new source to work.`);
+      } else {
+        print(args[1] === "add"
+          ? `Channel enabled in the Worker. Invite ArtifactPass Archive to ${applied.enabled_channels.at(-1)} and post a live ArtifactPass link to verify. Run \`pnpm dlx artifactpass slack status\` afterward.`
+          : "Channel removed from the Worker. New links there will not be archived.");
+      }
+      return;
+    }
+    if ((args[0] === "pause" || args[0] === "resume" || args[0] === "update") && args.length === 1) {
+      const current = await requireSlackConfiguration();
+      const next = args[0] === "update" ? current : {
+        ...current, paused: args[0] === "pause", updated_at: new Date().toISOString(),
+      };
+      await applySlackConfiguration(next);
+      print(args[0] === "pause" ? "Archiving paused. Queued but unfinished links will not transfer." :
+        args[0] === "resume" ? "Archiving resumed for enabled channels." : "Archive Worker code updated without changing an ArtifactPass deployment.");
+      return;
+    }
+    if (args[0] === "rotate" && args.length === 1) {
+      const current = await requireSlackConfiguration();
+      if (!current.account_id || !current.worker_name) throw new Error("Deploy the archive Worker first");
+      print([
+        `Open https://dash.cloudflare.com/${current.account_id}/workers-and-pages and select ${current.worker_name}.`,
+        "Rotate SLACK_BOT_TOKEN or SLACK_SIGNING_SECRET in this Worker's Secrets settings. ArtifactPass does not store either value locally.",
+        "For a new Slack signing secret, update Cloudflare promptly so Slack events continue to verify. Post a fresh approved link in an enabled channel and run `pnpm dlx artifactpass slack status` to confirm delivery.",
+      ].join("\n"));
+      return;
+    }
+    if (args[0] === "uninstall" && args.length === 1) {
+      const current = await requireSlackConfiguration();
+      const prompt = await createTerminalPrompt();
+      prompt.write([
+        "Uninstall removes this add-on's customer-owned Worker, Queue, and D1 database.",
+        `Worker: ${current.worker_name ?? "none"}`,
+        `Queue: ${current.queue_name ?? "none"}`,
+        `D1: ${current.worker_name ? `${current.worker_name}-db` : "none"}`,
+        "D1 delivery history and queued jobs will be permanently deleted. ArtifactPass deployments and Slack files already uploaded are unaffected.",
+      ].join("\n") + "\n");
+      const approved = await promptForChoice(prompt, "Uninstall this Slack archive?", ["Keep it", "Delete these exact Cloudflare resources"]);
+      if (approved === 0) {
+        print("Slack archive was not changed.");
+        return;
+      }
+      await withSlackActivity("Removing the exact Cloudflare archive resources", () =>
+        uninstallSlackArchive(current, { statePath: slackStatePath, approved: true }));
+      print("Cloudflare archive resources removed. Also uninstall the Slack app from https://api.slack.com/apps; Slack files already posted follow your workspace retention policy.");
+      return;
+    }
+    if (args[0] === "activate") {
+      const activationArgs = args.slice(1);
+      const unexpected = activationArgs.filter((argument, index) =>
+        argument !== "--team-id" && argument !== "--app-id" &&
+        (index === 0 || (activationArgs[index - 1] !== "--team-id" && activationArgs[index - 1] !== "--app-id")));
+      if (unexpected.length > 0) throw new Error(`Unknown Slack activation option: ${unexpected[0]}`);
+      const current = await readSlackArchiveConfiguration(slackStatePath);
+      if (!current) throw new Error("Run `artifactpass slack setup` first");
+      const activated = await withSlackActivity("Checking Slack secrets and deploying the signed event receiver", () => activateSlackArchive(current, {
+        statePath: slackStatePath,
+        deploymentRoot: slackDeploymentRoot,
+        teamId: value(activationArgs, "--team-id"),
+        appId: value(activationArgs, "--app-id"),
+      }));
+      print([
+        `Signed-event manifest: ${resolve(slackStatePath, "../app-manifest.json")}`,
+        `Open https://api.slack.com/apps in your chosen browser profile. Edit app ${activated.app_id} and apply the signed-event manifest.`,
+        "Archiving remains off until you enable a channel and invite the bot to that channel.",
+      ].join("\n"));
+      return;
+    }
+    if ((args[0] === "--help" || args[0] === "help") && args.length === 1) {
+      print("ArtifactPass Slack archive\n\n  slack setup                  Create the customer-owned Worker, Queue, D1, and bootstrap manifest.\n  slack activate --team-id --app-id  Check secrets and write the signed-event manifest.\n  slack sources add|remove     Change approved ArtifactPass origins (five-domain limit).\n  slack channels add|remove    Opt channels in or out.\n  slack status                 Show verified deliveries and inspectable failures.\n  slack pause|resume|update    Control or update only this add-on.\n  slack rotate|uninstall       Rotate Cloudflare-held secrets or remove this add-on.\n\nArchiving remains inactive until an administrator enables a channel.");
+      return;
+    }
+    throw new Error("Use `artifactpass slack --help` to see Slack archive commands");
   }
   if (command === "deployment") {
     const [area, action, ...deploymentArgs] = args;

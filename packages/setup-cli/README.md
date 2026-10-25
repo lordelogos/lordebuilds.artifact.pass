@@ -75,6 +75,10 @@ ArtifactPass reviews the deployment, applies any required database migrations, a
 
 To test a release candidate instead of the latest stable version, use `artifactpass@rc` in either command.
 
+## Optional Slack archive
+
+Teams can run a separate, customer-owned bot that copies files from live ArtifactPass links into the Slack threads where those links were posted. It requires its own Cloudflare account resources and a Slack app; it does not change your ArtifactPass deployment. It is not yet released for production. See the [setup and recovery guide](../../docs/slack-archive.md) before enabling any channel.
+
 ## Requirements
 
 - Node.js 24 or newer

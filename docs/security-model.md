@@ -31,6 +31,8 @@ Authorization checks use `now < expires_at`; at the exact cutoff every represent
 
 ## Known limits
 
+The optional Slack archive has a separate [security and setup guide](slack-archive.md). Archiving makes a persistent Slack copy of a live share. Original-link expiry does not revoke that copy; Slack workspace retention controls it.
+
 - Anyone who obtains a live share URL can read and redistribute its artifact.
 - Revoking an agent token stops future uploads but cannot retract already shared bytes before their selected expiry.
 - Human and unknown PDFs are intentionally human-only in this release; there is no click-through agent trust override.

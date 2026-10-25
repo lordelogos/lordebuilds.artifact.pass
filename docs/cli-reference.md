@@ -26,6 +26,16 @@ Anything marked **Conditional** appears only when the CLI needs that information
 | `pnpm dlx artifactpass activate-public ...` | Operator command for public DNS activation | No questions |
 | `pnpm dlx artifactpass deploy --account-id ...` | Legacy non-interactive private deployment | No questions |
 | `pnpm dlx artifactpass help` | Print command usage | No questions |
+| `pnpm dlx artifactpass slack setup` | Provision the separate Slack archive add-on | Cloudflare account, approval to create Worker/Queue/D1; Slack dashboard handoff |
+| `pnpm dlx artifactpass slack activate --team-id ... --app-id ...` | Check Cloudflare secret names and write the signed-event manifest | No terminal questions; administrator applies manifest in Slack |
+| `pnpm dlx artifactpass slack status` | Read delivery counts and failures | No questions |
+| `pnpm dlx artifactpass slack sources add\|remove <origin>` | Change registered link origins | No questions; administrator applies updated manifest in Slack |
+| `pnpm dlx artifactpass slack channels add\|remove <link-or-id>` | Opt a channel in or out | No questions; invite bot in Slack when adding |
+| `pnpm dlx artifactpass slack pause\|resume\|update` | Control or update only the archive Worker | No questions |
+| `pnpm dlx artifactpass slack rotate` | Show where to rotate Slack secrets | No questions |
+| `pnpm dlx artifactpass slack uninstall` | Remove the add-on's Cloudflare resources | Explicit delete confirmation |
+
+The optional, customer-owned Slack archive has its own setup and operations commands. They do not run during normal installation or private deployment. See the [Slack archive guide](slack-archive.md) for their full flow and release status.
 
 ## Install ArtifactPass in a project
 

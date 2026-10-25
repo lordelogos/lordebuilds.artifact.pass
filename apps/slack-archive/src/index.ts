@@ -8,7 +8,10 @@ export interface ArchiveEnvironment {
   readonly SLACK_APP_ID: string;
   readonly APPROVED_ORIGINS: string;
   readonly ENABLED_CHANNEL_IDS: string;
-  readonly ARCHIVE_QUEUE: { send(job: QueuedArchiveJob): Promise<void> };
+  readonly ARCHIVE_QUEUE: {
+    send(job: QueuedArchiveJob): Promise<void>;
+    sendBatch(messages: readonly { body: QueuedArchiveJob }[]): Promise<void>;
+  };
   readonly ARCHIVE_DB: DeliveryDatabase;
   readonly SLACK_BOT_TOKEN: string;
 }
@@ -45,6 +48,7 @@ export default {
       database: env.ARCHIVE_DB,
       botToken: env.SLACK_BOT_TOKEN,
       approvedOrigins: parseStringList(env.APPROVED_ORIGINS),
+      enabledChannelIds: parseStringList(env.ENABLED_CHANNEL_IDS),
       now: Date.now,
     });
   },

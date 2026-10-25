@@ -20,7 +20,10 @@ export interface SlackEventOptions extends ArchiveSelectionConfig {
   readonly signingSecret: string;
   readonly teamId: string;
   readonly appId: string;
-  readonly queue: { send(job: QueuedArchiveJob): Promise<void> };
+  readonly queue: {
+    send(job: QueuedArchiveJob): Promise<void>;
+    sendBatch?(messages: readonly { body: QueuedArchiveJob }[]): Promise<void>;
+  };
   readonly now: () => number;
 }
 
@@ -60,6 +63,33 @@ export const selectArchiveJobs = (event: unknown, config: ArchiveSelectionConfig
 
 const text = new TextEncoder();
 const noStore = { "Cache-Control": "no-store" };
+const maximumBodyBytes = 65_536;
+
+const readBody = async (request: Request): Promise<string | null> => {
+  const announcedSize = Number(request.headers.get("Content-Length"));
+  if (announcedSize > maximumBodyBytes) return null;
+  if (!request.body) return "";
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let length = 0;
+  for (;;) {
+    const chunk = await reader.read();
+    if (chunk.done) break;
+    length += chunk.value.byteLength;
+    if (length > maximumBodyBytes) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(chunk.value);
+  }
+  const bytes = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(bytes);
+};
 
 const verifySignature = async (request: Request, rawBody: string, secret: string, now: number): Promise<boolean> => {
   const timestamp = request.headers.get("X-Slack-Request-Timestamp");
@@ -82,8 +112,8 @@ export const handleSlackEvent = async (request: Request, options: SlackEventOpti
   if (!request.headers.get("Content-Type")?.startsWith("application/json")) {
     return new Response("Expected JSON", { status: 415, headers: noStore });
   }
-  const rawBody = await request.text();
-  if (rawBody.length > 65_536) return new Response("Request too large", { status: 413, headers: noStore });
+  const rawBody = await readBody(request);
+  if (rawBody === null) return new Response("Request too large", { status: 413, headers: noStore });
   if (!await verifySignature(request, rawBody, options.signingSecret, options.now())) {
     return new Response("Unauthorized", { status: 401, headers: noStore });
   }
@@ -106,8 +136,13 @@ export const handleSlackEvent = async (request: Request, options: SlackEventOpti
   }
   const jobs = selectArchiveJobs(payload.event, options);
   try {
-    for (const job of jobs) {
-      await options.queue.send({ ...job, id: await archiveId(options.teamId, job) });
+    const queued = await Promise.all(jobs.map(async job => ({ ...job, id: await archiveId(options.teamId, job) })));
+    if (options.queue.sendBatch) {
+      for (let index = 0; index < queued.length; index += 100) {
+        await options.queue.sendBatch(queued.slice(index, index + 100).map(body => ({ body })));
+      }
+    } else {
+      for (const job of queued) await options.queue.send(job);
     }
   } catch {
     return new Response("Archive queue unavailable", { status: 503, headers: noStore });

@@ -56,6 +56,21 @@ await writeFile(
   `${JSON.stringify(workerConfiguration, null, 2)}\n`,
 );
 
+const slackArchiveRoot = resolve(outputRoot, "slack-archive");
+await mkdir(slackArchiveRoot, { recursive: true });
+await build({
+  entryPoints: [resolve(repositoryRoot, "apps/slack-archive/src/index.ts")],
+  outfile: resolve(slackArchiveRoot, "index.js"),
+  bundle: true,
+  platform: "browser",
+  format: "esm",
+  target: "es2022",
+});
+await cp(
+  resolve(repositoryRoot, "apps/slack-archive/migrations/0001-deliveries.sql"),
+  resolve(slackArchiveRoot, "0001-deliveries.sql"),
+);
+
 const marketplaceRoot = resolve(outputRoot, "marketplace");
 await mkdir(resolve(marketplaceRoot, ".agents/plugins"), { recursive: true });
 await mkdir(resolve(marketplaceRoot, ".claude-plugin"), { recursive: true });

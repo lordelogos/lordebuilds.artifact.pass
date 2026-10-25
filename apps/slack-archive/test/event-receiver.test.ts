@@ -66,6 +66,33 @@ describe("signed Slack event intake", () => {
     expect(jobs[0]?.id).toMatch(/^[a-f0-9]{64}$/u);
   });
 
+  test("uses one Queue batch for multiple links in the same message", async () => {
+    const { options } = setup();
+    const batches: { body: QueuedArchiveJob }[][] = [];
+    const secondUrl = `https://artifactpass.com/a/${"B".repeat(43)}`;
+    const response = await handleSlackEvent(signedRequest({
+      ...event,
+      event: { ...event.event, links: [{ url: shareUrl }, { url: secondUrl }] },
+    }), {
+      ...options,
+      queue: {
+        send: async () => { throw new Error("Should use sendBatch"); },
+        sendBatch: async messages => { batches.push([...messages]); },
+      },
+    });
+    expect(response.status).toBe(200);
+    expect(batches).toHaveLength(1);
+    expect(batches[0]?.map(item => item.body.shareUrl)).toEqual([shareUrl, secondUrl]);
+  });
+
+  test("rejects an oversized Slack request before its signature is evaluated", async () => {
+    const { options } = setup();
+    const response = await handleSlackEvent(signedRequest({
+      type: "url_verification", challenge: "x".repeat(70_000),
+    }), options);
+    expect(response.status).toBe(413);
+  });
+
   test("answers a signed Slack URL challenge", async () => {
     const { jobs, options } = setup();
     const response = await handleSlackEvent(signedRequest({ type: "url_verification", challenge: "challenge-value" }), options);

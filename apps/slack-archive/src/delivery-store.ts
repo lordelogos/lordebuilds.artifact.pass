@@ -4,11 +4,18 @@ export interface DeliveryDatabase {
   prepare(sql: string): {
     bind(...values: (string | number | null)[]): {
       run(): Promise<{ meta: { changes: number } }>;
+      first(): Promise<Record<string, unknown> | null>;
     };
   };
 }
 
 const leaseMilliseconds = 10 * 60 * 1_000;
+
+export const activeLeaseUntil = async (database: DeliveryDatabase, id: string): Promise<number | null> => {
+  const row = await database.prepare("SELECT status, lease_until FROM deliveries WHERE id = ?").bind(id).first();
+  return row?.status === "transferring" && typeof row.lease_until === "number" && Number.isSafeInteger(row.lease_until)
+    ? row.lease_until : null;
+};
 
 export const claimDelivery = async (database: DeliveryDatabase, job: QueuedArchiveJob, now: number): Promise<string | null> => {
   const claimId = crypto.randomUUID();
@@ -65,12 +72,11 @@ export const scheduleRetry = async (
   claimId: string,
   errorCode: string,
   now: number,
-  delayMilliseconds: number,
 ): Promise<boolean> => {
   const result = await database.prepare(`
     UPDATE deliveries
     SET lease_until = ?, last_error_code = ?, updated_at = ?
     WHERE id = ? AND claim_id = ? AND status = 'transferring'
-  `).bind(now + delayMilliseconds, errorCode, now, id, claimId).run();
+  `).bind(now, errorCode, now, id, claimId).run();
   return result.meta.changes === 1;
 };
