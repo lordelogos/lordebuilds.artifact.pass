@@ -23,6 +23,7 @@ import { sha256, sha256Base64Url } from "../storage/crypto";
 import { ArtifactPassIcon, GitHubIcon, GoogleIcon } from "../../web/components/brand-icons";
 import { popupCancelledScript } from "../../web/popup-cancel";
 import { popupCompleteScript } from "../../web/popup-complete";
+import { popupProviderStartScript } from "../../web/popup-provider-start";
 
 type OAuthProvider = "google" | "github";
 type AuthPageTheme = "dark" | "light";
@@ -123,7 +124,7 @@ const signInPage = (returnTo: string, theme: AuthPageTheme, cancelled = false): 
 <title>Sign in to ArtifactPass</title>
 <link rel="icon" href="/artifactpass-logo.svg" type="image/svg+xml">
 <style>${authPageStyles}</style></head>
-<body><main class="auth-shell"><header class="auth-brand">${artifactPassIconMarkup}ArtifactPass</header><section class="auth-card"><p class="auth-eyebrow">Secure sign-in</p><h1>Continue to ArtifactPass.</h1><p class="auth-copy">${introduction}</p><div class="actions"><a class="provider" href="/auth/login/google?return_to=${encodedReturnTo}"><span class="provider-icon" data-provider="google">${providerIconMarkup.google}</span><span>Continue with Google</span><span class="provider-arrow" aria-hidden="true">→</span></a><a class="provider" href="/auth/login/github?return_to=${encodedReturnTo}"><span class="provider-icon" data-provider="github">${providerIconMarkup.github}</span><span>Continue with GitHub</span><span class="provider-arrow" aria-hidden="true">→</span></a></div><p class="privacy-note">ArtifactPass never receives your Google or GitHub password.</p></section><footer class="auth-footer">one file · one expiring URL</footer></main></body></html>`;
+<body><main class="auth-shell"><header class="auth-brand">${artifactPassIconMarkup}ArtifactPass</header><section class="auth-card"><p class="auth-eyebrow">Secure sign-in</p><h1>Continue to ArtifactPass.</h1><p class="auth-copy">${introduction}</p><div class="actions"><a class="provider" href="/auth/login/google?return_to=${encodedReturnTo}"><span class="provider-icon" data-provider="google">${providerIconMarkup.google}</span><span>Continue with Google</span><span class="provider-arrow" aria-hidden="true">→</span></a><a class="provider" href="/auth/login/github?return_to=${encodedReturnTo}"><span class="provider-icon" data-provider="github">${providerIconMarkup.github}</span><span>Continue with GitHub</span><span class="provider-arrow" aria-hidden="true">→</span></a></div><p class="privacy-note">ArtifactPass never receives your Google or GitHub password.</p></section><footer class="auth-footer">one file · one expiring URL</footer></main>${isPopup ? '<script src="/auth/popup-provider-start.js"></script>' : ""}</body></html>`;
 };
 
 const returnActionStyles = ".return-action{display:block;width:100%;min-height:52px;margin-top:24px;padding:18px;border:1px solid var(--line-strong);border-radius:12px;color:var(--ink);background:var(--bone);font:600 14px/1 var(--sans);text-align:center;text-decoration:none;cursor:pointer}.return-action[hidden]{display:none}.return-action:hover{opacity:.9}.return-action:focus-visible{outline:2px solid var(--bone);outline-offset:3px}";
@@ -283,7 +284,7 @@ export const createAuthRouter = (options: AuthRouterOptions = {}) => {
     const theme = authPageTheme(context.req.query("theme"));
     return context.html(signInPage(returnTo, theme, context.req.query("cancelled") === "1"), 200, {
       ...RESPONSE_HEADERS,
-      "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; frame-ancestors 'none'; base-uri 'none'",
+      "Content-Security-Policy": `default-src 'none'; style-src 'unsafe-inline'; ${returnTo.startsWith("/auth/popup/complete") ? "script-src 'self'; " : ""}img-src 'self'; frame-ancestors 'none'; base-uri 'none'`,
     });
   });
 
@@ -295,6 +296,12 @@ export const createAuthRouter = (options: AuthRouterOptions = {}) => {
   }));
 
   router.get("/popup-complete.js", (context) => context.body(popupCompleteScript, 200, {
+    ...RESPONSE_HEADERS,
+    "Content-Type": "application/javascript; charset=UTF-8",
+    "Content-Security-Policy": "default-src 'none'",
+  }));
+
+  router.get("/popup-provider-start.js", (context) => context.body(popupProviderStartScript, 200, {
     ...RESPONSE_HEADERS,
     "Content-Type": "application/javascript; charset=UTF-8",
     "Content-Security-Policy": "default-src 'none'",
