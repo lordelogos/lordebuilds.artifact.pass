@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "policy_id": "artifactpass-0.1.12-rc.3-slack-runtime-release",
-  "candidate_sha256": "748dd97dbc839a1780c57c6f11bdaf2458afaddea1a722534b1e5c6897a99d01",
+  "policy_id": "artifactpass-0.1.12-rc.4-slack-wizard-release",
+  "candidate_sha256": "c6ed65300b6b7c522edd33b3614a2ae5ac45edaec6395e075bbead1d1b7aa140",
   "scorer_version": "1.0.0",
   "created_at": "2026-10-21T18:27:56.000Z",
   "cohorts": [
