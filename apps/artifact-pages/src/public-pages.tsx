@@ -31,6 +31,7 @@ export type PublicPage =
   | "agent-setup-guide"
   | "private-deployment-guide"
   | "private-teammate-guide"
+  | "slack-archive-guide"
   | PracticalGuidePageName
   | "security"
   | "privacy"
@@ -54,6 +55,7 @@ const pagePath = (page: PublicPage): "/" | `/${string}` => {
   if (page === "agent-setup-guide") return "/guides/agent-setup";
   if (page === "private-deployment-guide") return "/guides/private-deployment";
   if (page === "private-teammate-guide") return "/guides/private-teammate";
+  if (page === "slack-archive-guide") return "/guides/slack-archive";
   if (isPracticalGuidePage(page)) return practicalGuideMetadata(page).path;
   if (page === "security") return "/security";
   if (page === "privacy") return "/privacy";
@@ -82,6 +84,9 @@ const pageDescription = (page: PublicPage): string => {
   }
   if (page === "private-teammate-guide") {
     return "Join a private ArtifactPass deployment from one project, complete publisher access, and verify browser and agent sharing.";
+  }
+  if (page === "slack-archive-guide") {
+    return "Set up the optional customer-owned Slack archive for public or private ArtifactPass links, add it to channels, and verify a real file delivery.";
   }
   if (isPracticalGuidePage(page)) return practicalGuideMetadata(page).description;
   if (page === "security") {
@@ -134,7 +139,7 @@ const homepageStructuredData = JSON.stringify({
   ],
 }).replaceAll("<", "\\u003c");
 
-const guideSteps = (page: "agent-setup-guide" | "private-deployment-guide" | "private-teammate-guide") => page === "agent-setup-guide"
+const guideSteps = (page: "agent-setup-guide" | "private-deployment-guide" | "private-teammate-guide" | "slack-archive-guide") => page === "agent-setup-guide"
   ? [
       "Open a terminal in the project",
       "Run the ArtifactPass setup command",
@@ -151,13 +156,20 @@ const guideSteps = (page: "agent-setup-guide" | "private-deployment-guide" | "pr
       "Choose the link lifetimes this deployment offers",
       "Review, deploy, and manage artifacts.example.com",
     ]
-  : [
+  : page === "private-teammate-guide" ? [
       "Confirm publisher access with the administrator",
       "Open the teammate project",
       "Run the private setup command",
       "Restart the agent session",
       "Connect through Cloudflare Access",
       "Verify browser and agent publishing",
+    ] : [
+      "Choose public and optional private link sources",
+      "Connect the Cloudflare account that will run the archive",
+      "Create and install the Slack app from the wizard's manifest",
+      "Connect the Slack app to its Worker",
+      "Select channels and add the app to each one",
+      "Post fresh links and verify the copied files",
     ];
 
 const secondaryPageStructuredData = (page: Exclude<PublicPage, "home">): string => JSON.stringify({
@@ -179,7 +191,7 @@ const secondaryPageStructuredData = (page: Exclude<PublicPage, "home">): string 
       },
       publisher: { "@id": `${PUBLIC_SITE_ORIGIN}/#website` },
       isPartOf: { "@id": `${PUBLIC_SITE_ORIGIN}/#website` },
-    } : page === "agent-setup-guide" || page === "private-deployment-guide" || page === "private-teammate-guide" ? {
+    } : page === "agent-setup-guide" || page === "private-deployment-guide" || page === "private-teammate-guide" || page === "slack-archive-guide" ? {
       "@type": "HowTo",
       "@id": `${publicSiteUrl(pagePath(page))}#webpage`,
       url: publicSiteUrl(pagePath(page)),
@@ -370,6 +382,7 @@ const GuidesPage = () => (
           <p>Connect one project to a team deployment and complete Cloudflare Access sign-in.</p>
         </a>
       </div>
+      <p>Use Slack heavily? The optional <a href="/guides/slack-archive">Slack archive setup guide</a> shows how to copy live ArtifactPass files into selected Slack threads.</p>
     </section>
 
     <section className="guide-section" aria-labelledby="practical-guides-heading">
@@ -397,7 +410,7 @@ const GuidesPage = () => (
 interface GuideImageProps {
   readonly alt: string;
   readonly caption: string;
-  readonly focus?: "access-application" | "connect-domain";
+  readonly focus?: "access-application" | "connect-domain" | "wizard";
   readonly height?: number;
   readonly src: string;
   readonly width?: number;
@@ -845,6 +858,97 @@ const PrivateTeammateGuidePage = () => (
   </article>
 );
 
+const SlackArchiveGuidePage = () => (
+  <article className="document guide-document">
+    <GuideTrail current="Slack archive" position="Optional team integration" />
+    <p className="eyebrow">Setup guide · RC trial</p>
+    <h1>Archive ArtifactPass links in Slack</h1>
+    <p className="guide-deck">Install a customer-owned bot that copies a file into the thread where your team posts a live ArtifactPass link. The Slack copy follows your workspace retention policy after the original link expires.</p>
+    <div className="guide-meta">
+      <span>Cloudflare account required</span>
+      <span>Slack app installation permission</span>
+      <span>Optional add-on</span>
+    </div>
+
+    <nav className="guide-contents" aria-label="On this page">
+      <strong>On this page</strong>
+      <ol>
+        <li><a href="#step-1">Choose link sources</a></li>
+        <li><a href="#step-2">Connect Cloudflare</a></li>
+        <li><a href="#step-3">Create the Slack app</a></li>
+        <li><a href="#step-4">Connect the app</a></li>
+        <li><a href="#step-5">Enable channels</a></li>
+        <li><a href="#step-6">Verify real deliveries</a></li>
+      </ol>
+    </nav>
+
+    <div className="prose guide-prose">
+      <GuideNote title="What this does not set up">
+        <p>The archive is separate from ArtifactPass publishing. It creates one Worker, Queue, and D1 database in your Cloudflare account, plus one Slack app in your workspace. It does not create or update a <a href="/guides/private-deployment">private ArtifactPass deployment</a>, transfer a domain, or add an R2 bucket.</p>
+      </GuideNote>
+      <p>You need a Cloudflare account with a <code>workers.dev</code> subdomain, permission to install a Slack app, and permission to add it to each channel you select. Even a team that uses only public ArtifactPass links needs its own Cloudflare account for this customer-owned bot. Cloudflare resources may count against that account’s plan. If you want to archive links from a private deployment, <a href="/guides/private-deployment">set up that deployment first</a>.</p>
+
+      <section className="guide-step" id="step-1">
+        <span className="guide-step-number">01</span>
+        <h2>Launch the wizard and choose link sources</h2>
+        <p>For this release-candidate trial, run the exact version below. The CLI prints a local link. Open it in the browser profile you want; the wizard stays on your computer and saves progress as you go. Node.js 22 or newer must be installed for its Cloudflare commands.</p>
+        <GuideCommand>pnpm dlx artifactpass@0.1.12-rc.4 slack setup</GuideCommand>
+        <p>Public <code>https://artifactpass.com</code> links are included. If you already run a private deployment, select <strong>Also add a private deployment</strong> and enter its HTTPS origin, such as <code>https://artifacts.example.com</code>. Enter the origin, not a particular <code>/a/…</code> link. One Slack app can register up to five source domains total, including the public source.</p>
+        <GuideImage src="/guides/slack-archive/choose-sources.png" alt="ArtifactPass Slack wizard choosing the public source and an example private origin" caption="Choose every source before creating the Slack app. The image uses example data." width={1120} height={1176} focus="wizard" />
+      </section>
+
+      <section className="guide-step" id="step-2">
+        <span className="guide-step-number">02</span>
+        <h2>Connect the account that will own the archive</h2>
+        <p>The wizard checks for connected Cloudflare accounts. If yours is absent, choose <strong>Connect Cloudflare</strong> and open the sign-in link shown in the wizard in the correct browser profile. Select the intended account, then review and approve one Worker, one Queue, and one D1 database. No private ArtifactPass deployment is created.</p>
+        <GuideImage src="/guides/slack-archive/review-resources.png" alt="ArtifactPass wizard listing the Worker, Queue, and D1 database it will create" caption="Review the exact three resources before approving the Cloudflare change." width={1120} height={1328} focus="wizard" />
+      </section>
+
+      <section className="guide-step" id="step-3">
+        <span className="guide-step-number">03</span>
+        <h2>Create and install one Slack app</h2>
+        <p>Choose <strong>Copy manifest</strong> in the wizard. In Slack’s app dashboard, create an app <strong>From a manifest</strong> in the workspace you want, paste the JSON, and create it. The initial manifest already contains your source domains and the Worker event address. You should not need a second manifest install during first-time setup.</p>
+        <p>On the new app’s <strong>Event Subscriptions</strong> page, the request URL must say <strong>Verified</strong>. If not, click <strong>Retry</strong>. Once verified, click <strong>Save Changes</strong>, then install the app into the workspace. The requested scopes are <code>links:read</code>, <code>links:write</code>, and <code>files:write</code>; no message-history scope is needed.</p>
+        <GuideImage src="/guides/slack-archive/create-slack-app.png" alt="ArtifactPass wizard showing the ordered steps to create and install its Slack app" caption="Copy, create, verify and save, then install. Use the same new app throughout setup." width={1120} height={1748} focus="wizard" />
+      </section>
+
+      <section className="guide-step" id="step-4">
+        <span className="guide-step-number">04</span>
+        <h2>Connect that Slack app to the Worker</h2>
+        <p>In the Slack app you just created, copy its <strong>App ID</strong> from the app list or Basic Information page, its <strong>Bot User OAuth Token</strong> from OAuth &amp; Permissions, and its <strong>Signing Secret</strong> from Basic Information → App Credentials. Enter them in the local wizard, not in terminal arguments or chat.</p>
+        <p>The wizard checks the bot token with Slack and puts the token and signing secret into encrypted Cloudflare Worker secrets. The local setup file stores non-secret resource and app IDs, not these credentials.</p>
+        <GuideImage src="/guides/slack-archive/connect-slack-app.png" alt="ArtifactPass wizard asking for the Slack App ID, bot token, and signing secret" caption="These fields belong to the same newly installed Slack app. The image contains no real credentials." width={1120} height={1562} focus="wizard" />
+      </section>
+
+      <section className="guide-step" id="step-5">
+        <span className="guide-step-number">05</span>
+        <h2>Choose channels, then add the app to each one</h2>
+        <p>Paste all channel links into the wizard and save them together. A private channel link might look like <code>https://example.slack.com/archives/G1234567890</code>. Installing an app in the workspace does <strong>not</strong> add it to any channel. Open each selected channel in Slack, choose <strong>Channel details → Agents and apps → Add agent or app</strong>, and add the same ArtifactPass Archive app.</p>
+        <p>The wizard asks you to confirm that the app appears in each channel. That checkbox records your observation; it is not an automatic membership check. The next step proves delivery.</p>
+        <GuideImage src="/guides/slack-archive/add-to-channels.png" alt="ArtifactPass wizard showing a selected Slack channel and its add-app confirmation" caption="For every selected channel, add the app in Slack and confirm it appears there." width={1120} height={1524} focus="wizard" />
+      </section>
+
+      <section className="guide-step" id="step-6">
+        <span className="guide-step-number">06</span>
+        <h2>Post fresh links and verify the copied files</h2>
+        <p>Create a small test file at <a href="/upload">artifactpass.com/upload</a>. If you added a private source, create another at <code>https://artifacts.example.com/upload</code>, replacing the example hostname with yours. Post a fresh live link in every enabled channel and at least one from each source. One post may count for both its channel and source. The bot should put a file in the original message’s thread.</p>
+        <p>Open and download each Slack file to confirm its contents. Then choose <strong>Check real deliveries</strong> in the wizard and confirm the inspection. It shows <strong>Ready</strong> only after each chosen channel and source has a successful delivery since the latest setup change.</p>
+        <GuideImage src="/guides/slack-archive/verify-delivery.png" alt="ArtifactPass wizard waiting for fresh deliveries across example channels and link sources" caption="The wizard tracks channel and source coverage separately. This example has not yet received a file." width={1120} height={1998} focus="wizard" />
+        <GuideNote title="A posted link produced no file?">
+          <p>Check the Slack app’s Event Subscriptions page says <strong>Verified</strong> and that you clicked <strong>Save Changes</strong>. Confirm the same app joined that channel, the source domain was included in the manifest, and the link is still live. Post a new link after any correction; Slack does not replay the old message. Run <code>pnpm dlx artifactpass@0.1.12-rc.4 slack status</code> to see recorded deliveries and next actions. An expired or unavailable link gets a warning instead of an archived file.</p>
+        </GuideNote>
+      </section>
+
+      <section className="guide-finish">
+        <p className="eyebrow">After setup</p>
+        <h2>The archive is optional and separately managed.</h2>
+        <p>Use <code>slack status</code> to inspect deliveries, <code>slack pause</code> to stop transfers, and <code>slack update</code> to update only the archive Worker. A private ArtifactPass deployment has its own update flow. Files already copied into Slack remain subject to your workspace’s retention policy, even if the original link expires or you later uninstall the bot.</p>
+      </section>
+    </div>
+    <GuidePager previous={{ href: "/guides/private-deployment", label: "Private deployment", title: "Deploy ArtifactPass on Cloudflare" }} next={{ href: "/guides", label: "All guides", title: "Browse setup guides" }} />
+  </article>
+);
+
 const SecurityPage = () => (
   <section className="document">
     <p className="eyebrow">Security model</p>
@@ -950,6 +1054,7 @@ const pageContent = (page: PublicPage, url: URL, configuration: PublicPageConfig
   if (page === "agent-setup-guide") return <AgentSetupGuidePage />;
   if (page === "private-deployment-guide") return <PrivateDeploymentGuidePage />;
   if (page === "private-teammate-guide") return <PrivateTeammateGuidePage />;
+  if (page === "slack-archive-guide") return <SlackArchiveGuidePage />;
   if (isPracticalGuidePage(page)) return <PracticalGuidePage page={page} />;
   if (page === "security") return <SecurityPage />;
   if (page === "privacy") return <PrivacyPage staging={staging} />;
@@ -971,6 +1076,7 @@ const pageTitle = (page: PublicPage): string => {
   if (page === "agent-setup-guide") return "Set Up ArtifactPass for an AI Agent · Guide";
   if (page === "private-deployment-guide") return "Private ArtifactPass Deployment Guide · Cloudflare";
   if (page === "private-teammate-guide") return "Join a Private ArtifactPass Deployment · Teammate Guide";
+  if (page === "slack-archive-guide") return "Archive ArtifactPass Links in Slack · Setup Guide";
   if (isPracticalGuidePage(page)) return practicalGuideMetadata(page).title;
   if (page === "security") return "ArtifactPass Security · Temporary Links and Safe Previews";
   if (page === "privacy") return "Privacy · ArtifactPass";
@@ -1005,6 +1111,7 @@ ArtifactPass creates temporary links for Markdown, HTML, and PDF files so people
 - [Agent setup guide](${PUBLIC_SITE_ORIGIN}/guides/agent-setup): Install ArtifactPass once, approve exact project folders, connect an agent, and publish a first link.
 - [Private deployment administrator guide](${PUBLIC_SITE_ORIGIN}/guides/private-deployment): Deploy on Cloudflare, connect a domain, and configure publisher access and lifetimes.
 - [Private deployment teammate guide](${PUBLIC_SITE_ORIGIN}/guides/private-teammate): Connect one project to a private deployment and verify publishing.
+- [Slack archive setup guide](${PUBLIC_SITE_ORIGIN}/guides/slack-archive): Copy live public or private ArtifactPass files into selected Slack threads with a customer-owned bot.
 ${practicalGuides().map((guide) => `- [${guide.headline}](${PUBLIC_SITE_ORIGIN}${guide.path}): ${guide.description}`).join("\n")}
 - [Security](${PUBLIC_SITE_ORIGIN}/security): Temporary links, storage, authentication, and isolated HTML previews.
 - [ArtifactPass repository](${repositoryUrl}): Install the CLI, MCP server, or agent skills and inspect the source.
@@ -1136,7 +1243,7 @@ const renderPage = (
         </div>
         <script nonce={nonce} dangerouslySetInnerHTML={{ __html: themeInteractionScript }} />
         {page === "home" && <script nonce={nonce} dangerouslySetInnerHTML={{ __html: homepageInteractionScript }} />}
-        {(page === "agent-setup-guide" || page === "private-deployment-guide" || page === "private-teammate-guide" || isPracticalGuidePage(page)) && (
+        {(page === "agent-setup-guide" || page === "private-deployment-guide" || page === "private-teammate-guide" || page === "slack-archive-guide" || isPracticalGuidePage(page)) && (
           <script nonce={nonce} dangerouslySetInnerHTML={{ __html: guideInteractionScript }} />
         )}
         {indexable && <script nonce={nonce} dangerouslySetInnerHTML={{ __html: seoAnalyticsScript }} />}

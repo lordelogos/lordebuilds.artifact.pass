@@ -104,6 +104,7 @@ export const staticPublicAssets = (outputDirectory: string): Plugin => ({
       writeFile(resolve(outputDirectory, "guides", "agent-setup.html"), renderStaticPublicPage("agent-setup-guide")),
       writeFile(resolve(outputDirectory, "guides", "private-deployment.html"), renderStaticPublicPage("private-deployment-guide")),
       writeFile(resolve(outputDirectory, "guides", "private-teammate.html"), renderStaticPublicPage("private-teammate-guide")),
+      writeFile(resolve(outputDirectory, "guides", "slack-archive.html"), renderStaticPublicPage("slack-archive-guide")),
       ...practicalGuidePageNames.map((page) => writeFile(
         resolve(outputDirectory, `${practicalGuideMetadata(page).path.slice(1)}.html`),
         renderStaticPublicPage(page),
