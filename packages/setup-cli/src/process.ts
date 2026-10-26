@@ -1,10 +1,28 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { dirname, resolve } from "node:path";
+import { delimiter, dirname, resolve } from "node:path";
 
 const localRequire = createRequire(
   typeof __filename === "string" ? __filename : import.meta.url,
 );
+
+const wranglerNode = (): string => {
+  if (Number.parseInt(process.versions.node, 10) >= 22) return process.execPath;
+  const executableName = process.platform === "win32" ? "node.exe" : "node";
+  const pathKey = Object.keys(process.env).find((key) => key.toLowerCase() === "path") ?? "PATH";
+  for (const directory of (process.env[pathKey] ?? "").split(delimiter)) {
+    if (!directory) continue;
+    const executable = resolve(directory, executableName);
+    const result = spawnSync(executable, ["--version"], {
+      encoding: "utf8",
+      timeout: 1_500,
+      windowsHide: true,
+    });
+    const major = Number.parseInt(/^v(\d+)\./u.exec(result.stdout?.trim() ?? "")?.[1] ?? "", 10);
+    if (result.status === 0 && major >= 22) return executable;
+  }
+  throw new Error("Cloudflare setup requires Node.js 22 or newer to run Wrangler. Install it, then retry this step.");
+};
 
 const resolvedCommand = (command: string, args: readonly string[]): {
   readonly command: string;
@@ -13,7 +31,7 @@ const resolvedCommand = (command: string, args: readonly string[]): {
   if (command !== "wrangler") return { command, args };
   const wranglerMain = localRequire.resolve("wrangler");
   const wranglerBin = resolve(dirname(wranglerMain), "../bin/wrangler.js");
-  return { command: process.execPath, args: [wranglerBin, ...args] };
+  return { command: wranglerNode(), args: [wranglerBin, ...args] };
 };
 
 export interface RunOptions {

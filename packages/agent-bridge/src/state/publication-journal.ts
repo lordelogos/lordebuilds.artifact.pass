@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { chmod, mkdir, open, readFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
 
 export interface PublicationAttempt {
   readonly publisherId: string;
@@ -252,6 +252,7 @@ export class FilePublicationJournal implements PublicationJournal {
   }
 
   private async initializeDatabase(): Promise<DatabaseSync> {
+    const { DatabaseSync } = await import("node:sqlite");
     const databasePath = `${this.path}.sqlite3`;
     await mkdir(dirname(databasePath), { recursive: true, mode: 0o700 });
     const legacy = await this.readLegacyState();
