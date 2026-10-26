@@ -14,7 +14,7 @@ Public ArtifactPass is included by default. Add a private deployment as an addit
 
 ## Pilot setup
 
-Use Node.js 24 or newer and pnpm. These commands describe the build in this repository until the package containing the Slack commands is released. The guided wizard runs on `127.0.0.1` on your computer; ArtifactPass does not host it or receive your Slack credentials. Use `pnpm dlx artifactpass slack setup --terminal` if you prefer the terminal-only setup.
+Use pnpm and have Node.js 22 or newer installed for the Cloudflare steps, which run Wrangler. ArtifactPass can open the Slack wizard even if pnpm itself starts under Node 20; it selects the newer installed Node for Wrangler. The guided wizard runs on `127.0.0.1` on your computer; ArtifactPass does not host it or receive your Slack credentials. Use `pnpm dlx artifactpass slack setup --terminal` if you prefer the terminal-only setup.
 
 1. Run `pnpm dlx artifactpass slack setup`. The CLI prints a local wizard link and does **not** choose a browser profile for you. Open the link in the profile you want. On the Cloudflare step, choose **Check connected accounts**. If no account is connected, choose **Connect Cloudflare**, open the authorization link shown in the wizard in the right browser profile, and complete approval. The wizard and terminal commands share the same non-secret local setup file. Choose **Save and exit**, or stop the CLI, then run the command again to resume.
 2. Choose link sources before creating the Slack app. Public `https://artifactpass.com` links are included; add private deployment origins such as `https://artifacts.example.com` here if needed. Choose your Cloudflare account and approve creating one Worker, one Queue, and one D1 database.

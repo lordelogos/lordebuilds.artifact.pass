@@ -28,6 +28,12 @@ jobs:
           version: 10.11.0
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
+          node-version: 20
+      - name: Remember older Node executable
+        id: node20
+        run: echo "path=$(command -v node)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
           node-version: 24
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
@@ -36,6 +42,9 @@ jobs:
         run: node scripts/scan-secrets.mjs --history --fetch-remote origin
       - run: pnpm release:check
       - run: pnpm test:packed-install
+      - name: Check Slack setup under Node 20
+        run: |
+          "${{ steps.node20.outputs.path }}" scripts/test-cli-runtime.mjs
       - name: Build immutable registry tarball
         run: |
           mkdir -p "$RUNNER_TEMP/artifactpass-release"

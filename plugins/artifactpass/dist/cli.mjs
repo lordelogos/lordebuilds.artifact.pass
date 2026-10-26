@@ -99000,7 +99000,6 @@ var findSensitivePath = (path) => {
 import { randomBytes as randomBytes3, randomUUID as randomUUID2 } from "node:crypto";
 import { chmod, mkdir as mkdir2, open as open3, readFile as readFile3 } from "node:fs/promises";
 import { dirname as dirname3 } from "node:path";
-import { DatabaseSync } from "node:sqlite";
 var commitmentPattern = /^[a-f0-9]{64}$/u;
 var publisherPattern = /^[A-Za-z0-9_-]{16,128}$/u;
 var attemptPattern = /^[0-9a-f]{8}-[0-9a-f-]{27,45}$/u;
@@ -99159,6 +99158,7 @@ var FilePublicationJournal = class _FilePublicationJournal {
     }
   }
   async initializeDatabase() {
+    const { DatabaseSync } = await import("node:sqlite");
     const databasePath = `${this.path}.sqlite3`;
     await mkdir2(dirname3(databasePath), { recursive: true, mode: 448 });
     const legacy = await this.readLegacyState();
