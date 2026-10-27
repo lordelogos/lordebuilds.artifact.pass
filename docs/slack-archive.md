@@ -2,7 +2,7 @@
 
 The optional ArtifactPass Archive app copies a file from a live ArtifactPass link into the Slack thread where someone posted it. The Slack copy remains under your workspace's file-retention policy after the original link expires. This is a separate, customer-owned add-on: it does not change your ArtifactPass deployment or install an agent.
 
-This integration is being built and is **not yet released or qualified for production**. The steps below describe the current CLI for a pilot. Do not treat one live pilot as proof that a Cloudflare Free account will sustain your traffic. The [Cloudflare capacity notes](slack-archive-free-tier.md) separate measured automatic-bot behavior from the quota-derived planning budget.
+Do not treat one live pilot as proof that a Cloudflare Free account will sustain your traffic. The [Cloudflare capacity notes](slack-archive-free-tier.md) separate measured automatic-bot behavior from the quota-derived planning budget.
 
 ## Decide where it runs
 
@@ -16,7 +16,7 @@ Public ArtifactPass is included by default. Add a private deployment as an addit
 
 Use pnpm and have Node.js 22 or newer installed for the Cloudflare steps, which run Wrangler. ArtifactPass can open the Slack wizard even if pnpm itself starts under Node 20; it selects the newer installed Node for Wrangler. The guided wizard runs on `127.0.0.1` on your computer; ArtifactPass does not host it or receive your Slack credentials. Use `pnpm dlx artifactpass slack setup --terminal` if you prefer the terminal-only setup.
 
-1. Run `pnpm dlx artifactpass slack setup`. The CLI prints a local wizard link and does **not** choose a browser profile for you. Open the link in the profile you want. On the Cloudflare step, choose **Check connected accounts**. If no account is connected, choose **Connect Cloudflare**, open the authorization link shown in the wizard in the right browser profile, and complete approval. The wizard and terminal commands share the same non-secret local setup file. Choose **Save and exit**, or stop the CLI, then run the command again to resume.
+1. Run `pnpm dlx artifactpass slack setup`. The CLI prints a local wizard link and does **not** choose a browser profile for you. Open the link in the profile you want. On the Cloudflare step, connected accounts are checked automatically. If no account is connected, choose **Connect Cloudflare**, open the authorization link shown in the wizard in the right browser profile, and complete approval. The wizard and terminal commands share the same non-secret local setup file. Choose **Save and exit**, or stop the CLI, then run the command again to resume.
 2. Choose link sources before creating the Slack app. Public `https://artifactpass.com` links are included; add private deployment origins such as `https://artifacts.example.com` here if needed. Choose your Cloudflare account and approve creating one Worker, one Queue, and one D1 database.
 3. Copy the **complete** manifest from the wizard. It already contains the link domains and event URL. In Slack's app dashboard, create **ArtifactPass Archive** from that manifest in the intended workspace. Open **Event Subscriptions** in the new app. The request URL must show **Verified**; if it does not, click **Retry**, wait for Verified, then click **Save Changes**. Install the app in your workspace. You do not need to replace the manifest after installation. Do not add message-reading scopes or use an older POC app.
 4. Enter that app's **App ID** (the `A…` ID on Slack's app list), **Bot User OAuth Token** (OAuth & Permissions), and **Signing Secret** (Basic Information → App Credentials). The wizard checks the bot token with Slack, saves both values as encrypted Cloudflare Worker secrets, and does not store them in its local setup file. Do not put them in terminal arguments, source files, or chat. For terminal-only setup, set both Worker secrets in Cloudflare and run `pnpm dlx artifactpass slack activate --team-id T1234567890 --app-id A1234567890` with your actual IDs. Find the `T…` workspace ID in Slack's web URL, such as `https://app.slack.com/client/T1234567890/C1234567890`.
@@ -32,7 +32,7 @@ The app starts with **zero enabled channels**. The Cloudflare Worker and Slack m
 | Stop new and queued transfers | `pnpm dlx artifactpass slack pause` |
 | Resume enabled channels | `pnpm dlx artifactpass slack resume` |
 | Update only the archive Worker | `pnpm dlx artifactpass slack update` |
-| Add or remove an approved origin | `pnpm dlx artifactpass slack sources add` or `remove`, then apply the new Slack manifest |
+| Add or remove an approved origin | `pnpm dlx artifactpass slack sources add <origin>` or `sources remove <origin>`, then apply the new Slack manifest |
 | Add several channels in one update, or remove one | `pnpm dlx artifactpass slack channels add <links-or-ids...>` or `channels remove <link-or-id>` |
 | Rotate a token or signing secret | `pnpm dlx artifactpass slack rotate` prints the Worker secret location; rotate in Cloudflare and Slack |
 | Remove this add-on | `pnpm dlx artifactpass slack uninstall`, then uninstall the Slack app separately |

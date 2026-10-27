@@ -9,6 +9,7 @@ export const PUBLIC_SITE_PATHS = [
   "/guides/agent-setup",
   "/guides/private-deployment",
   "/guides/private-teammate",
+  "/guides/slack-archive",
   "/guides/share-files-from-ai-agents",
   "/guides/temporary-file-sharing",
   "/guides/private-file-sharing-cloudflare",
