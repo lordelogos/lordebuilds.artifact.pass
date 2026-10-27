@@ -84,9 +84,9 @@ To test a release candidate instead of the latest stable version, use `artifactp
 
 ## Optional Slack archive
 
-Teams can run a separate, customer-owned bot that copies files from live ArtifactPass links into the Slack threads where those links were posted. It requires its own Cloudflare account resources and a Slack app; it does not change your ArtifactPass deployment. It is not yet released for production. See the [setup and recovery guide](https://github.com/lordelogos/lordebuilds.artifact.pass/blob/main/docs/slack-archive.md) before enabling any channel.
+Teams can run a separate, customer-owned bot that copies files from live ArtifactPass links into the Slack threads where those links were posted. It requires its own Cloudflare account resources and a Slack app; it does not change your ArtifactPass deployment. Run `pnpm dlx artifactpass slack setup` and follow the [setup and recovery guide](https://github.com/lordelogos/lordebuilds.artifact.pass/blob/main/docs/slack-archive.md) before enabling any channel.
 
 ## Requirements
 
-- Node.js 24 or newer
+- Node.js 20 or newer for the CLI; Cloudflare setup needs Node.js 22 or newer available for Wrangler
 - pnpm
