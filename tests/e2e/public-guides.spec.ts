@@ -245,6 +245,7 @@ test("uses only approved documentation namespaces in guides and generated assets
     "example.net",
     "github.com",
     "schema.org",
+    "slack.com",
     "sitemaps.org",
     "w3.org",
   ]);

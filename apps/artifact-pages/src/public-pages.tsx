@@ -892,7 +892,7 @@ const SlackArchiveGuidePage = () => (
         <span className="guide-step-number">01</span>
         <h2>Launch the wizard and choose link sources</h2>
         <p>For this release-candidate trial, run the exact version below. The CLI prints a local link. Open it in the browser profile you want; the wizard stays on your computer and saves progress as you go. Node.js 22 or newer must be installed for its Cloudflare commands.</p>
-        <GuideCommand>pnpm dlx artifactpass@0.1.12-rc.4 slack setup</GuideCommand>
+        <GuideCommand>pnpm dlx artifactpass slack setup</GuideCommand>
         <p>Public <code>https://artifactpass.com</code> links are included. If you already run a private deployment, select <strong>Also add a private deployment</strong> and enter its HTTPS origin, such as <code>https://artifacts.example.com</code>. Enter the origin, not a particular <code>/a/…</code> link. One Slack app can register up to five source domains total, including the public source.</p>
         <GuideImage src="/guides/slack-archive/choose-sources.png" alt="ArtifactPass Slack wizard choosing the public source and an example private origin" caption="Choose every source before creating the Slack app. The image uses example data." width={1120} height={1176} focus="wizard" />
       </section>
@@ -935,7 +935,7 @@ const SlackArchiveGuidePage = () => (
         <p>Open and download each Slack file to confirm its contents. Then choose <strong>Check real deliveries</strong> in the wizard and confirm the inspection. It shows <strong>Ready</strong> only after each chosen channel and source has a successful delivery since the latest setup change.</p>
         <GuideImage src="/guides/slack-archive/verify-delivery.png" alt="ArtifactPass wizard waiting for fresh deliveries across example channels and link sources" caption="The wizard tracks channel and source coverage separately. This example has not yet received a file." width={1120} height={1998} focus="wizard" />
         <GuideNote title="A posted link produced no file?">
-          <p>Check the Slack app’s Event Subscriptions page says <strong>Verified</strong> and that you clicked <strong>Save Changes</strong>. Confirm the same app joined that channel, the source domain was included in the manifest, and the link is still live. Post a new link after any correction; Slack does not replay the old message. Run <code>pnpm dlx artifactpass@0.1.12-rc.4 slack status</code> to see recorded deliveries and next actions. An expired or unavailable link gets a warning instead of an archived file.</p>
+          <p>Check the Slack app’s Event Subscriptions page says <strong>Verified</strong> and that you clicked <strong>Save Changes</strong>. Confirm the same app joined that channel, the source domain was included in the manifest, and the link is still live. Post a new link after any correction; Slack does not replay the old message. Run <code>pnpm dlx artifactpass slack status</code> to see recorded deliveries and next actions. An expired or unavailable link gets a warning instead of an archived file.</p>
         </GuideNote>
       </section>
 
