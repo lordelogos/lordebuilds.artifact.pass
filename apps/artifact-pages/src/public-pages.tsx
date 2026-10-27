@@ -861,7 +861,7 @@ const PrivateTeammateGuidePage = () => (
 const SlackArchiveGuidePage = () => (
   <article className="document guide-document">
     <GuideTrail current="Slack archive" position="Optional team integration" />
-    <p className="eyebrow">Setup guide · RC trial</p>
+    <p className="eyebrow">Setup guide</p>
     <h1>Archive ArtifactPass links in Slack</h1>
     <p className="guide-deck">Install a customer-owned bot that copies a file into the thread where your team posts a live ArtifactPass link. The Slack copy follows your workspace retention policy after the original link expires.</p>
     <div className="guide-meta">
@@ -891,7 +891,7 @@ const SlackArchiveGuidePage = () => (
       <section className="guide-step" id="step-1">
         <span className="guide-step-number">01</span>
         <h2>Launch the wizard and choose link sources</h2>
-        <p>For this release-candidate trial, run the exact version below. The CLI prints a local link. Open it in the browser profile you want; the wizard stays on your computer and saves progress as you go. Node.js 22 or newer must be installed for its Cloudflare commands.</p>
+        <p>Run the command below. The CLI prints a local link. Open it in the browser profile you want; the wizard stays on your computer and saves progress as you go. Node.js 22 or newer must be installed for its Cloudflare commands.</p>
         <GuideCommand>pnpm dlx artifactpass slack setup</GuideCommand>
         <p>Public <code>https://artifactpass.com</code> links are included. If you already run a private deployment, select <strong>Also add a private deployment</strong> and enter its HTTPS origin, such as <code>https://artifacts.example.com</code>. Enter the origin, not a particular <code>/a/…</code> link. One Slack app can register up to five source domains total, including the public source.</p>
         <GuideImage src="/guides/slack-archive/choose-sources.png" alt="ArtifactPass Slack wizard choosing the public source and an example private origin" caption="Choose every source before creating the Slack app. The image uses example data." width={1120} height={1176} focus="wizard" />
